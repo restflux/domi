@@ -21,11 +21,12 @@ ADR 记录已经进入 Domi 长期架构边界的决策。状态含义：
 | [0008](./0008-git-panel-scope.md) | Accepted | Git Panel 聚焦会话日常闭环 |
 | [0009](./0009-integrated-browser-architecture.md) | Accepted | WebContentsView 与 Main-owned Browser 原子操作 |
 | [0010](./0010-integrated-terminal-architecture.md) | Accepted | Main-owned Terminal Session 与隔离 PTY Runtime |
-| [0011](./0011-canonical-shell-analysis-and-full-access-trust.md) | Accepted | Canonical Shell Analysis 与显式 Full Access 信任 |
+| [0011](./0011-canonical-shell-analysis-and-full-access-trust.md) | Partially superseded by 0016 | Canonical Shell Analysis 与执行信任；用户模式已收敛 |
 | [0012](./0012-split-permission-interaction-from-policy-resolution.md) | Accepted | 权限交互与策略解析分离 |
 | [0013](./0013-host-authoritative-global-work-activity.md) | Accepted | 从宿主事实派生全局 Work Activity |
 | [0014](./0014-explicit-trust-for-pi-extensions.md) | Accepted | Pi Extension 必须显式按路径和内容授权 |
 | [0015](./0015-session-scoped-external-impact-grants.md) | Partially superseded by 0011 | 普通 Git push 的有界会话能力 |
+| [0016](./0016-research-and-execute-workflows.md) | Accepted | 研究 / 执行成为唯一持久 Work 模式 |
 
 ## 本轮编号整理
 

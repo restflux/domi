@@ -16,7 +16,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 Domi 是基于 Proma 演进的 Personal Coding Workbench，采用 Electron 桌面应用架构。Domi 使用独立安装身份、本地数据目录、`@domi/*` workspace package 和 `DOMI_*` 活动环境变量，不连接 Proma 官方更新通道，也不向用户仓库注入上游 Git/PR 推广标识。旧 `.proma` 数据和旧推广标识只允许在显式迁移或拒绝识别路径中读取，不得继续作为 Domi 的主动写入格式。
 
-Agent Runtime 固定为 Pi。新会话默认 Controlled + Direct，并可独立选择 Autonomous、显式 Full Access 和 Plan First。所有工具调用经过宿主最终门禁；owner Isolated + Full Access 可自动执行内部 Git 整理，并可在用户明确要求 push 时申请绑定 checkout/remote/ref、仅由宿主 push 工具消费的进程内会话授权。Managed Web、Pi Extension Trust 和脱敏 audit 均为宿主能力。
+Agent Runtime 固定为 Pi。用户可选的持久工作方式只有研究与执行：新会话默认执行，底层统一使用当前 Windows 用户权限且没有 OS 沙箱；研究通过只读 Workflow 限制项目写入，并可申请仅当前 run 生效的本次执行。所有工具调用仍经过宿主最终门禁；owner Isolated 的执行 run 可自动完成 managed Worktree 内部 Git 整理，并可在用户明确要求 push 时申请绑定 checkout/remote/ref、仅由宿主 push 工具消费的进程内会话授权。Managed Web、Pi Extension Trust 和脱敏 audit 均为宿主能力。
 
 ### 产品术语
 
@@ -414,8 +414,8 @@ React UI 更新与 JSONL 持久化
 - Pi `0.84.4` 原生负责工具结果后的 pre-turn 压缩生命周期、Session 更新、同一 Agent loop 续跑和失败事件；Domi patch 继续负责增强 checkpoint、单次物理摘要请求、最终 Provider Context 投影与精确 token 门禁、最多两次安全尝试和超限 fail-closed。不得恢复 threshold hidden continuation 或双重摘要请求来绕开原生生命周期。
 - 不得重新引入 runtime selector、Claude adapter/router、Claude MCP wrapper 或平台 `claude.exe` 依赖。
 - Anthropic Provider、Claude 模型/logo、Domi 管理的可写 `AGENTS.md` / Memory、legacy `CLAUDE.md` 兼容输入，以及外部 Claude Skills 只读来源，都必须与 Runtime 删除相互独立。
-- Full Access 必须显式选择并提示未 OS-sandbox；Plan 批准只改变 Workflow，不能改变 Execution Policy。其语义对齐 Claude Code `bypassPermissions`：敏感路径名、opaque/parser failure、动态删除、Local Baseline、destructive Git、外部影响、网络和解释器等通用风险只审计、不弹普通 Policy 审批。它仍不能绕过 Workflow、Isolated→Local 写回/维修/交付事务、target ownership、managed Worktree/workbench integrity、产品确认事务或 Extension Trust；这些边界必须由宿主身份和状态直接执行，不能退化成路径名启发式。
-- 所有 Shell 权限判断必须消费同一份 Canonical Shell Analysis；Bash 与 PowerShell 必须使用各自语法解析器，严禁把 PowerShell source 送入 Bash AST。下游不得把已证明为 argv 字面量的文本重新解释为 executable。解析不确定时在 Controlled/Autonomous 中以 opaque/invalid 原因保守审批，不得编造具体 Git 风险类别；Full Access 中解析结果只用于审计和宿主结构边界，解析失败不得转化为普通审批。PowerShell 变量求值只能在宿主提供的 managed root 内用于 Controlled/Autonomous 的安全正向判断。
+- 执行模式始终使用当前 Windows 用户权限并明确提示未 OS-sandbox；研究、执行、本次执行和 Plan 生命周期只改变 Workflow/当前 run lease，不能绕过 Isolated→Local 回写/维修/交付事务、target ownership、managed Worktree/workbench integrity、产品确认事务或 Extension Trust。敏感路径名、opaque/parser failure、动态删除、Local Baseline、destructive Git、外部影响、网络和解释器等通用风险在执行模式中用于审计和宿主结构边界，不恢复旧的普通 Policy 审批档位。
+- 所有 Shell 判断必须消费同一份 Canonical Shell Analysis；Bash 与 PowerShell 必须使用各自语法解析器，严禁把 PowerShell source 送入 Bash AST。下游不得把已证明为 argv 字面量的文本重新解释为 executable。研究模式只能放行可证明无副作用的命令；执行模式中解析结果用于审计和宿主结构边界，解析失败不得转化为旧式权限档位或编造具体 Git 风险类别。PowerShell 变量求值只能在宿主提供的 managed root 内用于研究模式的安全正向判断。
 - Research / Plan First 的 Bash 只读白名单可支持有限的 stdout-only 管道，包括 `curl GET | tar --to-stdout | grep` 上游产物检查；stdout 解包只允许从 stdin 读取归档并显式选择成员，执行前清空 `TAR_OPTIONS`，不得放开落盘解压、外部解压程序、文件列表输入或命令 hook。
 - `ExecutionPolicy` 是唯一授权分类 owner，并通过 `allow / require-approval / deny` 强类型 resolution 输出决定；`AgentPermissionService` 及 UI 只负责审批交互和宿主事务，不得恢复 session command whitelist、raw-string classifier 或 allow-always 权限提升。
 - Workspace Boundary、Managed Web 和 Extension Trust 是宿主策略，不是 OS/网络沙箱；DNS rebinding check/use 间隙必须在用户文档中如实保留。
@@ -450,7 +450,7 @@ React UI 更新与 JSONL 持久化
 - ✅ **Agent SDK 集成**：Pi-only Runtime，保留 Anthropic / Claude 模型 Provider
 - ✅ **飞书集成**：消息同步、任务通知、OAuth 认证（68KB 核心服务）
 - ✅ **工作区管理**：多工作区隔离、MCP Server 配置、Skills 管理
-- ✅ **Pi Execution Controls**：Controlled / Autonomous / Full Access 与 Direct / Plan First 独立持久化，Plan 批准不提升权限
+- ✅ **Work 工作方式**：研究 / 执行两档持久模式、本次执行 run lease 与 Plan 生命周期；底层统一当前用户权限，关键宿主事务保持独立确认
 - ✅ **宿主安全门禁**：Canonical Shell Analysis、Workspace Boundary、Local Baseline、owner Isolated target provenance、Local 写回事务、Managed Web secret/私网防护
 - ✅ **Pi Extension Trust**：按项目 canonical path + SHA-256 显式授权、变化失效与撤销
 - ✅ **本地审计**：策略、Managed Web 和 Pi run timing 脱敏写入 JSONL

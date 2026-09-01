@@ -108,33 +108,33 @@ _Avoid_: Merge, auto-commit, handoff, bare Local patch
 The permitted side-effect area consisting of the Session Target and explicitly managed temporary locations. It limits where tools may write but is not by itself an operating-system sandbox.
 _Avoid_: Worktree isolation, full system access
 
-**Controlled Execution**:
-Execution within the Workspace Boundary where routine coding operations proceed automatically and boundary crossings or high-risk actions require approval. It is the default for projects that have not been trusted.
-_Avoid_: Plan mode, manual mode
+**Research Workflow**:
+The persistent user mode that keeps project and Local writes read-only while allowing proven inspection, bounded host-managed browser research, and planning. When a task needs writes, the Agent may request a run-scoped Temporary Execute Lease; the session returns to Research when that run settles.
+_Avoid_: Controlled mode, permanent restricted permission, Plan approval
 
-**Autonomous Execution**:
-Low-friction execution within the Workspace Boundary where routine coding, build, and validation actions do not request approval. It does not grant unrestricted access to the whole computer.
-_Avoid_: Bypass permissions, full access, YOLO mode
+**Execute Workflow**:
+The persistent user mode that lets the Agent modify, run, and validate immediately with the current OS user's permissions. It is the default for new sessions and is explicitly unsandboxed. Host-owned transactions—including Isolated-to-Local delivery, target ownership, destructive lifecycle operations, external publication, product confirmations, and Extension Trust—remain independent boundaries.
+_Avoid_: Autonomous mode, Full Access selector, sandbox, unrestricted host transaction
 
-**Full Access Execution**:
-An explicitly selected, unsandboxed Pi execution policy aligned with Claude Code `bypassPermissions`. Generic Execution Policy risk heuristics—including sensitive/path-name classification, opaque or unavailable parsers, dynamic deletion, Local Baseline evidence, destructive Git, external impact, network and interpreters—become audit-only and do not prompt. It is never the default and Plan approval never enables it. Workflow remains independent. Domi still enforces host-owned lifecycle boundaries directly: Isolated-to-Local writeback transactions, target ownership, managed Worktree/workbench integrity, product confirmation transactions and Extension Trust.
-_Avoid_: Autonomous Execution, trusted project, sandbox, generic risk approval
+**Temporary Execute Lease**:
+A run-scoped write lease requested from Research for one active task. It never changes the session's persistent mode, is bound to the exact run token, and is cleared only by that run's terminal event.
+_Avoid_: Persistent Execute, approval mode, session whitelist
 
 **Canonical Shell Analysis**:
 The single structured interpretation of one Shell source string used by Workflow, Execution Policy, Session Target guards, Git/network/deletion/path classification, and read-only hardening. Bash uses `unbash`; nested PowerShell source uses `tree-sitter-powershell` and is never parsed as Bash. It identifies real executable stages, static argv, redirects, assignments, operators, dialect, provenance, and bounded nested execution. Literal argv text can never be reinterpreted as executable by a downstream policy; uncertain input is reported as opaque or invalid rather than assigned a fabricated risk category. PowerShell variable-derived deletion targets are only security-positive when canonical paths remain inside a host-provided managed root such as the current session workbench `.context`.
 _Avoid_: Regex command splitting, keyword scanning, multiple parser opinions
 
 **Policy Resolution**:
-The pure, closed decision produced from normalized authorization facts: `allow`, `require-approval`, or `deny`, each with a stable decision code. Execution Policy owns this decision; permission interaction services may present or persist it but must not reclassify tools, Shell text, or risk.
-_Avoid_: Approval UI as classifier, session command whitelist, parallel permission engine
+The pure, closed internal decision produced from normalized authorization facts: `allow`, `require-approval`, or `deny`, each with a stable decision code. Legacy policy modes remain migration inputs only; current user sessions normalize to the unsandboxed execution policy while Workflow and host-owned transactions enforce the active boundaries. Permission interaction services may present or persist decisions but must not reclassify tools, Shell text, or risk.
+_Avoid_: User-facing policy selector, approval UI as classifier, session command whitelist, parallel permission engine
 
 **Session Capability Grant**:
-A process-local, revocable authorization for one narrowly described host capability. The original ordinary Git push grant is retained only as compatibility/history after Full Access adopted direct trust semantics; new Full Access Agent runs do not expose or require it. Future grants must remain bound to precise session, checkout, repository and operation provenance.
-_Avoid_: Trusted project, permanent whitelist, Full Access, generic allow-always
+A process-local, revocable authorization for one narrowly described host capability, such as an ordinary Git push the user explicitly requested. Execute does not imply this external-impact grant. Every grant remains bound to precise session, checkout, repository, remote, ref, and operation provenance.
+_Avoid_: Trusted project, permanent whitelist, execution mode, generic allow-always
 
 **Local Baseline**:
-The Local Checkout state captured when an Agent run begins, including pre-existing tracked and untracked changes. Controlled and Autonomous use it for destructive-operation approval. Full Access accepts ordinary tool risk instead of prompting on baseline heuristics; in Isolated sessions, explicit writes to the real Local Checkout remain blocked by the host and must use Apply, Finish or Local Maintenance.
-_Avoid_: Git base, Session Base, checkpoint
+The Local Checkout state captured when an Agent run begins, including pre-existing tracked and untracked changes. It remains evidence for host-owned delivery and recovery, not a user-selectable permission tier. In Isolated sessions, explicit writes to the real Local Checkout stay blocked and must use Preview/finalize delivery or Local Maintenance.
+_Avoid_: Git base, Session Base, checkpoint, permission mode
 
 **Local Maintenance Transaction**:
 A snapshot-bound, user-approved lease that lets an Isolated Checkout session repair the real Local Checkout through bounded host tools without changing its Session Target. Approval must durably queue and automatically resume the interrupted Agent task—even if the owner view mounts later—and must not leave an active transaction waiting for the user to send another message. Every transaction preserves recovery artifacts and requires explicit completion or recovery.
@@ -145,16 +145,16 @@ Domi-mediated search and retrieval of public HTTP(S) resources with secret filte
 _Avoid_: Unrestricted network access, browser automation
 
 **Process Network Access**:
-Outbound access initiated by an Agent-run process such as a package manager, Git, shell script, or downloaded executable. Known project endpoints may be allowed while new destinations require approval.
-_Avoid_: Web search, model API traffic
+Outbound access initiated by an Agent-run process such as a package manager, Git, shell script, or downloaded executable. Research only allows narrowly proven read paths; Execute treats generic process-network risk as audit data while host-owned external publication and product transactions retain explicit boundaries.
+_Avoid_: Web search, model API traffic, generic user permission tier
 
 **Direct Workflow**:
-A session workflow in which the Agent may execute immediately under the selected execution policy, while retaining the ability to enter planning when needed.
-_Avoid_: Autonomous Execution, bypass mode
+The internal Workflow value behind the user-facing Execute mode. The Agent may execute immediately while retaining the ability to enter a Plan lifecycle when needed.
+_Avoid_: Execute permission tier, bypass mode, separate policy selector
 
 **Plan First**:
-A session workflow that remains read-only until the user approves the proposed plan, then resumes under the execution policy selected before planning.
-_Avoid_: Plan permission, full-auto approval
+A run lifecycle that remains read-only until the user approves the proposed plan, then resumes in the session's existing Research or Execute semantics. It is not a third persistent user mode and does not grant execution by itself.
+_Avoid_: Plan permission, full-auto approval, persistent mode
 
 **Verification Gate**:
 A Domi-controlled set of deterministic project checks selected from the final change scope and required before isolated changes become Ready to Apply. The user may explicitly override a failure, but the result remains Unverified.
