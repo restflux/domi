@@ -2,19 +2,20 @@
 
 Domi is a local-first Personal Coding Workbench. It brings multi-model Chat, executable Work sessions, project files, terminals, an in-app browser, Skills, MCP, Automation, tasks, and calendars into one Electron desktop application.
 
-> Domi is under active development. Source builds are currently the primary distribution path. The project does not provide automatic installation or updates and does not connect to another product's release channel.
+> Domi is under active development, with its first public version line starting at **0.20.0**. Source builds are currently the primary distribution path. The project does not provide automatic installation or updates and does not connect to another product's release channel.
 
 [中文 README](./README.md) · [User Guide](./tutorial/tutorial-v2.md) · [Engineering Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
 ## Core capabilities
 
+- **Coding-focused Work sessions**: the Pi Agent Runtime can investigate code, edit files, run tests, start services, and complete multi-step tasks.
+- **Research and Execute workflows**: Research keeps the project read-only and may request Execute Once; Execute modifies and validates directly.
+- **Isolated Worktree delivery**: each session can use Local or a Domi-managed Isolated Checkout, with Checkpoints, Preview, acceptance commits, provably safe withdrawal, recovery, and handoff.
+- **Lightweight Git workflow**: inspect status and diffs, stage or unstage, commit, sync, switch branches, and browse recent history from the changes panel.
+- **Integrated coding workspace**: multi-instance Right Workspace tabs host file previews, Scratch Pad, visible PTYs, Agent Runs, detected service URLs, and the in-app browser.
+- **Long-task continuity**: background sessions, live Steering, Follow-up queues, native Pi context compaction, session handoff, and Collaboration child sessions.
 - **Multi-model Chat**: Anthropic, OpenAI, Google, DeepSeek, Kimi, Zhipu, MiniMax, Doubao, Qwen, and custom compatible endpoints.
-- **Work sessions**: powered by the Pi Agent Runtime to inspect and modify projects, run tests, use tools, and complete multi-step work.
-- **Execution controls**: Execution Policy and Workflow are independent; permission strength, Plan First, and Session Target never elevate one another implicitly.
-- **Integrated workspace**: file tree, diffs, Preview, Scratch Pad, terminal, and browser live in one desktop window.
-- **Local-first storage**: conversations, configuration, Skills, MCP, audit records, and most state remain on the local machine; tasks and calendars use local SQLite.
-- **Extensibility**: workspace Skills, MCP servers, custom Chat HTTP tools, Automation, Collaboration, and Feishu integration.
-- **Concurrent sessions**: global event listeners and session-scoped state allow background Work sessions to keep running.
+- **Local-first extensibility**: conversations, configuration, Skills, MCP, audit, Automation, and Planning remain local, with custom Chat HTTP tools and Feishu integration.
 
 ## Quick start
 
@@ -59,22 +60,39 @@ bun run dist:win:fast
 
 `dist:win:fast` creates an unsigned local verification build. Signed or public distribution must explicitly use the release channel. See the [engineering documentation](./docs/README.md).
 
-## Work security model
+## Coding-focused Work workflow
 
-Domi separates what may be executed from how work proceeds:
+### Research and Execute
 
-- **Execution Policy**: Controlled, Autonomous, or Full Access.
-- **Workflow**: Direct or Plan First; restricted preparation allows only proven reads and bounded host-managed capabilities.
-- **Session Target**: a Local Checkout or a Domi-managed Isolated Checkout.
+The UI exposes two persistent workflows. Both run with the current OS user permissions; Domi does not provide an OS sandbox:
 
-Important boundaries:
+- **Research**: investigates code, documentation, and webpages through a read-only Workflow. When writes are needed, it can request Execute Once for the current run and automatically returns to Research afterward.
+- **Execute**: edits the project, runs commands, and validates results directly. Writing back to Local, destructive Git, external publication, and Extension Trust remain separately confirmed host transactions.
 
-- Full Access runs with the current OS user permissions; it is not an OS sandbox.
-- Approving a plan changes Workflow only and never elevates Execution Policy.
-- Writing an Isolated Checkout back to Local, destructive Git, external publication, and Extension Trust remain host-controlled transactions.
-- Shell decisions use structured analysis and fail closed when parsing is uncertain.
-- Browser and Managed Web controls restrict private networks, credentials, redirects, and interaction surfaces, but they are not a network sandbox.
-- User shells and Agent-visible terminal runs remain isolated from one another.
+### Isolated Worktree delivery
+
+A Work session may use the Local Checkout directly or a Domi-managed Isolated Worktree:
+
+- the Agent edits, tests, and starts services without overwriting unfinished Local work;
+- Checkpoints retain intermediate results, while Ready for Review records the acceptance context;
+- Preview projects only the task layer into Local for real-environment acceptance, then finalizes it as one commit;
+- Preview withdrawal verifies that Local, the branch, and history still match the delivery snapshot and fails closed when safety cannot be proven;
+- conflict preflight, recovery state, retention, bulk cleanup, and cross-session handoff are host-tracked;
+- when owner and inherited sessions share a target, delivery, cleanup, and Local writes remain owner-only.
+
+### Git, terminal, and browser
+
+- the changes panel provides a lightweight Git loop rather than a full Git client;
+- the terminal supports multiple PTYs, shell profiles, isolation between user terminals and Agent Runs, and local service URL detection;
+- the browser exposes a visible page with bounded Snapshot/ref, click, ordinary text input, scroll, and text extraction operations;
+- Right Workspace keeps multiple file, Browser, Terminal, Preview, and helper tabs alive together.
+
+### Security boundaries
+
+- shell authorization uses structured analysis and fails closed when parsing is uncertain;
+- Managed Web and Browser restrict private networks, credentials, redirects, and interaction surfaces, but are not a network sandbox;
+- Session Target, Local Baseline, Worktree ownership, and external-impact confirmation cannot be bypassed by switching Research or Execute;
+- user shells and Agent-visible terminal runs remain isolated from one another.
 
 See [`docs/adr/`](./docs/adr/) and [`SECURITY.md`](./SECURITY.md) for architecture and threat boundaries.
 

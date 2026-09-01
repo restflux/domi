@@ -2,19 +2,20 @@
 
 Domi 是一款本地优先的 Personal Coding Workbench。它把多模型 Chat、可执行的 Work 会话、项目文件、终端、内置浏览器、Skills、MCP、Automation、任务与日程放进同一个 Electron 桌面应用。
 
-> Domi 正在快速迭代。目前以源码构建为主要使用方式，不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
+> Domi 正在快速迭代，首个公开版本线从 **0.20.0** 开始。目前以源码构建为主要使用方式，不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
 
 [English README](./README.en.md) · [使用教程](./tutorial/tutorial-v2.md) · [工程文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
 ## 核心能力
 
+- **面向 coding 的 Work 会话**：Pi Agent Runtime 可以调查代码、修改文件、运行测试、启动服务并持续完成多步骤任务。
+- **研究 / 执行两种工作方式**：研究模式保持项目只读，需要修改时可申请“本次执行”；执行模式直接修改并验证。
+- **Isolated Worktree 交付**：每个会话可使用 Local 或 Domi managed Isolated Checkout，并通过 Checkpoint、Preview、验收提交、可证明安全的撤回、恢复和交接完成闭环。
+- **轻量 Git 工作流**：在文件改动面板完成状态查看、Diff、暂存/取消暂存、提交、同步、分支选择和最近历史。
+- **完整 coding 工作区**：多实例 Right Workspace 标签统一承载文件 Preview、Scratch Pad、可见 PTY 终端、Agent Run、服务地址和内置浏览器。
+- **长任务连续性**：支持后台会话、实时 Steering、Follow-up 队列、Pi 原生上下文压缩、session handoff 和 Collaboration 子会话。
 - **多模型 Chat**：支持 Anthropic、OpenAI、Google、DeepSeek、Kimi、智谱、MiniMax、豆包、通义千问和自定义兼容端点。
-- **Work 会话**：由 Pi Agent Runtime 驱动，可读取和修改项目、运行测试、使用工具并持续交付多步骤任务。
-- **执行控制**：Execution Policy 与 Workflow 独立；权限强度、Plan First 和 Session Target 不会互相隐式提升。
-- **项目工作台**：文件树、Diff、Preview、Scratch Pad、内置终端和内置浏览器集中在同一窗口。
-- **本地优先**：会话、配置、Skills、MCP、审计和大部分状态保存在本机；任务与日程使用本地 SQLite。
-- **扩展能力**：支持工作区 Skills、MCP Server、Chat HTTP 工具、Automation、Collaboration 和飞书集成。
-- **多会话并行**：全局事件监听和按 session 隔离的状态模型让后台 Work 会话可以持续运行。
+- **本地优先与扩展**：会话、配置、Skills、MCP、审计、Automation 和 Planning 保存在本机，并支持 Chat HTTP 工具与飞书集成。
 
 ## 快速开始
 
@@ -61,21 +62,38 @@ bun run dist:win:fast
 
 `dist:win:fast` 生成无签名本地验证包；正式签名与公开发布必须显式使用 release 通道。详见[工程文档](./docs/README.md)。
 
-## Work 的安全模型
+## 面向 coding 的 Work 流程
 
-Domi 把“允许做什么”和“按什么流程做”分开：
+### 研究与执行
 
-- **Execution Policy**：Controlled、Autonomous、Full Access。
-- **Workflow**：Direct、Plan First；受限准备阶段只允许经过证明的读取和宿主管理能力。
-- **Session Target**：Local Checkout 或 Domi managed Isolated Checkout。
+界面只提供两种持久工作方式，两者底层都使用当前 Windows 用户权限，Domi 不提供 OS 沙箱：
 
-关键边界：
+- **研究**：以只读 Workflow 调查代码、文档和网页；需要写入时可申请仅对当前 run 生效的“本次执行”，结束后自动恢复研究。
+- **执行**：直接修改项目、运行命令和验证结果。Local 回写、破坏性 Git、外部发布、扩展信任等宿主事务仍保留独立确认。
 
-- Full Access 使用当前 Windows 用户权限，不是 OS 沙箱。
-- Plan 批准只改变 Workflow，不会提升 Execution Policy。
-- Isolated Checkout 回写 Local、破坏性 Git、外部发布和扩展信任仍由宿主门禁控制。
-- Shell 决策基于结构化分析；解析不确定时 fail closed。
-- Browser 和 Managed Web 限制私网、凭据、重定向与交互范围，但不等同于网络沙箱。
+### Isolated Worktree 交付
+
+Work 会话可以直接使用 Local Checkout，也可以由 Domi 创建隔离 Worktree：
+
+- Agent 在隔离 checkout 中修改、测试和启动服务，不与 Local 未完成工作互相覆盖；
+- Checkpoint 保存阶段成果，Ready for Review 固化验收上下文；
+- Preview 将任务层投影到 Local 供真实环境验收，通过后收敛为单个提交；
+- Preview 撤回会验证 Local、分支和历史仍与交付快照一致，无法证明安全时 fail closed；
+- 冲突预检、恢复状态、保留策略、批量清理和跨会话 handoff 都由宿主追踪；
+- owner / inherited 会话共享目标时，交付、清理和 Local 写入仍只允许 owner 执行。
+
+### Git、终端与浏览器
+
+- 文件改动面板提供轻量 Git 闭环，不尝试成为完整 Git 客户端；
+- 内置终端支持多个 PTY、Shell profile、用户终端与 Agent Run 隔离，以及本地服务地址检测；
+- 内置浏览器提供用户可见页面和有界 Snapshot/ref、点击、普通文本输入、滚动与文本提取；
+- Right Workspace 可以同时保留多个文件、Browser、Terminal、Preview 和辅助工具标签。
+
+### 安全边界
+
+- Shell 决策基于结构化分析，解析不确定时 fail closed；
+- Managed Web 与 Browser 限制私网、凭据、重定向和交互范围，但不等同于网络沙箱；
+- Session Target、Local Baseline、Worktree ownership 和外部影响确认不能被研究/执行模式绕过；
 - 用户 Shell 与 Agent 可见终端相互隔离。
 
 架构与威胁边界见 [`docs/adr/`](./docs/adr/) 和 [`SECURITY.md`](./SECURITY.md)。
