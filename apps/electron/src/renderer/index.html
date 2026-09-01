@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Domi</title>
+    <style>
+      html, body, #root { height: 100%; }
+      body { margin: 0; background: #fafafa; color: #18181b; }
+      html.dark body { background: #09090b; color: #fafafa; }
+      .domi-startup-shell {
+        height: 100%;
+        display: grid;
+        place-items: center;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .domi-startup-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+      .domi-startup-mark {
+        width: 52px;
+        height: 52px;
+        object-fit: contain;
+        filter: drop-shadow(0 12px 20px rgba(239, 68, 68, 0.2));
+      }
+      html.dark .domi-startup-mark {
+        filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.45));
+      }
+      .domi-startup-label {
+        font-size: 13px;
+        color: #71717a;
+        letter-spacing: 0.02em;
+      }
+      html.dark .domi-startup-label { color: #a1a1aa; }
+      .domi-startup-dots { display: inline-flex; gap: 5px; }
+      .domi-startup-dots span {
+        width: 5px;
+        height: 5px;
+        border-radius: 999px;
+        background: currentColor;
+        animation: domi-startup-pulse 1.2s ease-in-out infinite;
+      }
+      .domi-startup-dots span:nth-child(2) { animation-delay: 0.15s; }
+      .domi-startup-dots span:nth-child(3) { animation-delay: 0.3s; }
+      @keyframes domi-startup-pulse {
+        0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+        30% { opacity: 1; transform: translateY(-2px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .domi-startup-dots span { animation: none; opacity: 0.7; }
+      }
+    </style>
+    <script>
+      // 主题初始化脚本（在 React 加载前执行，避免闪烁）
+      // 从 localStorage 缓存读取主题模式和特殊风格，立即应用类名
+      ;(function() {
+        var mode = localStorage.getItem('proma-theme-mode') || 'dark'
+        var style = localStorage.getItem('proma-theme-style')
+        var html = document.documentElement
+
+        if (mode === 'special' && style && style !== 'default') {
+          // 特殊风格模式：添加主题类名 + 根据后缀决定 dark 类
+          html.classList.add('theme-' + style)
+          if (style.endsWith('-dark')) {
+            html.classList.add('dark')
+          }
+        } else if (mode === 'dark') {
+          html.classList.add('dark')
+        } else if (mode === 'system') {
+          if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            html.classList.add('dark')
+          }
+        }
+        // mode === 'light' 时不添加 dark 类
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root">
+      <div id="domi-startup-shell" class="domi-startup-shell" role="status" aria-label="Domi 正在启动">
+        <div class="domi-startup-content">
+          <img
+            class="domi-startup-mark"
+            src="/assets/brand/domi-mark-small.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="domi-startup-label">正在启动</div>
+          <div class="domi-startup-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // 只给主窗口保留启动反馈；辅助窗口在 React 加载前先移除占位内容。
+      if (new URLSearchParams(window.location.search).has('window')) {
+        document.getElementById('domi-startup-shell')?.remove()
+      }
+    </script>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

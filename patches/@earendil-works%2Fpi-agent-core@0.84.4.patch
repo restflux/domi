@@ -1,0 +1,218 @@
+--- a/dist/agent-loop.js
++++ b/dist/agent-loop.js
+@@ -99,6 +99,10 @@
+                                 ? undefined
+                                 : nextTurnSnapshot.thinkingLevel,
+                     };
++                    if (nextTurnSnapshot.stop) {
++                        await emit({ type: "agent_end", messages: newMessages });
++                        return;
++                    }
+                 }
+                 // Preparation can be long-running (for example, compaction). Pick up steering
+                 // queued while it ran. Only poll again if the earlier poll returned nothing;
+@@ -118,8 +122,39 @@
+                 }
+                 pendingMessages = [];
+             }
+-            // Stream assistant response
+-            const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
++            // Build the exact provider context first, including extension transforms, then
++            // give the session one final chance to project/compact or fail closed.
++            let requestContext = currentContext;
++            if (config.transformContext) {
++                requestContext = {
++                    ...currentContext,
++                    messages: await config.transformContext(currentContext.messages, signal),
++                };
++            }
++            const requestSnapshot = await config.prepareRequest?.({
++                context: requestContext,
++                runtimeContext: currentContext,
++            });
++            if (requestSnapshot) {
++                currentContext = requestSnapshot.context ?? currentContext;
++                requestContext = requestSnapshot.requestContext ?? requestSnapshot.context ?? requestContext;
++                config = {
++                    ...config,
++                    model: requestSnapshot.model ?? config.model,
++                    reasoning: requestSnapshot.thinkingLevel === undefined
++                        ? config.reasoning
++                        : requestSnapshot.thinkingLevel === "off"
++                            ? undefined
++                            : requestSnapshot.thinkingLevel,
++                };
++                if (requestSnapshot.stop) {
++                    await emit({ type: "agent_end", messages: newMessages });
++                    return;
++                }
++            }
++            // Stream assistant response. Persist events into the full runtime context while
++            // sending only the prepared provider-context copy.
++            const message = await streamAssistantResponse(currentContext, requestContext, config, signal, emit, streamFunction);
+             newMessages.push(message);
+             if (message.stopReason === "error" || message.stopReason === "aborted") {
+                 await emit({ type: "turn_end", message, toolResults: [] });
+@@ -145,11 +180,16 @@
+                 }
+             }
+             await emit({ type: "turn_end", message, toolResults });
++            if (toolCalls.length > 0 && !hasMoreToolCalls) {
++                await emit({ type: "agent_end", messages: newMessages, terminatedByTool: true });
++                return;
++            }
+             lastCompletedTurn = {
+                 message,
+                 toolResults,
+                 context: currentContext,
+                 newMessages,
++                willContinue: hasMoreToolCalls,
+             };
+             if (await config.shouldStopAfterTurn?.(lastCompletedTurn)) {
+                 await emit({ type: "agent_end", messages: newMessages });
+@@ -173,19 +213,13 @@
+  * Stream an assistant response from the LLM.
+  * This is where AgentMessage[] gets transformed to Message[] for the LLM.
+  */
+-async function streamAssistantResponse(context, config, signal, emit, streamFunction) {
+-    // Apply context transform if configured (AgentMessage[] → AgentMessage[])
+-    let messages = context.messages;
+-    if (config.transformContext) {
+-        messages = await config.transformContext(messages, signal);
+-    }
+-    // Convert to LLM-compatible messages (AgentMessage[] → Message[])
+-    const llmMessages = await config.convertToLlm(messages);
+-    // Build LLM context
++async function streamAssistantResponse(context, requestContext, config, signal, emit, streamFunction) {
++    // Convert the already prepared provider-context copy to LLM-compatible messages.
++    const llmMessages = await config.convertToLlm(requestContext.messages);
+     const llmContext = {
+-        systemPrompt: context.systemPrompt,
++        systemPrompt: requestContext.systemPrompt,
+         messages: llmMessages,
+-        tools: context.tools,
++        tools: requestContext.tools,
+     };
+     // Resolve API key (important for expiring tokens)
+     const resolvedApiKey = (config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+@@ -413,6 +447,10 @@
+                     result: createErrorToolResult("Operation aborted"),
+                     isError: true,
+                 };
++                if (nextTurnSnapshot.stop) {
++                    await emit({ type: "agent_end", messages: newMessages });
++                    return;
++                }
+             }
+             if (beforeResult?.block) {
+                 const result = createErrorToolResult(beforeResult.reason || "Tool execution was blocked");
+--- a/dist/agent.d.ts
++++ b/dist/agent.d.ts
+@@ -1,5 +1,5 @@
+ import type { ImageContent, Message, SimpleStreamOptions, ThinkingBudgets, Transport } from "@earendil-works/pi-ai";
+-import type { AfterToolCallContext, AfterToolCallResult, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentState, BeforeToolCallContext, BeforeToolCallResult, PrepareNextTurnContext, QueueMode, ShouldStopAfterTurnContext, StreamFn, ToolExecutionMode } from "./types.ts";
++import type { AfterToolCallContext, AfterToolCallResult, AgentEvent, AgentLoopTurnUpdate, AgentMessage, AgentState, BeforeToolCallContext, BeforeToolCallResult, PrepareNextTurnContext, PrepareRequestContext, QueueMode, ShouldStopAfterTurnContext, StreamFn, ToolExecutionMode } from "./types.ts";
+ export type { QueueMode } from "./types.ts";
+ /** Options for constructing an {@link Agent}. */
+ export interface AgentOptions {
+@@ -15,6 +15,8 @@
+     shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext, signal?: AbortSignal) => boolean | Promise<boolean>;
+     prepareNextTurn?: (signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+     prepareNextTurnWithContext?: (context: PrepareNextTurnContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    prepareRequest?: (signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    prepareRequestWithContext?: (context: PrepareRequestContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+     steeringMode?: QueueMode;
+     followUpMode?: QueueMode;
+     sessionId?: string;
+@@ -45,6 +47,8 @@
+     shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext, signal?: AbortSignal) => boolean | Promise<boolean>;
+     prepareNextTurn?: (signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+     prepareNextTurnWithContext?: (context: PrepareNextTurnContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    prepareRequest?: (signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
++    prepareRequestWithContext?: (context: PrepareRequestContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+     private activeRun?;
+     /** Session identifier forwarded to providers for cache-aware backends. */
+     sessionId?: string;
+--- a/dist/agent.js
++++ b/dist/agent.js
+@@ -99,6 +99,8 @@
+     shouldStopAfterTurn;
+     prepareNextTurn;
+     prepareNextTurnWithContext;
++    prepareRequest;
++    prepareRequestWithContext;
+     activeRun;
+     /** Session identifier forwarded to providers for cache-aware backends. */
+     sessionId;
+@@ -125,6 +127,8 @@
+         this.shouldStopAfterTurn = runtimeOptions.shouldStopAfterTurn;
+         this.prepareNextTurn = runtimeOptions.prepareNextTurn;
+         this.prepareNextTurnWithContext = runtimeOptions.prepareNextTurnWithContext;
++        this.prepareRequest = runtimeOptions.prepareRequest;
++        this.prepareRequestWithContext = runtimeOptions.prepareRequestWithContext;
+         this.steeringQueue = new PendingMessageQueue(runtimeOptions.steeringMode ?? "one-at-a-time");
+         this.followUpQueue = new PendingMessageQueue(runtimeOptions.followUpMode ?? "one-at-a-time");
+         this.sessionId = runtimeOptions.sessionId;
+@@ -310,6 +314,14 @@
+                     return await this.prepareNextTurn?.(this.signal);
+                 }
+                 : undefined,
++            prepareRequest: this.prepareRequestWithContext || this.prepareRequest
++                ? async (context) => {
++                    if (this.prepareRequestWithContext) {
++                        return await this.prepareRequestWithContext(context, this.signal);
++                    }
++                    return await this.prepareRequest?.(this.signal);
++                }
++                : undefined,
+             convertToLlm: this.convertToLlm,
+             transformContext: this.transformContext,
+             getApiKey: this.getApiKey,
+--- a/dist/types.d.ts
++++ b/dist/types.d.ts
+@@ -110,14 +110,26 @@
+ }
+ /** Replacement runtime state used by the agent loop before starting another provider request. */
+ export interface AgentLoopTurnUpdate {
+-    /** Context for the next provider request. */
++    /** Full runtime context used by subsequent turns and tool hooks. */
+     context?: AgentContext;
++    /** Context-only copy sent to the immediately following provider request. */
++    requestContext?: AgentContext;
+     /** Model for the next provider request. */
+     model?: Model<any>;
+     /** Thinking level for the next provider request. */
+     thinkingLevel?: ThinkingLevel;
++    /** Gracefully stop this loop after the completed turn without starting another provider request. */
++    stop?: boolean;
+ }
+ export interface PrepareNextTurnContext extends ShouldStopAfterTurnContext {
++    /** Whether the completed turn would normally be followed by another provider request. */
++    willContinue: boolean;
++}
++export interface PrepareRequestContext {
++    /** Exact context after extension transforms and before provider conversion. */
++    context: AgentContext;
++    /** Full unprojected loop context used for persistence and subsequent tool execution. */
++    runtimeContext: AgentContext;
+ }
+ export interface AgentLoopConfig extends SimpleStreamOptions {
+     model: Model<any>;
+@@ -196,6 +208,8 @@
+      * Return undefined to keep using the current context/config.
+      */
+     prepareNextTurn?: (context: PrepareNextTurnContext) => AgentLoopTurnUpdate | undefined | Promise<AgentLoopTurnUpdate | undefined>;
++    /** Final request preparation hook invoked after context transforms and before every provider request. */
++    prepareRequest?: (context: PrepareRequestContext) => AgentLoopTurnUpdate | undefined | Promise<AgentLoopTurnUpdate | undefined>;
+     /**
+      * Returns steering messages to inject into the conversation mid-run.
+      *
+@@ -377,6 +391,8 @@
+ } | {
+     type: "agent_end";
+     messages: AgentMessage[];
++    /** True when every finalized tool result in the last batch requested termination. */
++    terminatedByTool?: true;
+ } | {
+     type: "turn_start";
+ } | {

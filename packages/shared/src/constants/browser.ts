@@ -1,0 +1,18 @@
+export const BROWSER_IPC_CHANNELS = {
+  OPEN: 'browser:open',
+  ACTIVATE: 'browser:activate',
+  INSPECT: 'browser:inspect',
+  NAVIGATE: 'browser:navigate',
+  GO_BACK: 'browser:go-back',
+  GO_FORWARD: 'browser:go-forward',
+  RELOAD: 'browser:reload',
+  STOP: 'browser:stop',
+  SET_ZOOM: 'browser:set-zoom',
+  SET_FIT_TO_WIDTH: 'browser:set-fit-to-width',
+  SET_LAYOUT: 'browser:set-layout',
+  SELECT_ELEMENT: 'browser:select-element',
+  CANCEL_ELEMENT_SELECTION: 'browser:cancel-element-selection',
+  CLOSE: 'browser:close',
+  STATE_CHANGED: 'browser:state-changed',
+  FOCUS_ESCAPE_REQUESTED: 'browser:focus-escape-requested',
+} as const

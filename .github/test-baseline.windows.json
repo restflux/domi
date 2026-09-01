@@ -1,0 +1,13 @@
+{
+  "platform": "win32",
+  "failures": [
+    "apps/electron/src/main/lib/agent-collaboration-utils.test.ts :: 协作子会话执行控制继承 > Pi 子会话继承父会话 autonomous Execution Policy，并固定使用 Direct typed overrides",
+    "apps/electron/src/main/lib/agent-collaboration-utils.test.ts :: 协作子会话执行控制继承 > Pi 子会话继承父会话 controlled Execution Policy，并固定使用 Direct typed overrides",
+    "apps/electron/src/main/lib/agent-fast-lane-default-skills.test.ts :: 高频默认 Skill 路由边界 > Given ordinary task frustration When routing Then domi-coach does not claim it without Domi or long-term intent",
+    "apps/electron/src/main/lib/agent-session-manager.test.ts :: Agent 会话 runtime 元数据 > Given a new Pi session When it is persisted Then execution defaults to Controlled and Direct without writing a legacy mode",
+    "apps/electron/src/main/lib/agent-session-manager.test.ts :: Agent 会话 runtime 元数据 > Given an internal Plan First lifecycle transition When the session returns to Direct Then the global new-session default is unchanged",
+    "apps/electron/src/main/lib/agent-session-manager.test.ts :: Agent 会话 runtime 元数据 > Given historical Pi tool profiles When the index is read Then they migrate once into supported workflows and the legacy field is removed",
+    "apps/electron/src/main/lib/agent-worktree-recovery-handoff.test.ts :: (unnamed)",
+    "apps/electron/src/renderer/lib/slash-commands/registry.test.ts :: registerSlashCommand / getSlashCommand > 别名解析到同一命令，独立 /plan 命令不被 workflow 别名覆盖"
+  ]
+}

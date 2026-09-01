@@ -1,0 +1,22 @@
+{
+  "name": "@domi/cli",
+  "version": "0.1.2",
+  "license": "AGPL-3.0-only",
+  "description": "domi — Domi 命令行工具。面向有限上下文的 Agent 消费者，提供会话的渐进式读取（list / info / outline / search / export）。",
+  "type": "module",
+  "bin": {
+    "domi": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "bun build --compile --outfile dist/domi src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "@domi/session-core": "workspace:*",
+    "@domi/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

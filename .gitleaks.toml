@@ -1,0 +1,19 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "仅允许仓库测试中用于验证脱敏逻辑的精确虚构凭据；不按文件路径整体放行。"
+regexTarget = "match"
+regexes = [
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.signature123456''',
+  '''api_key=livecredential123456789''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''ghp_abcdefghijklmnopqrstuvwxyz123456''',
+  '''sk-abcdefghijklmnop123456''',
+  '''sk-controlledcredential123456789''',
+  '''sk-ant-abc123def456''',
+  '''sk-proj-ABCDEFGH12345678''',
+  '''AIzaSyVERYSECRET''',
+  '''super-secret-value''',
+  '''sk-abcdEFGH1234''',
+]

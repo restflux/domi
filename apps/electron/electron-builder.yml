@@ -1,0 +1,178 @@
+# electron-builder 配置
+# 文档: https://www.electron.build/configuration/configuration
+
+appId: local.domi.workbench
+productName: Domi
+copyright: Copyright © 2024-2026 Erlich Liu and Domi contributors
+
+# Electron 版本（CI 环境 bun workspace 下无法自动检测，需显式指定）
+electronVersion: 43.2.0
+
+# 目录配置
+directories:
+  output: out
+  buildResources: resources
+
+# 压缩配置
+compression: normal
+
+# ASAR 打包配置
+# 启用 ASAR 归档，将 Pi native addon 解压到 app.asar.unpacked/ 避免路径问题
+asar: true
+asarUnpack:
+  - "node_modules/@silvia-odwyer/**"
+  - "node_modules/@mariozechner/**"
+  - "node_modules/@napi-rs/**"
+  - "node_modules/@earendil-works/pi-tui/native/**"
+  - "node_modules/sharp/**"
+  - "node_modules/@img/**"
+  - "node_modules/node-pty/**"
+
+# 跳过 npm install（代码已被 esbuild/Vite 打包，npm 不识别 workspace:* 协议）
+npmRebuild: false
+
+# 通用文件配置
+files:
+  - dist/**/*
+  # 排除 build:resources 脚本拷到 dist/resources 的副本（electron-builder 已通过
+  # buildResources 从 resources/ 直接使用 icon/plist，避免产物里重复打包一份）
+  - "!dist/resources/**"
+  - package.json
+  # Pi runtime 作为主进程 external 运行。打包前 sync:runtime-deps 会
+  # 将 external 依赖闭包同步到 apps/electron/node_modules。
+  - node_modules/**/*
+  # Electron Builder 默认排除 node_modules 下的 .d.ts；该类型契约由
+  # Pi runtime 完整性校验保护，只显式复制这一份，避免放开全部声明文件。
+  - from: node_modules/@earendil-works/pi-agent-core/dist
+    to: node_modules/@earendil-works/pi-agent-core/dist
+    filter:
+      - types.d.ts
+  # 排除 workspace 包的 symlink（代码已被 esbuild/Vite 打包到 dist/ 中）
+  - "!node_modules/@domi/**"
+  # 排除明确只在开发/构建期使用的大体积包。
+  - "!node_modules/electron/**"
+  - "!node_modules/electron-builder/**"
+  - "!node_modules/electronmon/**"
+  - "!node_modules/esbuild/**"
+  - "!node_modules/@electron/**"
+  - "!node_modules/@electron-builder/**"
+  - "!node_modules/@esbuild/**"
+  # 排除 Pi SDK 纯演示/文档/sourcemap 内容，保留运行时必需文件。
+  - "!node_modules/@earendil-works/*/examples/**"
+  - "!node_modules/@earendil-works/*/docs/**"
+  - "!node_modules/@earendil-works/**/*.map"
+  # 全局排除非运行时文件：sourcemap、文档、测试、示例目录。
+  # 这些文件不参与运行，排除后可显著缩小 app.asar 体积并加快打包/安装。
+  - "!node_modules/**/*.map"
+  - "!node_modules/**/docs/**"
+  - "!node_modules/**/docs/*"
+  - "!node_modules/**/test/**"
+  - "!node_modules/**/tests/**"
+  - "!node_modules/**/__tests__/**"
+  - "!node_modules/**/benchmark/**"
+  - "!node_modules/**/benchmarks/**"
+  - "!node_modules/**/examples/**"
+
+# 通用额外资源
+extraResources:
+  # 主许可证与第三方声明随桌面包分发，离线安装后仍可查看。
+  - from: ../../LICENSE
+    to: LICENSE
+  - from: ../../NOTICE
+    to: NOTICE
+  - from: ../../THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: ../../third-party-licenses
+    to: third-party-licenses
+    filter:
+      - "**/*"
+  # Domi CLI 自包含二进制（build:cli 用 bun build --compile 产出到 resources/bin/）。
+  # 运行时由主进程注入 DOMI_CLI 环境变量，暴露给 skill / Agent 调用。
+  - from: resources/bin
+    to: bin
+    filter:
+      - "**/*"
+  # 默认 Skills 模板（首次启动时同步到 ~/.domi/default-skills/）
+  - from: default-skills
+    to: default-skills
+    filter:
+      - "**/*"
+  # 教程文件（教程查看器 + 欢迎对话使用）
+  - from: ../../tutorial/tutorial-v2.md
+    to: tutorial.md
+  # macOS 托盘 Template 图标（菜单栏图标使用）
+  - from: resources/domi-logos
+    to: domi-logos
+    filter:
+      - "iconTemplate*.png"
+  # 默认 Dock 图标（macOS app.dock.setIcon 使用）
+  - from: resources/icon.png
+    to: icon.png
+
+# ============================================
+# macOS 配置
+# ============================================
+mac:
+  category: public.app-category.developer-tools
+  icon: resources/icon.icns
+  # Swift/AppKit 原生灵动岛宿主；须显式标记为需签名的额外二进制。
+  extraResources:
+    - from: resources/agent-island/macos-agent-island-helper
+      to: agent-island/macos-agent-island-helper
+  binaries:
+    - resources/agent-island/macos-agent-island-helper
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: "Domi 需要访问麦克风，用于将你的语音实时转写为文本。"
+  fileAssociations:
+    - ext: domi-backup
+      name: Domi Personal Backup
+      role: Editor
+    - ext: domi-share
+      name: Domi Share Package
+      role: Editor
+  # 架构由 CLI 参数控制（CI 矩阵分别传 --arm64 / --x64），
+  # 每个 runner 只构建其宿主架构对应的产物。
+  target:
+    - dmg
+    - zip
+
+# DMG 配置
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+# ============================================
+# Windows 配置
+# ============================================
+win:
+  icon: resources/icon.ico
+  fileAssociations:
+    - ext: domi-backup
+      name: Domi Personal Backup
+      icon: resources/icon.ico
+    - ext: domi-share
+      name: Domi Share Package
+      icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+# NSIS 安装程序配置
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true

@@ -1,0 +1,8 @@
+Domi
+
+Domi is a substantially modified Personal Coding Workbench that evolved from Proma:
+https://github.com/proma-ai/Proma
+
+Proma and the portions of its source retained by Domi are licensed under the GNU Affero General Public License v3.0. Copyright in upstream contributions remains with Erlich Liu and the respective Proma contributors. Copyright in later Domi contributions remains with their respective contributors.
+
+Domi is an independent project and is not an official Proma distribution. The complete license terms are in LICENSE. Additional bundled and modified third-party material is documented in THIRD_PARTY_NOTICES.md and third-party-licenses/.

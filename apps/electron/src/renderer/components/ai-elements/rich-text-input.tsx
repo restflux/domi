@@ -1,0 +1,1240 @@
+/**
+ * AI Elements - TipTap 富文本输入组件
+ *
+ * 独立受控组件，不依赖 PromptInput Provider。
+ *
+ * 功能：
+ * - StarterKit + Placeholder + Underline + Link + CodeBlockLowlight
+ * - 可选 Mention 扩展（@ 引用文件、/ 触发菜单：Skill、MCP、会话、Todo 和日程）
+ * - htmlToMarkdown 转换
+ * - IME composition 处理
+ * - Enter 提交 / Shift+Enter 换行
+ * - 代码块内 Enter 换行例外
+ * - 自动扩高
+ */
+
+import { useState, useEffect, useRef, useMemo, useCallback, useImperativeHandle, forwardRef } from 'react'
+import { useAtomValue } from 'jotai'
+import { useEditor, EditorContent } from '@tiptap/react'
+import { TextSelection } from '@tiptap/pm/state'
+import type { Transaction } from '@tiptap/pm/state'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
+import Underline from '@tiptap/extension-underline'
+import Link from '@tiptap/extension-link'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import Mention from '@tiptap/extension-mention'
+import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+import { lowlight } from '@/lib/lowlight'
+import { htmlToMarkdown } from '@/lib/markdown-rich-text'
+import { useOpenPreview } from '@/components/diff/preview-opener'
+import { isAbsoluteFilePath, isImageFilePath } from './file-path-chip'
+import { resolveMentionSuggestionChar } from './mention-utils'
+import { richTextRenderingEnabledAtom } from '@/atoms/ui-preferences'
+import { createFileMentionSuggestion } from '@/components/file-browser/file-mention-suggestion'
+import { getFilePanelDragData, type FilePanelDragItem } from '@/lib/file-panel-drag'
+import {
+  createMcpMentionSuggestion,
+  createPlanningMentionSuggestion,
+  createSessionMentionSuggestion,
+  createSlashMenuSuggestion,
+} from '@/components/agent/mention-suggestions'
+import { shouldConvertClipboardTextToAttachment } from '@/lib/clipboard-text-attachment'
+import {
+  VOICE_DICTATION_CLEAR_PREVIEW_EVENT,
+  VOICE_DICTATION_INSERT_EVENT,
+  VOICE_DICTATION_PREVIEW_EVENT,
+  getLastFocusedVoiceInputId,
+  setLastFocusedVoiceInputId,
+} from '@/lib/voice-input-focus'
+
+// ===== 行数计算 =====
+
+const SESSION_QUICK_SWITCH_KEYDOWN_EVENT = 'proma:session-quick-switch-keydown'
+const SESSION_QUICK_SWITCH_KEYUP_EVENT = 'proma:session-quick-switch-keyup'
+
+function isMacPlatform(): boolean {
+  return typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || '')
+}
+
+function isPrimaryModifierEvent(event: KeyboardEvent, isMac: boolean): boolean {
+  if (isMac) {
+    return event.key === 'Meta' || event.key === 'OS' || event.code === 'MetaLeft' || event.code === 'MetaRight'
+  }
+  return event.key === 'Control' || event.code === 'ControlLeft' || event.code === 'ControlRight'
+}
+
+function shouldForwardSessionQuickSwitchEvent(event: KeyboardEvent, isMac: boolean): boolean {
+  if (isPrimaryModifierEvent(event, isMac)) return true
+  if (!/^[1-9]$/.test(event.key)) return false
+  if (isMac) {
+    return event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+  }
+  return event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey
+}
+
+/** 计算编辑器内容的行数 */
+function countEditorLines(editor: ReturnType<typeof useEditor>): number {
+  if (!editor) return 0
+
+  const doc = editor.state.doc
+  let lineCount = 0
+
+  doc.descendants((node) => {
+    if (node.type.name === 'paragraph') {
+      const text = node.textContent
+      if (!text) {
+        lineCount += 1
+      } else {
+        // 粗略估算：假设每行约50个字符
+        lineCount += Math.max(1, Math.ceil(text.length / 50))
+      }
+    } else if (node.type.name === 'codeBlock') {
+      const text = node.textContent
+      lineCount += (text.match(/\n/g) || []).length + 1
+    } else if (node.type.name === 'bulletList' || node.type.name === 'orderedList') {
+      node.descendants((child) => {
+        if (child.type.name === 'listItem') {
+          lineCount += 1
+        }
+      })
+    }
+  })
+
+  return lineCount
+}
+
+// ===== 组件接口 =====
+
+interface RichTextInputProps {
+  /** 当前值（Markdown） */
+  value: string
+  /** 值变更回调 */
+  onChange: (markdown: string) => void
+  /** 提交回调（Enter 键） */
+  onSubmit: () => void
+  /** Alt/Option+Enter 提交回调；Agent 将其映射为普通提交键的相反队列类型。 */
+  onAltSubmit?: () => void
+  /** Cmd/Ctrl+Shift+Enter：把当前文本排为随下一条用户消息发送的附言。 */
+  onAsideSubmit?: () => void
+  /** 粘贴文件回调（拦截粘贴的文件） */
+  onPasteFiles?: (files: File[]) => void
+  /** 粘贴超长文本回调（由调用方决定是否转换为附件） */
+  onPasteLongText?: (text: string) => void
+  /** 触发超长文本粘贴回调的字符数阈值 */
+  longTextPasteThreshold?: number
+  /** 占位文字 */
+  placeholder?: string
+  /** 是否显示建议样式（斜体占位符） */
+  suggestionActive?: boolean
+  /** 是否禁用 */
+  disabled?: boolean
+  /** 自动聚焦触发器（当此值变化时自动聚焦，通常传入对话 ID） */
+  autoFocusTrigger?: string | null
+  /** 是否支持手动折叠（内容较长时显示折叠按钮） */
+  collapsible?: boolean
+  /** 是否启用文件、Skill、MCP、会话和规划引用 chip。 */
+  enableMentions?: boolean
+  /** 工作区根路径（启用 @ 文件引用功能时需要） */
+  workspacePath?: string | null
+  /** 工作区 slug（启用 / Skill 和 # MCP 功能时需要） */
+  workspaceSlug?: string | null
+  /** 当前 Agent 会话 ID（用于 & 会话引用中排除自身） */
+  sessionId?: string | null
+  /** 当前 Agent runtime；外部全局能力仅在 Pi 下进入建议菜单。 */
+  /** Active Pi 的 @ 文件搜索只使用 Session Target 相对路径。 */
+  usesSessionTarget?: boolean
+  /** 会话是否已绑定 Session Target；未绑定且无预览根时 @ 空结果展示引导提示。 */
+  sessionTargetBound?: boolean
+  /** 未绑定目标时的 Local 项目预览根，@ 引用回退搜索使用。 */
+  sessionTargetPreviewRoot?: string | null
+  /** `/` 菜单命令选中回调（execute / picker），由 AgentView 路由到具体行为。 */
+  onSlashCommand?: (commandId: string, args: string[]) => void
+  /** 附加目录路径列表（工作区级，@ 引用时标记为工作区文件） */
+  attachedDirs?: string[]
+  /** 会话级附加目录路径列表（@ 引用时标记为会话文件） */
+  sessionAttachedDirs?: string[]
+  /** HTML 草稿值（切换会话恢复时使用，保留 mention 等富文本结构） */
+  htmlValue?: string
+  /** HTML 值变更回调（用于保存富文本草稿） */
+  onHtmlChange?: (html: string) => void
+  /** 是否使用 Cmd/Ctrl+Enter 发送（而非 Enter） */
+  sendWithCmdEnter?: boolean
+  className?: string
+}
+
+/** RichTextInput 对外暴露的命令接口 */
+export interface RichTextInputHandle {
+  /** 聚焦编辑器（Session Tree 回填后使用）。 */
+  focus: () => void
+  /** 在光标处插入文件引用（右侧文件面板拖入时调用） */
+  insertFileMentions: (items: FilePanelDragItem[]) => void
+  /**
+   * 在光标处插入 mention 触发符（@ / / / # / &），并保持编辑器聚焦。
+   * 供输入区「+」聚合菜单使用：插入后对应的 suggestion 弹窗会自然弹出。
+   * 调用方须在 Radix 菜单关闭/焦点还原完成后再调用，否则弹窗会因失焦闪退。
+   */
+  insertMentionTrigger: (char: string) => void
+}
+
+/**
+ * 富文本输入组件
+ * - 基于 TipTap 的 WYSIWYG 编辑器
+ * - 支持 Markdown 快捷输入
+ * - 无工具栏，纯净输入体验
+ */
+export const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(function RichTextInput({
+  value,
+  onChange,
+  onSubmit,
+  onAltSubmit,
+  onAsideSubmit,
+  onPasteFiles,
+  onPasteLongText,
+  longTextPasteThreshold,
+  placeholder = '有什么可以帮助到你的呢？',
+  suggestionActive = false,
+  className,
+  disabled = false,
+  autoFocusTrigger,
+  collapsible = false,
+  enableMentions,
+  workspacePath,
+  workspaceSlug,
+  sessionId,
+  usesSessionTarget = false,
+  sessionTargetBound = true,
+  sessionTargetPreviewRoot = null,
+  onSlashCommand,
+  attachedDirs = [],
+  sessionAttachedDirs = [],
+  htmlValue,
+  onHtmlChange,
+  sendWithCmdEnter = false,
+}: RichTextInputProps, ref: React.Ref<RichTextInputHandle>): React.ReactElement {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const inputIdRef = useRef(`rich-text-input-${Math.random().toString(36).slice(2)}`)
+  const voicePreviewRef = useRef<{ sessionId: string; from: number; to: number } | null>(null)
+  // 手动折叠状态：用户主动折叠输入框
+  const [isManuallyCollapsed, setIsManuallyCollapsed] = useState(false)
+  // 跟踪 isExpanded 最新值（对比后再 setState，避免每键无谓 setState 触发重渲染）
+  const isExpandedRef = useRef(false)
+  // 行数检查的 rAF 调度句柄（用 rAF 节流，一帧最多检查一次）
+  const lineCheckHandleRef = useRef<number | null>(null)
+  // 跟踪编辑器自己设置的值，用于区分外部设置和内部更新
+  const lastEditorValueRef = useRef<string>('')
+  // 跟踪 IME 输入状态（中文输入法等）
+  const isComposingRef = useRef(false)
+  // 保持 onSubmit 引用最新
+  const onSubmitRef = useRef(onSubmit)
+  onSubmitRef.current = onSubmit
+  const onAltSubmitRef = useRef(onAltSubmit)
+  onAltSubmitRef.current = onAltSubmit
+  const onAsideSubmitRef = useRef(onAsideSubmit)
+  onAsideSubmitRef.current = onAsideSubmit
+  // 保持 onPasteFiles 引用最新
+  const onPasteFilesRef = useRef(onPasteFiles)
+  onPasteFilesRef.current = onPasteFiles
+  // 保持超长文本粘贴配置最新
+  const onPasteLongTextRef = useRef(onPasteLongText)
+  onPasteLongTextRef.current = onPasteLongText
+  const longTextPasteThresholdRef = useRef(longTextPasteThreshold)
+  longTextPasteThresholdRef.current = longTextPasteThreshold
+  // 保持 onHtmlChange 引用最新
+  const onHtmlChangeRef = useRef(onHtmlChange)
+  onHtmlChangeRef.current = onHtmlChange
+  // 发送模式引用
+  const sendWithCmdEnterRef = useRef(sendWithCmdEnter)
+  sendWithCmdEnterRef.current = sendWithCmdEnter
+  // 工作区路径引用（给 @ 文件引用使用）
+  const workspacePathRef = useRef<string | null>(workspacePath ?? null)
+  workspacePathRef.current = workspacePath ?? null
+  // 当前会话 ID 引用（给 & 会话和 ~ 规划引用使用）
+  const currentSessionIdRef = useRef<string | null>(sessionId ?? null)
+  currentSessionIdRef.current = sessionId ?? null
+  const usesSessionTargetRef = useRef(usesSessionTarget)
+  usesSessionTargetRef.current = usesSessionTarget
+  const sessionTargetBoundRef = useRef(sessionTargetBound)
+  sessionTargetBoundRef.current = sessionTargetBound
+  const sessionTargetPreviewRootRef = useRef<string | null>(sessionTargetPreviewRoot ?? null)
+  sessionTargetPreviewRootRef.current = sessionTargetPreviewRoot ?? null
+  // 工作区级附加目录路径引用（给 @ 文件引用使用，标记为 workspace）
+  const attachedDirsRef = useRef<string[]>(attachedDirs)
+  attachedDirsRef.current = attachedDirs
+  // 会话级附加目录路径引用（给 @ 文件引用使用，标记为 session）
+  const sessionAttachedDirsRef = useRef<string[]>(sessionAttachedDirs)
+  sessionAttachedDirsRef.current = sessionAttachedDirs
+  // 工作区 slug 引用（给 / Skill 和 # MCP suggestion 使用）
+  const workspaceSlugRef = useRef<string | null>(workspaceSlug ?? null)
+  workspaceSlugRef.current = workspaceSlug ?? null
+  // Mention 活跃状态供各 suggestion 的异步生命周期共享。
+  const mentionActiveRef = useRef(false)
+  const mentionItemCountRef = useRef(0)
+
+  // 是否启用 Mention 功能：Agent 首帧可能尚未拿到路径/slug/id，但扩展必须先注册。
+  const hasMentionSupport = enableMentions ?? (workspacePath !== undefined || workspaceSlug !== undefined)
+
+  // 输入框 Markdown 渲染开关：关闭后为纯文本模式（禁用格式化扩展 + 粘贴跳过 HTML 解析），Mention 仍保留
+  const richTextEnabled = useAtomValue(richTextRenderingEnabledAtom)
+  const richTextEnabledRef = useRef(richTextEnabled)
+  richTextEnabledRef.current = richTextEnabled
+  const isMac = useMemo(() => isMacPlatform(), [])
+  const openPreview = useOpenPreview()
+  const mentionPreviewBasePaths = useMemo(
+    () => Array.from(new Set([workspacePath, ...attachedDirs, ...sessionAttachedDirs].filter(Boolean))) as string[],
+    [workspacePath, attachedDirs, sessionAttachedDirs],
+  )
+  // useEditor 不会因异步加载的路径变化自动重建，点击处理器必须读取最新 refs。
+  const mentionPreviewBasePathsRef = useRef<string[]>(mentionPreviewBasePaths)
+  mentionPreviewBasePathsRef.current = mentionPreviewBasePaths
+
+  const handleImageMentionClick = useCallback((event: MouseEvent): boolean => {
+    const target = event.target
+    const activeSessionId = currentSessionIdRef.current
+    if (!(target instanceof Element) || !activeSessionId) return false
+
+    const mention = target.closest<HTMLElement>('[data-type="mention"][data-mention-previewable="true"]')
+    const filePath = mention?.dataset.id
+    if (!filePath) return false
+
+    event.preventDefault()
+    const basePaths = mentionPreviewBasePathsRef.current
+    openPreview(activeSessionId, {
+      filePath,
+      previewOnly: true,
+      readOnly: true,
+      sessionTarget: usesSessionTargetRef.current && !isAbsoluteFilePath(filePath),
+      basePaths: basePaths.length > 0 ? basePaths : undefined,
+    })
+    return true
+  }, [openPreview])
+
+  const forwardSessionQuickSwitchKeyEvent = useCallback((event: React.KeyboardEvent<HTMLDivElement>, type: 'keydown' | 'keyup'): void => {
+    const nativeEvent = event.nativeEvent
+    if (!shouldForwardSessionQuickSwitchEvent(nativeEvent, isMac)) return
+    window.dispatchEvent(new CustomEvent(
+      type === 'keydown' ? SESSION_QUICK_SWITCH_KEYDOWN_EVENT : SESSION_QUICK_SWITCH_KEYUP_EVENT,
+      { detail: { event: nativeEvent } },
+    ))
+  }, [isMac])
+
+  const onSlashCommandRef = useRef(onSlashCommand)
+  onSlashCommandRef.current = onSlashCommand
+  const fileMentionSuggestion = useMemo(
+    () => createFileMentionSuggestion(
+      workspacePathRef,
+      mentionActiveRef,
+      attachedDirsRef,
+      mentionItemCountRef,
+      sessionAttachedDirsRef,
+      currentSessionIdRef,
+      usesSessionTargetRef,
+      sessionTargetBoundRef,
+      sessionTargetPreviewRootRef,
+    ),
+    [],
+  )
+  const slashMenuSuggestion = useMemo(
+    () => createSlashMenuSuggestion(
+      workspaceSlugRef,
+      currentSessionIdRef,
+      mentionActiveRef,
+      mentionItemCountRef,
+      { onExecuteCommand: (id, args) => onSlashCommandRef.current?.(id, args) },
+    ),
+    [],
+  )
+  const mcpMentionSuggestion = useMemo(
+    () => createMcpMentionSuggestion(workspaceSlugRef, mentionActiveRef, mentionItemCountRef),
+    [],
+  )
+  const sessionMentionSuggestion = useMemo(
+    () => createSessionMentionSuggestion(currentSessionIdRef, mentionActiveRef, mentionItemCountRef),
+    [],
+  )
+  const planningMentionSuggestions = useMemo(
+    () => [
+      createPlanningMentionSuggestion('~', currentSessionIdRef, mentionActiveRef, mentionItemCountRef),
+      createPlanningMentionSuggestion('～', currentSessionIdRef, mentionActiveRef, mentionItemCountRef),
+    ],
+    [],
+  )
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        codeBlock: false, // 使用 CodeBlockLowlight 替代
+        // TipTap v3 StarterKit 默认包含 Link 和 Underline
+        // 禁用内置版本，使用下面单独配置的版本
+        link: false,
+        underline: false,
+        // 禁用拖拽插入位置指示器（拖入文件/文件夹时出现的横线）
+        dropcursor: false,
+        // 纯文本模式：禁用所有格式化扩展，仅保留 Document/Paragraph/Text/HardBreak/History
+        ...(richTextEnabled ? {} : {
+          blockquote: false,
+          bold: false,
+          bulletList: false,
+          code: false,
+          heading: false,
+          horizontalRule: false,
+          italic: false,
+          orderedList: false,
+          strike: false,
+        }),
+      }),
+      // 富文本模式下注册格式化扩展；纯文本模式下跳过
+      ...(richTextEnabled ? [
+        Underline,
+        Link.configure({
+          openOnClick: false,
+          autolink: false,
+          linkOnPaste: false,
+          HTMLAttributes: {
+            class: 'text-primary underline',
+          },
+        }),
+        CodeBlockLowlight.configure({
+          lowlight,
+          HTMLAttributes: {
+            class: 'rounded-md p-3 font-mono text-sm',
+          },
+        }),
+      ] : []),
+      Placeholder.configure({
+        placeholder,
+        emptyEditorClass: 'is-editor-empty',
+      }),
+      // Mention 扩展：启用时注册，路径/slug 后续通过 ref 异步更新。
+      // 旧统一命令菜单生成的节点仍按自身属性渲染，确保历史草稿兼容。
+      // 纯文本模式下仍然保留，确保引用功能可用
+      ...(hasMentionSupport ? [
+        Mention.extend({
+          addAttributes() {
+            return {
+              ...this.parent?.(),
+              mentionSuggestionChar: {
+                default: '@',
+                parseHTML: (el: HTMLElement) => el.getAttribute('data-mention-suggestion-char') || '@',
+                renderHTML: (attrs: Record<string, string>) => ({
+                  'data-mention-suggestion-char': attrs.mentionSuggestionChar,
+                }),
+              },
+              referenceType: {
+                default: null,
+                parseHTML: (el: HTMLElement) => {
+                  const value = el.getAttribute('data-mention-reference-type')
+                  return value === 'todo' || value === 'calendar_event' ? value : null
+                },
+                renderHTML: (attrs: Record<string, unknown>) => (
+                  attrs.referenceType === 'todo' || attrs.referenceType === 'calendar_event'
+                    ? { 'data-mention-reference-type': attrs.referenceType }
+                    : {}
+                ),
+              },
+              // 文件夹引用（右侧文件面板拖入的目录）：渲染为文件夹样式 chip
+              isDirectory: {
+                default: false,
+                parseHTML: (el: HTMLElement) => el.getAttribute('data-mention-is-directory') === 'true',
+                renderHTML: (attrs: Record<string, unknown>) => attrs.isDirectory
+                  ? { 'data-mention-is-directory': 'true' }
+                  : {},
+              },
+              // 兼容此前统一命令菜单生成的历史 draft；新节点不再写入此属性。
+              commandMenuMention: {
+                default: false,
+                parseHTML: (el: HTMLElement) => el.getAttribute('data-command-menu-mention') === 'true',
+                renderHTML: (attrs: Record<string, unknown>) => attrs.commandMenuMention
+                  ? { 'data-command-menu-mention': 'true' }
+                  : {},
+              },
+            }
+          },
+        }).configure({
+          HTMLAttributes: {},
+          renderText({ node, suggestion }) {
+            const char = resolveMentionSuggestionChar(node.attrs.mentionSuggestionChar, suggestion?.char)
+            if (node.attrs.commandMenuMention) return `/${node.attrs.id}`
+            const label = node.attrs.label ?? node.attrs.id
+            return `${char}${label}`
+          },
+          renderHTML({ node, suggestion }) {
+            // 旧草稿中的节点也会带有原始字符。不能在未匹配到旧 suggestion 时
+            // 回退到唯一注册的 `/` suggestion，否则 @/#/& 会被重写为 /skill。
+            const char = resolveMentionSuggestionChar(node.attrs.mentionSuggestionChar, suggestion?.char)
+            const label = node.attrs.label ?? node.attrs.id
+            const referenceType = node.attrs.referenceType
+            const isDirectory = node.attrs.isDirectory === true
+            const isCommand = node.attrs.commandMenuMention === true
+            let chipClass = isDirectory ? 'directory-mention-chip' : 'mention-chip'
+            if (isCommand) chipClass = 'command-mention-chip'
+            else if (referenceType === 'todo') chipClass = 'todo-mention-chip'
+            else if (referenceType === 'calendar_event') chipClass = 'calendar-event-mention-chip'
+            else if (char === '/') chipClass = 'skill-mention-chip'
+            else if (char === '#') chipClass = 'mcp-mention-chip'
+            else if (char === '&') chipClass = 'session-mention-chip'
+            return [
+              'span',
+              {
+                'data-type': 'mention',
+                'data-id': node.attrs.id,
+                'data-label': node.attrs.label,
+                'data-mention-suggestion-char': char,
+                ...(referenceType === 'todo' || referenceType === 'calendar_event'
+                  ? { 'data-mention-reference-type': referenceType }
+                  : {}),
+                ...(node.attrs.commandMenuMention ? { 'data-command-menu-mention': 'true' } : {}),
+                ...(isDirectory ? { 'data-mention-is-directory': 'true' } : {}),
+                ...(char === '@' && !isDirectory && isImageFilePath(String(node.attrs.id))
+                  ? { 'data-mention-previewable': 'true' }
+                  : {}),
+                class: chipClass,
+              },
+              isCommand ? `/${node.attrs.id}` : `${char === '@' ? '@' : ''}${label}`,
+            ]
+          },
+          suggestions: [
+            fileMentionSuggestion,
+            slashMenuSuggestion,
+            mcpMentionSuggestion,
+            sessionMentionSuggestion,
+            ...planningMentionSuggestions,
+          ],
+        }),
+      ] : []),
+    ],
+    content: value || '',
+    editable: !disabled,
+    editorProps: {
+      // 右侧文件面板拖拽载荷（自定义 MIME）交给外层容器 onDrop 处理，
+      // 阻止 ProseMirror 把 text/plain 路径文本当作普通文本插入。
+      handleDrop: (_view, event) => {
+        if (event.dataTransfer && getFilePanelDragData(event.dataTransfer)) {
+          event.preventDefault()
+          return true
+        }
+        return false
+      },
+      // TipTap mention 节点由 ProseMirror 输出 DOM，仅拦截标记为可预览的图片引用。
+      handleClick: (_view, _pos, event) => handleImageMentionClick(event),
+      attributes: {
+        class: cn(
+          'prose dark:prose-invert max-w-none focus:outline-none',
+          'min-h-[101px] w-full text-[15px] leading-[1.6]',
+          '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+          '[&_pre]:rounded-md [&_pre]:p-3',
+          '[&_code]:bg-muted [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-sm [&_code]:text-foreground',
+          '[&_pre_code]:bg-transparent [&_pre_code]:p-0'
+        ),
+      },
+      // 监听 IME 输入状态
+      handleDOMEvents: {
+        focus: () => {
+          setLastFocusedVoiceInputId(inputIdRef.current)
+          return false
+        },
+        compositionstart: () => {
+          isComposingRef.current = true
+          return false
+        },
+        compositionend: () => {
+          isComposingRef.current = false
+          return false
+        },
+        copy: (_view, event) => {
+          // 复制时只写纯文本，避免粘贴到外部应用时出现多余空行
+          const selection = window.getSelection()
+          if (!selection || selection.isCollapsed || !event.clipboardData) return false
+          const range = selection.getRangeAt(0)
+          const fragment = range.cloneContents()
+          const tempDiv = document.createElement('div')
+          tempDiv.appendChild(fragment)
+          const text = htmlToMarkdown(tempDiv.innerHTML, { skipMarkdownEscape: !richTextEnabledRef.current }) || selection.toString()
+          event.preventDefault()
+          event.clipboardData.setData('text/plain', text)
+          event.clipboardData.setData('text/html', '')
+          return true
+        },
+      },
+      handlePaste: (view, event) => {
+        // 拦截粘贴的文件（图片等）
+        const clipboardItems = event.clipboardData?.files
+        if (clipboardItems && clipboardItems.length > 0 && onPasteFilesRef.current) {
+          event.preventDefault()
+          onPasteFilesRef.current(Array.from(clipboardItems))
+          return true
+        }
+
+        const threshold = longTextPasteThresholdRef.current
+        const plainText = event.clipboardData?.getData('text/plain') ?? ''
+
+        // 纯文本模式：直接插入原始文本，不经过 HTML 解析
+        if (!richTextEnabledRef.current) {
+          // 超长文本转附件逻辑仍然生效（按纯文本长度判断）
+          if (
+            threshold &&
+            threshold > 0 &&
+            plainText.length >= threshold &&
+            onPasteLongTextRef.current
+          ) {
+            event.preventDefault()
+            onPasteLongTextRef.current(plainText)
+            return true
+          }
+          event.preventDefault()
+          view.dispatch(view.state.tr.insertText(plainText).setMeta('uiEvent', 'paste'))
+          return true
+        }
+
+        const html = event.clipboardData?.getData('text/html') ?? ''
+        // 预处理 HTML：将 <div> 替换为 <p>，避免 htmlToMarkdown 对 <div> 不分段导致换行丢失
+        const text = html
+          ? (htmlToMarkdown(
+              html
+                .replace(/<div\b[^>]*>/gi, '<p>')
+                .replace(/<\/div>/gi, '</p>')
+            ).trim() || plainText)
+          : plainText
+        if (
+          shouldConvertClipboardTextToAttachment({
+            enabled: Boolean(threshold && onPasteLongTextRef.current),
+            plainText,
+            normalizedText: text,
+            threshold: threshold ?? 0,
+          }) &&
+          onPasteLongTextRef.current
+        ) {
+          event.preventDefault()
+          onPasteLongTextRef.current(text)
+          return true
+        }
+        return false
+      },
+      handleKeyDown: (view, event) => {
+        // macOS 上 Cmd+B/S 被全局快捷键占用，用 Ctrl+B/S 作为格式化替代键
+        // 纯文本模式下跳过，避免无效操作且不吃事件
+        if (richTextEnabledRef.current) {
+          const isMacOS = navigator.platform.startsWith('Mac')
+          if (isMacOS && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+            const key = event.key.toLowerCase()
+            if (key === 'b') {
+              event.preventDefault()
+              editor?.chain().focus().toggleBold().run()
+              return true
+            }
+            if (key === 's') {
+              event.preventDefault()
+              editor?.chain().focus().toggleStrike().run()
+              return true
+            }
+          }
+        }
+
+        // 发送/换行逻辑：根据 sendWithCmdEnter 模式决定行为
+        if (event.key === 'Enter') {
+          const cmdEnterMode = sendWithCmdEnterRef.current
+          const hasCmd = event.metaKey || event.ctrlKey
+          const hasShift = event.shiftKey
+
+          // 如果在代码块中，允许正常换行
+          const { state } = view
+          const { $from } = state.selection
+          const parent = $from.parent
+          if (parent.type.name === 'codeBlock') {
+            return false // 让 TipTap 处理
+          }
+
+          // 检查是否正在输入中文（IME 组合输入）
+          if (isComposingRef.current || event.isComposing) {
+            return false
+          }
+
+          // Suggestion（@ 文件 / / Skill / # MCP / & 会话）弹窗激活时，让 TipTap Suggestion
+          // 插件处理 Enter（选中高亮项 / 关闭）。这里用实时 decoration 判定，而非 onStart 里
+          // 异步设置的 mentionActiveRef/mentionItemCountRef——后者要等 items() 异步加载
+          // （IPC 拉取工作区能力）resolve 后才置位，存在竞态窗口：插件已 active、补全列表
+          // 正在加载时按 Enter，旧逻辑会误判为无 mention 激活而把消息直接发送出去。
+          // data-decoration-id 由 @tiptap/suggestion 在 active 时同步渲染，与插件状态严格一致。
+          if (view.dom.querySelector('[data-decoration-id]')) {
+            return false
+          }
+
+          // Cmd/Ctrl+Shift+Enter 排为附言，必须先于 Cmd+Enter 发送判定。
+          if (hasCmd && hasShift && !event.altKey && onAsideSubmitRef.current) {
+            event.preventDefault()
+            onAsideSubmitRef.current()
+            return true
+          }
+
+          // Alt+Enter（macOS 为 Option+Enter）必须先于普通 Enter 判定。
+          // AgentView 将其映射为当前设置的相反队列类型；未提供回调的其他输入场景保持原行为。
+          if (event.altKey && onAltSubmitRef.current) {
+            event.preventDefault()
+            onAltSubmitRef.current()
+            return true
+          }
+
+          // 判断是发送还是换行
+          const isSend = cmdEnterMode ? hasCmd : (!hasShift && !hasCmd)
+
+          if (isSend) {
+            event.preventDefault()
+            onSubmitRef.current()
+            return true
+          }
+
+          // 换行：普通段落中 Shift+Enter 插入硬换行；列表项内使用拆分列表项生成下一条。
+          event.preventDefault()
+          // 检查是否在列表项内（遍历祖先节点）
+          let isInList = false
+          let listItemNode = null
+          for (let d = $from.depth; d > 0; d--) {
+            if ($from.node(d).type.name === 'listItem') {
+              isInList = true
+              listItemNode = $from.node(d)
+              break
+            }
+          }
+          if (isInList && editor) {
+            // 空列表项再次按 Enter：退出列表，回到普通输入
+            if (listItemNode && listItemNode.textContent === '') {
+              editor.chain().focus().liftListItem('listItem').run()
+            } else {
+              // 发送模式下 Enter 会提交消息，因此 Shift+Enter 也应作为列表续项键。
+              editor.chain().focus().splitListItem('listItem').run()
+            }
+          } else if (editor) {
+            if (hasShift) {
+              // Shift+Enter：同段落内硬换行
+              editor.chain().focus().setHardBreak().run()
+            } else {
+              // 普通 Enter：拆分为新段落
+              editor.chain().focus().splitBlock().run()
+            }
+          }
+          return true
+        }
+
+        // Backspace：空列表项时退出列表
+        if (event.key === 'Backspace') {
+          const { state } = view
+          const { $from } = state.selection
+          let isInList = false
+          let listItemNode = null
+          for (let d = $from.depth; d > 0; d--) {
+            if ($from.node(d).type.name === 'listItem') {
+              isInList = true
+              listItemNode = $from.node(d)
+              break
+            }
+          }
+          if (isInList && listItemNode && listItemNode.textContent === '' && editor) {
+            event.preventDefault()
+            editor.chain().focus().liftListItem('listItem').run()
+            return true
+          }
+        }
+
+        return false
+      },
+    },
+    onUpdate: ({ editor: ed }) => {
+      const html = ed.getHTML()
+      if (html === '<p></p>') {
+        lastEditorValueRef.current = ''
+        onChange('')
+        onHtmlChangeRef.current?.('')
+        if (isExpandedRef.current) {
+          isExpandedRef.current = false
+          setIsExpanded(false)
+        }
+        setIsManuallyCollapsed(false)
+      } else {
+        // 纯文本模式下跳过 markdown 特殊字符转义，保持用户所见即所得
+        // 纯文本模式下跳过 markdown 特殊字符转义，保持用户所见即所得
+        const markdown = htmlToMarkdown(html, { skipMarkdownEscape: !richTextEnabled })
+        lastEditorValueRef.current = markdown
+        onChange(markdown)
+        onHtmlChangeRef.current?.(html)
+
+        // 行数检查用 rAF 节流：每键 doc.descendants 全文遍历 + setState 重渲染会让
+        // 输入热路径变重；延后到下一帧合并连续按键，对 UX 无影响。
+        if (lineCheckHandleRef.current !== null) {
+          cancelAnimationFrame(lineCheckHandleRef.current)
+        }
+        lineCheckHandleRef.current = requestAnimationFrame(() => {
+          lineCheckHandleRef.current = null
+          const nextExpanded = countEditorLines(ed) > 5
+          if (nextExpanded !== isExpandedRef.current) {
+            isExpandedRef.current = nextExpanded
+            setIsExpanded(nextExpanded)
+          }
+        })
+      }
+    },
+  }, [richTextEnabled])
+
+  // 卸载时取消未触发的 rAF 行数检查，避免泄漏 / 在卸载组件上 setState
+  useEffect(() => {
+    return () => {
+      if (lineCheckHandleRef.current !== null) {
+        cancelAnimationFrame(lineCheckHandleRef.current)
+        lineCheckHandleRef.current = null
+      }
+    }
+  }, [])
+
+  // 追踪编辑器实例，重建时强制同步（避免 htmlValue 草稿丢失）
+  const editorInstanceRef = useRef(editor)
+  // 同步外部 value 变化（清空时）
+  useEffect(() => {
+    if (editor) {
+      const controllerValue = value
+      const isEditorRecreated = editor !== editorInstanceRef.current
+      editorInstanceRef.current = editor
+      // 如果值是编辑器自己设置的，跳过同步
+      // 但编辑器重建后必须强制同步（即使 value 未变，htmlValue 草稿可能不同）
+      if (!isEditorRecreated && controllerValue === lastEditorValueRef.current) {
+        return
+      }
+
+      if (controllerValue === '') {
+        editor.commands.clearContent()
+        lastEditorValueRef.current = ''
+        isExpandedRef.current = false
+        setIsExpanded(false)
+        setIsManuallyCollapsed(false)
+      } else if (htmlValue) {
+        // 优先使用 HTML 草稿恢复（保留 mention 等富文本节点）
+        editor.commands.setContent(htmlValue)
+        lastEditorValueRef.current = controllerValue
+      } else {
+        const html = controllerValue
+          .split(/\n\n+/)
+          .map(para => `<p>${para.replace(/\n/g, '<br>')}</p>`)
+          .join('')
+        editor.commands.setContent(html)
+        lastEditorValueRef.current = controllerValue
+      }
+    }
+  }, [editor, value])
+
+  // 同步 disabled 状态
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!disabled)
+    }
+  }, [editor, disabled])
+
+  // 动态更新 placeholder 文本
+  useEffect(() => {
+    if (!editor) return
+    const placeholderExt = editor.extensionManager.extensions.find(
+      (ext) => ext.name === 'placeholder'
+    )
+    if (placeholderExt) {
+      placeholderExt.options.placeholder = placeholder
+      // 触发 TipTap 重新渲染 placeholder
+      editor.view.dispatch(editor.state.tr)
+    }
+  }, [editor, placeholder])
+
+  // 自动聚焦：组件挂载时 + autoFocusTrigger 变化时
+  useEffect(() => {
+    if (editor && !disabled) {
+      const timer = setTimeout(() => {
+        editor.commands.focus()
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [editor, disabled, autoFocusTrigger])
+
+  // 对外暴露命令接口：右侧文件面板拖入时，在光标处插入 @file 引用 mention。
+  // mention 节点沿用 TipTap Mention 扩展的 attrs（id=路径，label=文件名），
+  // 发送时由 htmlToMarkdown 序列化为 @file:{path}，与键盘 @ 引用行为完全一致。
+  useImperativeHandle(ref, () => ({
+    focus(): void {
+      editor?.chain().focus().run()
+    },
+    insertFileMentions(items: FilePanelDragItem[]): void {
+      if (!editor || items.length === 0) return
+      let chain = editor.chain().focus()
+      for (const item of items) {
+        chain = chain
+          .insertContent({
+            type: 'mention',
+            attrs: {
+              id: item.path,
+              label: item.name,
+              mentionSuggestionChar: '@',
+              isDirectory: item.isDirectory ?? false,
+            },
+          })
+          .insertContent(' ')
+      }
+      chain.run()
+    },
+    insertMentionTrigger(char: string): void {
+      if (!editor) return
+      editor.chain().focus().insertContent(char).run()
+    },
+  }), [editor])
+
+  // 将预览范围映射到每次用户编辑后的文档位置，避免流式更新覆盖邻近输入。
+  useEffect(() => {
+    if (!editor) return
+
+    const mapPreviewRange = ({ transaction }: { transaction: Transaction }): void => {
+      const current = voicePreviewRef.current
+      if (!current || !transaction.docChanged) return
+      const from = transaction.mapping.mapResult(current.from, 1)
+      const to = transaction.mapping.mapResult(current.to, -1)
+      if (from.deleted && to.deleted) {
+        voicePreviewRef.current = null
+        return
+      }
+      voicePreviewRef.current = {
+        sessionId: current.sessionId,
+        from: from.pos,
+        to: Math.max(from.pos, to.pos),
+      }
+    }
+
+    editor.on('transaction', mapPreviewRange)
+    return () => {
+      editor.off('transaction', mapPreviewRange)
+    }
+  }, [editor])
+
+  // 语音输入在录音期间同步 ASR 的完整结果，停止时再以最终文本替换这段组合文本。
+  useEffect(() => {
+    if (!editor || disabled) return
+
+    const updatePreview = (event: Event): void => {
+      const { sessionId, text } = (event as CustomEvent<{ sessionId?: string; text?: string }>).detail ?? {}
+      const previewText = text?.trim()
+      if (!sessionId || !previewText) return
+
+      const current = voicePreviewRef.current
+      if (current && current.sessionId !== sessionId) return
+      if (!current && getLastFocusedVoiceInputId() !== inputIdRef.current) return
+      const from = current?.from ?? editor.state.selection.from
+      const to = current?.to ?? editor.state.selection.to
+      editor.view.dispatch(editor.state.tr.insertText(previewText, from, to))
+      voicePreviewRef.current = { sessionId, from, to: from + previewText.length }
+      event.preventDefault()
+    }
+
+    const clearPreview = (event: Event): void => {
+      const { sessionId } = (event as CustomEvent<{ sessionId?: string }>).detail ?? {}
+      const current = voicePreviewRef.current
+      if (!current || current.sessionId !== sessionId) return
+      editor.view.dispatch(editor.state.tr.delete(current.from, current.to))
+      voicePreviewRef.current = null
+      event.preventDefault()
+    }
+
+    window.addEventListener(VOICE_DICTATION_PREVIEW_EVENT, updatePreview)
+    window.addEventListener(VOICE_DICTATION_CLEAR_PREVIEW_EVENT, clearPreview)
+    return () => {
+      window.removeEventListener(VOICE_DICTATION_PREVIEW_EVENT, updatePreview)
+      window.removeEventListener(VOICE_DICTATION_CLEAR_PREVIEW_EVENT, clearPreview)
+    }
+  }, [editor, disabled])
+
+  // 语音输入回填：优先插入到当前编辑器的光标位置。
+  useEffect(() => {
+    if (!editor || disabled) return
+
+    const handler = (event: Event): void => {
+      const customEvent = event as CustomEvent<{ sessionId?: string; text?: string }>
+      const text = customEvent.detail?.text?.trim()
+      if (!text) return
+
+      const preview = voicePreviewRef.current
+      if (preview && preview.sessionId === customEvent.detail?.sessionId) {
+        const end = preview.from + text.length
+        const transaction = editor.state.tr.insertText(text, preview.from, preview.to)
+        transaction.setSelection(TextSelection.create(transaction.doc, end))
+        editor.view.dispatch(transaction)
+        voicePreviewRef.current = null
+      } else {
+        if (getLastFocusedVoiceInputId() !== inputIdRef.current) return
+        editor.chain().focus().insertContent(text).run()
+      }
+      event.preventDefault()
+    }
+
+    window.addEventListener(VOICE_DICTATION_INSERT_EVENT, handler)
+    return () => window.removeEventListener(VOICE_DICTATION_INSERT_EVENT, handler)
+  }, [editor, disabled])
+
+  // 是否显示折叠按钮：启用 collapsible 且内容已自动扩展
+  const showCollapseToggle = collapsible && isExpanded
+
+  return (
+    <div
+      onKeyDownCapture={(event) => forwardSessionQuickSwitchKeyEvent(event, 'keydown')}
+      onKeyUpCapture={(event) => forwardSessionQuickSwitchKeyEvent(event, 'keyup')}
+      className={cn(
+        'rich-text-input relative w-full overflow-y-auto overscroll-contain scrollbar-thin transition-[max-height] duration-200 ease-in-out',
+        isManuallyCollapsed
+          ? 'max-h-[101px]'
+          : isExpanded ? 'max-h-[500px]' : 'max-h-[200px]',
+        disabled && 'opacity-50 cursor-not-allowed',
+        className
+      )}
+    >
+      <EditorContent editor={editor} className="w-full" />
+      {/* 折叠/展开切换按钮 — sticky 悬浮在滚动区域内 */}
+      {showCollapseToggle && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="sticky bottom-1 float-right mr-2 z-10 p-0.5 rounded hover:bg-muted/80 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              onClick={() => setIsManuallyCollapsed((prev) => !prev)}
+            >
+              {isManuallyCollapsed ? (
+                <ChevronsUpDown className="size-3.5" />
+              ) : (
+                <ChevronsDownUp className="size-3.5" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {isManuallyCollapsed ? '展开输入框' : '折叠输入框'}
+          </TooltipContent>
+        </Tooltip>
+      )}
+      <style>{`
+        .ProseMirror {
+          outline: none;
+          padding: 9px 15px 0px;
+          font-style: normal;
+        }
+        .ProseMirror p {
+          font-style: normal;
+          margin: 0;
+        }
+        .ProseMirror ul,
+        .ProseMirror ol {
+          margin: 0;
+          padding-left: 1.5em;
+        }
+        .ProseMirror li {
+          margin: 0;
+        }
+        .ProseMirror p.is-editor-empty:first-child::before {
+          content: attr(data-placeholder);
+          float: left;
+          color: hsl(var(--muted-foreground));
+          pointer-events: none;
+          height: 0;
+          max-width: 100%;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          opacity: 0.5;
+          font-style: ${suggestionActive ? 'italic' : 'normal'};
+        }
+        .ProseMirror::-webkit-scrollbar {
+          width: 3px;
+        }
+        .ProseMirror::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .ProseMirror::-webkit-scrollbar-thumb {
+          background-color: hsl(var(--muted-foreground) / 0.3);
+          border-radius: 999px;
+        }
+        .ProseMirror::-webkit-scrollbar-thumb:hover {
+          background-color: hsl(var(--muted-foreground) / 0.5);
+        }
+        .mention-chip {
+          background-color: hsl(var(--primary) / 0.1);
+          color: hsl(var(--primary));
+          border-radius: 4px;
+          padding: 1px 4px 1px 2px;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          vertical-align: baseline;
+        }
+        .mention-chip::before {
+          content: '';
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          background-color: currentColor;
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3C/svg%3E");
+          mask-size: contain;
+          mask-repeat: no-repeat;
+          flex-shrink: 0;
+        }
+        .mention-chip[data-mention-previewable="true"] {
+          cursor: pointer;
+        }
+        .mention-chip[data-mention-previewable="true"]:hover {
+          background-color: hsl(var(--primary) / 0.16);
+        }
+        .directory-mention-chip {
+          background-color: hsl(var(--primary) / 0.14);
+          color: hsl(var(--primary));
+          border-radius: 4px;
+          padding: 1px 4px 1px 2px;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          vertical-align: baseline;
+        }
+        .directory-mention-chip::before {
+          content: '';
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          background-color: currentColor;
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+          mask-size: contain;
+          mask-repeat: no-repeat;
+          flex-shrink: 0;
+        }
+        .command-mention-chip {
+          background-color: hsl(var(--primary) / 0.12);
+          color: hsl(var(--primary));
+          border: 1px solid hsl(var(--primary) / 0.28);
+          border-radius: 5px;
+          padding: 0 5px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 13px;
+          font-weight: 600;
+          line-height: 1.5;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          vertical-align: baseline;
+        }
+        .command-mention-chip.ProseMirror-selectednode {
+          background-color: hsl(var(--primary) / 0.2);
+          border-color: hsl(var(--primary) / 0.5);
+        }
+        .skill-mention-chip {
+          background-color: hsl(270 60% 60% / 0.15);
+          color: hsl(270 60% 50%);
+          border-radius: 4px;
+          padding: 1px 4px 1px 2px;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          vertical-align: baseline;
+        }
+        .skill-mention-chip::before {
+          content: '';
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          background-color: currentColor;
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z'/%3E%3C/svg%3E");
+          mask-size: contain;
+          mask-repeat: no-repeat;
+          flex-shrink: 0;
+        }
+        .mcp-mention-chip {
+          background-color: hsl(160 60% 45% / 0.15);
+          color: hsl(160 60% 35%);
+          border-radius: 4px;
+          padding: 1px 4px 1px 2px;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          vertical-align: baseline;
+        }
+        .mcp-mention-chip::before {
+          content: '';
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          background-color: currentColor;
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='20' height='8' x='2' y='2' rx='2' ry='2'/%3E%3Crect width='20' height='8' x='2' y='14' rx='2' ry='2'/%3E%3Cline x1='6' x2='6.01' y1='6' y2='6'/%3E%3Cline x1='6' x2='6.01' y1='18' y2='18'/%3E%3C/svg%3E");
+          mask-size: contain;
+          mask-repeat: no-repeat;
+          flex-shrink: 0;
+        }
+        .todo-mention-chip,
+        .calendar-event-mention-chip {
+          border-radius: 4px;
+          padding: 1px 4px 1px 2px;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          vertical-align: baseline;
+        }
+        .todo-mention-chip {
+          background-color: hsl(38 90% 50% / 0.16);
+          color: hsl(32 80% 38%);
+        }
+        .calendar-event-mention-chip {
+          background-color: hsl(190 75% 45% / 0.14);
+          color: hsl(190 72% 34%);
+        }
+        .todo-mention-chip::before,
+        .calendar-event-mention-chip::before {
+          content: '';
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          background-color: currentColor;
+          mask-size: contain;
+          mask-repeat: no-repeat;
+          flex-shrink: 0;
+        }
+        .todo-mention-chip::before {
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='6' height='6' x='3' y='5' rx='1'/%3E%3Cpath d='m3 17 2 2 4-4'/%3E%3Cpath d='M13 6h8'/%3E%3Cpath d='M13 12h8'/%3E%3Cpath d='M13 18h8'/%3E%3C/svg%3E");
+        }
+        .calendar-event-mention-chip::before {
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2v4'/%3E%3Cpath d='M16 2v4'/%3E%3Crect width='18' height='18' x='3' y='4' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3C/svg%3E");
+        }
+        .session-mention-chip {
+          background-color: hsl(200 80% 50% / 0.14);
+          color: hsl(200 80% 40%);
+          border-radius: 4px;
+          padding: 1px 4px 1px 2px;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          vertical-align: baseline;
+        }
+        .session-mention-chip::before {
+          content: '';
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          background-color: currentColor;
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3Cpath d='M8 9h8'/%3E%3Cpath d='M8 13h6'/%3E%3C/svg%3E");
+          mask-size: contain;
+          mask-repeat: no-repeat;
+          flex-shrink: 0;
+        }
+      `}</style>
+    </div>
+  )
+})

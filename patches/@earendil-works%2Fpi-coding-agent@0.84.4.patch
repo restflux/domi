@@ -1,0 +1,2200 @@
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -52,6 +52,7 @@
+ } | {
+     type: "compaction_start";
+     reason: "manual" | "threshold" | "overflow";
++    inline?: boolean;
+ } | {
+     type: "entry_appended";
+     entry: SessionEntry;
+@@ -68,16 +69,40 @@
+     aborted: boolean;
+     willRetry: boolean;
+     errorMessage?: string;
++    inline?: boolean;
+ } | {
++    /** 已安排 retry，并且正在 backoff；尚未重新发起模型请求。 */
+     type: "auto_retry_start";
+     attempt: number;
+     maxAttempts: number;
++    totalAttempt: number;
++    maxTotalAttempts: number;
+     delayMs: number;
++    totalDelayMs: number;
++    maxTotalDelayMs: number;
++    errorMessage: string;
++} | {
++    /** backoff 已结束，紧邻 agent.continue() 的实际 retry 请求。 */
++    type: "auto_retry_attempt_start";
++    attempt: number;
++    maxAttempts: number;
++    totalAttempt: number;
++    maxTotalAttempts: number;
++    delayMs: number;
++    totalDelayMs: number;
++    maxTotalDelayMs: number;
+     errorMessage: string;
+ } | {
+     type: "auto_retry_end";
+     success: boolean;
++    outcome: "succeeded" | "exhausted" | "cancelled";
+     attempt: number;
++    maxAttempts: number;
++    totalAttempt: number;
++    maxTotalAttempts: number;
++    delayMs: number;
++    totalDelayMs: number;
++    maxTotalDelayMs: number;
+     finalError?: string;
+ } | {
+     type: "summarization_retry_scheduled";
+@@ -95,11 +120,6 @@
+ } | {
+     type: "summarization_retry_finished";
+ } | {
+-    type: "auto_retry_end";
+-    success: boolean;
+-    attempt: number;
+-    finalError?: string;
+-} | {
+     type: "bash_execution_update";
+     id?: string;
+     delta: string;
+@@ -218,6 +238,11 @@
+     private _branchSummaryAbortController;
+     private _retryAbortController;
+     private _retryAttempt;
++    private _retryRunAttempts;
++    private _retryRunDelayMs;
++    private _retryNowRequested;
++    private _pendingRetryAttemptStart;
++    private _lastAutoCompactionOutcome;
+     private readonly _bashAbortControllers;
+     private _pendingBashMessages;
+     private _extensionRunner;
+@@ -262,6 +287,9 @@
+     private _installAgentToolHooks;
+     private _compactBeforeNextAssistantResponse;
+     private _installAgentNextTurnRefresh;
++    private _appendInlineCompactionAnchor;
++    private _withCompactionKeepRecentTokens;
++    get supportsInlineTurnCompaction(): boolean;
+     /** Emit an event to all listeners */
+     private _emit;
+     private _emitQueueUpdate;
+@@ -270,8 +298,12 @@
+     private _resolveIdleWaitIfIdle;
+     private _emitAgentSettled;
+     private _lastAssistantMessage;
++    /** Whether the completed run ended through a terminate:true tool batch. */
++    private _lastAgentEndedByTool;
+     /** Internal handler for agent events - shared by subscribe and reconnect */
+     private _handleAgentEvent;
++    private _canScheduleRetry;
++    private _getRetryEventDetails;
+     private _willRetryAfterAgentEnd;
+     /** Find the last assistant message in agent state (including aborted ones) */
+     private _findLastAssistantMessage;
+@@ -558,6 +590,8 @@
+      */
+     private _summarizationRetryCallbacks;
+     private _prepareRetry;
++    /** Skip the current retry backoff and immediately start the already scheduled retry. */
++    retryNow(): boolean;
+     /**
+      * Cancel in-progress retry.
+      */
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -29,6 +29,7 @@
+ import { ExtensionRunner, wrapRegisteredTools, } from "./extensions/index.js";
+ import { emitSessionShutdownEvent } from "./extensions/runner.js";
+ import { ModelRegistry } from "./model-registry.js";
++import { projectProviderContextMessages } from "./messages.js";
+ import { expandPromptTemplate } from "./prompt-templates.js";
+ import { exportSessionToJsonl } from "./session-export.js";
+ import { getLatestCompactionEntry } from "./session-manager.js";
+@@ -68,6 +69,41 @@
+     }
+     return tokens;
+ }
++function estimateRequestOverheadTokens(context) {
++    let chars = context.systemPrompt?.length ?? 0;
++    try {
++        chars += JSON.stringify(context.tools ?? []).length;
++    }
++    catch {
++        // Tool schemas should be serializable; fail conservatively if an extension violates that contract.
++        chars += 16000;
++    }
++    return Math.ceil(chars / 4);
++}
++function findLastCompactionIndex(messages) {
++    for (let i = messages.length - 1; i >= 0; i--) {
++        if (messages[i].role === "compactionSummary")
++            return i;
++    }
++    return -1;
++}
++function estimatePreparedRequestTokens(sourceContext, preparedContext) {
++    const lastCompactionIndex = findLastCompactionIndex(sourceContext.messages);
++    const estimate = estimateContextTokens(sourceContext.messages);
++    const usageMessage = estimate.lastUsageIndex === null ? undefined : sourceContext.messages[estimate.lastUsageIndex];
++    const compactionMessage = lastCompactionIndex < 0 ? undefined : sourceContext.messages[lastCompactionIndex];
++    const hasFreshUsage = estimate.lastUsageIndex !== null && (!compactionMessage || (usageMessage?.timestamp ?? 0) > (compactionMessage.timestamp ?? 0));
++    const directTokens = estimateMessagesTokens(preparedContext.messages) + estimateRequestOverheadTokens(preparedContext);
++    if (!hasFreshUsage) {
++        return directTokens;
++    }
++    let projectedSavings = 0;
++    const count = Math.min(sourceContext.messages.length, preparedContext.messages.length);
++    for (let i = 0; i < count; i++) {
++        projectedSavings += Math.max(0, estimateTokens(sourceContext.messages[i]) - estimateTokens(preparedContext.messages[i]));
++    }
++    return Math.max(directTokens, Math.max(0, estimate.tokens - projectedSavings));
++}
+ // ============================================================================
+ // Constants
+ // ============================================================================
+@@ -101,7 +137,21 @@
+     _branchSummaryAbortController = undefined;
+     // Retry state
+     _retryAbortController = undefined;
++    /** 连续失败段内已调度的 retry 次数。 */
+     _retryAttempt = 0;
++    /** 单次顶层 prompt 跨多个模型回合已调度的 retry 次数。 */
++    _retryRunAttempts = 0;
++    /** 单次顶层 prompt 已消耗的累计退避等待时间。 */
++    _retryRunDelayMs = 0;
++    /** 用户要求跳过当前 retry backoff，直接开始已安排的同一次恢复。 */
++    _retryNowRequested = false;
++    /** 已完成等待、将在紧邻 agent.continue() 前发出的实际 retry-start 事件。 */
++    _pendingRetryAttemptStart = undefined;
++    // Last auto-compaction outcome is latched so the mid-turn hook can distinguish
++    // a safe no-op (no cut point) from a started compaction that failed or aborted.
++    _lastAutoCompactionOutcome = { status: "not_started" };
++    /** Counts compaction lifecycles already used for the provider request being prepared. */
++    _inlineCompactionAttempts = 0;
+     // Bash execution state
+     _bashAbortControllers = new Set();
+     _pendingBashMessages = [];
+@@ -272,14 +322,22 @@
+         };
+     }
+     async _compactBeforeNextAssistantResponse(context) {
++        this._inlineCompactionAttempts = 0;
+         const model = this.model;
+         const settings = this.settingsManager.getCompactionSettings();
+-        if (!model ||
+-            model.contextWindow <= 0 ||
+-            !shouldCompact(estimateContextTokens(context.messages).tokens, model.contextWindow, settings)) {
++        const safeTokenBudget = Math.max(0, (model?.contextWindow ?? 0) - settings.reserveTokens);
++        const projectedContext = {
++            ...context,
++            messages: projectProviderContextMessages(context.messages),
++        };
++        if (!model || model.contextWindow <= 0 || estimatePreparedRequestTokens(context, projectedContext) <= safeTokenBudget) {
++            return context;
++        }
++        this._inlineCompactionAttempts = 1;
++        await this._runAutoCompaction("threshold", false, true);
++        if (this._lastAutoCompactionOutcome.status !== "compacted") {
+             return context;
+         }
+-        await this._runAutoCompaction("threshold", false);
+         return {
+             ...context,
+             messages: this.agent.state.messages.slice(),
+@@ -305,6 +363,179 @@
+                 thinkingLevel: this.agent.state.thinkingLevel,
+             };
+         };
++        const previousPrepareRequestWithContext = this.agent.prepareRequestWithContext ??
++            (this.agent.prepareRequest
++                ? async (_request, signal) => await this.agent.prepareRequest?.(signal)
++                : undefined);
++        this.agent.prepareRequestWithContext = async (request, signal) => {
++            const previousSnapshot = await previousPrepareRequestWithContext?.(request, signal);
++            if (previousSnapshot?.stop) {
++                return previousSnapshot;
++            }
++            const sourceContext = {
++                ...(previousSnapshot?.requestContext ?? previousSnapshot?.context ?? request.context),
++                systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
++                tools: this.agent.state.tools.slice(),
++            };
++            const settings = this.settingsManager.getCompactionSettings();
++            const contextWindow = this.model?.contextWindow ?? 0;
++            const safeTokenBudget = Math.max(0, contextWindow - settings.reserveTokens);
++            const projectionOptions = {
++                maxTotalToolTextChars: Math.min(64000, Math.max(16000, Math.floor(safeTokenBudget * 0.8))),
++                maxToolTextChars: 16000,
++                minToolTextChars: 4000,
++            };
++            const projectContext = (context) => ({
++                ...context,
++                messages: projectProviderContextMessages(context.messages, projectionOptions),
++            });
++            let projectedContext = projectContext(sourceContext);
++            const isSafe = (source, projected) => !contextWindow || estimatePreparedRequestTokens(source, projected) <= safeTokenBudget;
++            if (isSafe(sourceContext, projectedContext)) {
++                this._inlineCompactionAttempts = 0;
++                return {
++                    ...previousSnapshot,
++                    context: sourceContext,
++                    requestContext: projectedContext,
++                    model: this.agent.state.model,
++                    thinkingLevel: this.agent.state.thinkingLevel,
++                };
++            }
++            const failClosed = (errorMessage, emitEvent = true) => {
++                this._inlineCompactionAttempts = 0;
++                this._lastAutoCompactionOutcome = { status: "failed", errorMessage };
++                if (emitEvent) {
++                    this._emit({
++                        type: "compaction_end",
++                        reason: "threshold",
++                        result: undefined,
++                        aborted: false,
++                        willRetry: false,
++                        errorMessage,
++                        inline: true,
++                    });
++                }
++                return {
++                    ...previousSnapshot,
++                    requestContext: projectedContext,
++                    model: this.agent.state.model,
++                    thinkingLevel: this.agent.state.thinkingLevel,
++                    stop: true,
++                };
++            };
++            if (!settings.enabled) {
++                return failClosed("Provider request context exceeds the safe budget and automatic compaction is disabled.");
++            }
++            const stopForCompactionOutcome = () => {
++                if (this._lastAutoCompactionOutcome.status === "not_started") {
++                    return failClosed("Inline compaction could not create a safe cut point before the provider request.");
++                }
++                // Started failures and cancellation already emitted their own structured compaction_end.
++                this._inlineCompactionAttempts = 0;
++                return {
++                    ...previousSnapshot,
++                    requestContext: projectedContext,
++                    model: this.agent.state.model,
++                    thinkingLevel: this.agent.state.thinkingLevel,
++                    stop: true,
++                };
++            };
++            const runAggressiveRetry = async () => {
++                this._appendInlineCompactionAnchor();
++                await this._withCompactionKeepRecentTokens(0, async () => await this._runAutoCompaction("threshold", false, true));
++                return this._lastAutoCompactionOutcome.status === "compacted";
++            };
++            const rebuildProjectedContext = async () => {
++                const runtimeContext = {
++                    ...(previousSnapshot?.context ?? request.runtimeContext),
++                    systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
++                    tools: this.agent.state.tools.slice(),
++                    messages: this.agent.state.messages.slice(),
++                };
++                const transformedMessages = this.agent.transformContext
++                    ? await this.agent.transformContext(runtimeContext.messages, signal)
++                    : runtimeContext.messages;
++                const compactedSourceContext = { ...runtimeContext, messages: transformedMessages };
++                return {
++                    runtimeContext,
++                    compactedSourceContext,
++                    projectedContext: projectContext(compactedSourceContext),
++                };
++            };
++            let compactionAttempts = this._inlineCompactionAttempts;
++            if (compactionAttempts === 0) {
++                compactionAttempts = 1;
++                await this._runAutoCompaction("threshold", false, true);
++            }
++            if (this._lastAutoCompactionOutcome.status === "not_started") {
++                compactionAttempts += 1;
++                if (!(await runAggressiveRetry())) {
++                    return stopForCompactionOutcome();
++                }
++            }
++            else if (this._lastAutoCompactionOutcome.status !== "compacted") {
++                return stopForCompactionOutcome();
++            }
++            let rebuilt = await rebuildProjectedContext();
++            projectedContext = rebuilt.projectedContext;
++            // A second lifecycle is only allowed after direct estimation proves the rebuilt,
++            // projected provider request is genuinely still unsafe. It is always the final retry.
++            if (!isSafe(rebuilt.compactedSourceContext, rebuilt.projectedContext) && compactionAttempts < 2) {
++                compactionAttempts += 1;
++                if (!(await runAggressiveRetry())) {
++                    return stopForCompactionOutcome();
++                }
++                rebuilt = await rebuildProjectedContext();
++                projectedContext = rebuilt.projectedContext;
++            }
++            if (!isSafe(rebuilt.compactedSourceContext, rebuilt.projectedContext)) {
++                return failClosed("Inline compaction completed but the final provider context still exceeds the safe request budget.");
++            }
++            this._inlineCompactionAttempts = 0;
++            return {
++                ...previousSnapshot,
++                context: rebuilt.runtimeContext,
++                requestContext: rebuilt.projectedContext,
++                model: this.agent.state.model,
++                thinkingLevel: this.agent.state.thinkingLevel,
++            };
++        };
++    }
++    _appendInlineCompactionAnchor() {
++        const message = {
++            role: "custom",
++            customType: "pi_inline_compaction_anchor",
++            content: [{ type: "text", text: "Pi internal inline compaction boundary." }],
++            display: false,
++            details: { internal: true, excludeFromContext: true },
++            timestamp: Date.now(),
++        };
++        this.agent.state.messages.push(message);
++        this.sessionManager.appendCustomMessageEntry(message.customType, message.content, false, message.details);
++        this._emit({ type: "message_start", message });
++        this._emit({ type: "message_end", message });
++    }
++    async _withCompactionKeepRecentTokens(keepRecentTokens, run) {
++        const original = this.settingsManager.getCompactionSettings;
++        const ownDescriptor = Object.getOwnPropertyDescriptor(this.settingsManager, "getCompactionSettings");
++        this.settingsManager.getCompactionSettings = () => ({
++            ...original.call(this.settingsManager),
++            keepRecentTokens,
++        });
++        try {
++            return await run();
++        }
++        finally {
++            if (ownDescriptor) {
++                Object.defineProperty(this.settingsManager, "getCompactionSettings", ownDescriptor);
++            }
++            else {
++                delete this.settingsManager.getCompactionSettings;
++            }
++        }
++    }
++    get supportsInlineTurnCompaction() {
++        return true;
+     }
+     // =========================================================================
+     // Event Subscription
+@@ -356,6 +587,8 @@
+     }
+     // Track last assistant message for auto-compaction check
+     _lastAssistantMessage = undefined;
++    /** Whether the completed run ended through a terminate:true tool batch. */
++    _lastAgentEndedByTool = false;
+     /** Internal handler for agent events - shared by subscribe and reconnect */
+     _handleAgentEvent = async (event) => {
+         // When a user message starts, check if it's from either queue and remove it BEFORE emitting
+@@ -380,6 +613,9 @@
+                 }
+             }
+         }
++        if (event.type === "agent_end") {
++            this._lastAgentEndedByTool = event.terminatedByTool === true;
++        }
+         // Emit to extensions first
+         await this._emitExtensionEvent(event);
+         // Notify all listeners
+@@ -405,13 +641,17 @@
+                 if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "length") {
+                     this._overflowRecoveryAttempted = false;
+                 }
+-                // Reset retry counter immediately on successful assistant response
+-                // This prevents accumulation across multiple LLM calls within a turn
+-                if (assistantMsg.stopReason !== "error" && this._retryAttempt > 0) {
++                // 成功 assistant response 后只重置连续失败段计数；顶层 prompt 的总预算
++                // 会持续到 _runAgentPrompt() 结束，防止工具回合间无限重新获得 retry 配额。
++                // length 会先进入 compact-and-retry 恢复，不能提前标记 retry 成功。
++                if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "length" && this._retryAttempt > 0) {
++                    const settings = this.settingsManager.getRetrySettings();
++                    const retryCancelled = assistantMsg.stopReason === "aborted";
+                     this._emit({
+                         type: "auto_retry_end",
+-                        success: true,
+-                        attempt: this._retryAttempt,
++                        success: !retryCancelled,
++                        outcome: retryCancelled ? "cancelled" : "succeeded",
++                        ...this._getRetryEventDetails(this._retryAttempt, settings),
+                     });
+                     this._retryAttempt = 0;
+                 }
+@@ -426,9 +666,27 @@
+             this._flushPendingCustomMessages();
+         }
+     };
++    _canScheduleRetry(settings = this.settingsManager.getRetrySettings()) {
++        return settings.enabled &&
++            this._retryAttempt < settings.maxRetries &&
++            this._retryRunAttempts < settings.maxTotalRetries &&
++            this._retryRunDelayMs < settings.maxTotalDelayMs;
++    }
++    _getRetryEventDetails(attempt, settings, delayMs = 0, errorMessage) {
++        return {
++            attempt,
++            maxAttempts: settings.maxRetries,
++            totalAttempt: this._retryRunAttempts,
++            maxTotalAttempts: settings.maxTotalRetries,
++            delayMs,
++            totalDelayMs: this._retryRunDelayMs,
++            maxTotalDelayMs: settings.maxTotalDelayMs,
++            ...(errorMessage ? { errorMessage } : {}),
++        };
++    }
+     _willRetryAfterAgentEnd(event) {
+         const settings = this.settingsManager.getRetrySettings();
+-        if (!settings.enabled || this._retryAttempt >= settings.maxRetries) {
++        if (!this._canScheduleRetry(settings)) {
+             return false;
+         }
+         for (let i = event.messages.length - 1; i >= 0; i--) {
+@@ -771,13 +1029,27 @@
+     // =========================================================================
+     async _runAgentPrompt(messages) {
+         this._isAgentRunActive = true;
++        // 每次用户 prompt 都有独立的总 retry / 等待预算；连续失败段仍沿用 _retryAttempt。
++        this._retryAttempt = 0;
++        this._retryRunAttempts = 0;
++        this._retryRunDelayMs = 0;
++        this._retryNowRequested = false;
++        this._pendingRetryAttemptStart = undefined;
+         try {
+             await this.agent.prompt(messages);
+             while (await this._handlePostAgentRun()) {
++                // auto_retry_start 表示等待已被安排。只有 sleep 完成、即将真正调用
++                // agent.continue() 时才报告 attempt_start，避免 UI 把倒计时误当成请求已发起。
++                const retryAttemptStart = this._pendingRetryAttemptStart;
++                this._pendingRetryAttemptStart = undefined;
++                if (retryAttemptStart) {
++                    this._emit({ type: "auto_retry_attempt_start", ...retryAttemptStart });
++                }
+                 await this.agent.continue();
+             }
+         }
+         finally {
++            this._pendingRetryAttemptStart = undefined;
+             this._systemPromptOverride = undefined;
+             this._flushPendingBashMessages();
+             this._flushPendingCustomMessages();
+@@ -786,18 +1058,22 @@
+     }
+     async _handlePostAgentRun() {
+         const msg = this._lastAssistantMessage;
++        const endedByTerminatingTool = this._lastAgentEndedByTool;
+         this._lastAssistantMessage = undefined;
+-        if (!msg) {
++        this._lastAgentEndedByTool = false;
++        if (!msg || endedByTerminatingTool) {
+             return false;
+         }
+         if (this._isRetryableError(msg) && (await this._prepareRetry(msg))) {
+             return true;
+         }
+         if (msg.stopReason === "error" && this._retryAttempt > 0) {
++            const settings = this.settingsManager.getRetrySettings();
+             this._emit({
+                 type: "auto_retry_end",
+                 success: false,
+-                attempt: this._retryAttempt,
++                outcome: "exhausted",
++                ...this._getRetryEventDetails(this._retryAttempt, settings),
+                 finalError: msg.errorMessage,
+             });
+             this._retryAttempt = 0;
+@@ -1730,10 +2006,11 @@
+      * @param willRetry Whether to continue the interrupted turn after overflow compaction
+      * @returns Whether the post-run loop should call `agent.continue()`
+      */
+-    async _runAutoCompaction(reason, willRetry) {
++    async _runAutoCompaction(reason, willRetry, inline = false) {
+         const settings = this.settingsManager.getCompactionSettings();
+         let started = false;
+         let fromExtension = false;
++        this._lastAutoCompactionOutcome = { status: "not_started" };
+         try {
+             if (!this.model) {
+                 return false;
+@@ -1744,7 +2021,7 @@
+             if (!preparation) {
+                 return false;
+             }
+-            this._emit({ type: "compaction_start", reason });
++            this._emit({ type: "compaction_start", reason, ...(inline ? { inline: true } : {}) });
+             this._autoCompactionAbortController = new AbortController();
+             started = true;
+             let extensionCompaction;
+@@ -1759,12 +2036,14 @@
+                     signal: this._autoCompactionAbortController.signal,
+                 }));
+                 if (extensionResult?.cancel) {
++                    this._lastAutoCompactionOutcome = { status: "aborted" };
+                     this._emit({
+                         type: "compaction_end",
+                         reason,
+                         result: undefined,
+                         aborted: true,
+                         willRetry: false,
++                        ...(inline ? { inline: true } : {}),
+                     });
+                     await this._emitSessionCompactFailed({
+                         reason,
+@@ -1802,12 +2081,14 @@
+                 details = compactResult.details;
+             }
+             if (this._autoCompactionAbortController.signal.aborted) {
++                this._lastAutoCompactionOutcome = { status: "aborted" };
+                 this._emit({
+                     type: "compaction_end",
+                     reason,
+                     result: undefined,
+                     aborted: true,
+                     willRetry: false,
++                    ...(inline ? { inline: true } : {}),
+                 });
+                 await this._emitSessionCompactFailed({
+                     reason,
+@@ -1841,7 +2122,8 @@
+                 usage,
+                 details,
+             };
+-            this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
++            this._lastAutoCompactionOutcome = { status: "compacted", result };
++            this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry, ...(inline ? { inline: true } : {}) });
+             if (willRetry) {
+                 const messages = this.agent.state.messages;
+                 const lastMsg = messages[messages.length - 1];
+@@ -1860,6 +2142,7 @@
+         }
+         catch (error) {
+             const errorMessage = error instanceof Error ? error.message : "compaction failed";
++            this._lastAutoCompactionOutcome = { status: "failed", errorMessage };
+             if (started) {
+                 const formattedErrorMessage = reason === "overflow"
+                     ? `Context overflow recovery failed: ${errorMessage}`
+@@ -1871,6 +2154,7 @@
+                     aborted: false,
+                     willRetry: false,
+                     errorMessage: formattedErrorMessage,
++                    ...(inline ? { inline: true } : {}),
+                 });
+                 await this._emitSessionCompactFailed({
+                     reason,
+@@ -2278,22 +2562,25 @@
+      */
+     async _prepareRetry(message) {
+         const settings = this.settingsManager.getRetrySettings();
+-        if (!settings.enabled) {
+-            return false;
+-        }
+-        this._retryAttempt++;
+-        if (this._retryAttempt > settings.maxRetries) {
+-            // Preserve the completed attempt count so post-run handling can emit the final failure.
+-            this._retryAttempt--;
++        // 必须与 _willRetryAfterAgentEnd() 使用同一判断，否则上层会因错误的
++        // willRetry 标记而吞掉真正的终态错误。
++        if (!this._canScheduleRetry(settings)) {
+             return false;
+         }
+-        const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
++        const attempt = this._retryAttempt + 1;
++        const totalAttempt = this._retryRunAttempts + 1;
++        const nominalDelayMs = settings.baseDelayMs * 2 ** (attempt - 1);
++        const jitterMultiplier = 1 + (Math.random() * 2 - 1) * settings.jitterRatio;
++        const jitteredDelayMs = Math.max(0, Math.round(nominalDelayMs * jitterMultiplier));
++        const remainingDelayMs = Math.max(0, settings.maxTotalDelayMs - this._retryRunDelayMs);
++        const delayMs = Math.min(jitteredDelayMs, remainingDelayMs);
++        this._retryAttempt = attempt;
++        this._retryRunAttempts = totalAttempt;
++        this._retryRunDelayMs += delayMs;
++        const retryDetails = this._getRetryEventDetails(attempt, settings, delayMs, message.errorMessage || "Unknown error");
+         this._emit({
+             type: "auto_retry_start",
+-            attempt: this._retryAttempt,
+-            maxAttempts: settings.maxRetries,
+-            delayMs,
+-            errorMessage: message.errorMessage || "Unknown error",
++            ...retryDetails,
+         });
+         // Remove error message from agent state (keep in session for history)
+         const messages = this.agent.state.messages;
+@@ -2302,30 +2589,55 @@
+         }
+         // Wait with exponential backoff (abortable)
+         this._retryAbortController = new AbortController();
++        const retryWaitStartedAt = Date.now();
++        let actualRetryDetails = retryDetails;
+         try {
+             await sleep(delayMs, this._retryAbortController.signal);
+         }
+         catch {
+-            // Aborted during sleep - emit end event so UI can clean up
+-            const attempt = this._retryAttempt;
+-            this._retryAttempt = 0;
+-            this._emit({
+-                type: "auto_retry_end",
+-                success: false,
+-                attempt,
+-                finalError: "Retry cancelled",
+-            });
+-            return false;
++            if (!this._retryNowRequested) {
++                // Aborted during sleep - emit end event so UI can clean up
++                this._retryAttempt = 0;
++                this._emit({
++                    type: "auto_retry_end",
++                    success: false,
++                    outcome: "cancelled",
++                    ...retryDetails,
++                    finalError: "Retry cancelled",
++                });
++                return false;
++            }
+         }
+         finally {
++            const elapsedDelayMs = Math.min(delayMs, Math.max(0, Date.now() - retryWaitStartedAt));
++            this._retryRunDelayMs -= delayMs - elapsedDelayMs;
++            actualRetryDetails = {
++                ...retryDetails,
++                delayMs: elapsedDelayMs,
++                totalDelayMs: this._retryRunDelayMs,
++            };
+             this._retryAbortController = undefined;
++            this._retryNowRequested = false;
++        }
++        this._pendingRetryAttemptStart = actualRetryDetails;
++        return true;
++    }
++    /**
++     * Skip the current retry backoff and immediately start the already scheduled retry.
++     */
++    retryNow() {
++        if (!this._retryAbortController || this._retryAbortController.signal.aborted) {
++            return false;
+         }
++        this._retryNowRequested = true;
++        this._retryAbortController.abort();
+         return true;
+     }
+     /**
+      * Cancel in-progress retry.
+      */
+     abortRetry() {
++        this._retryNowRequested = false;
+         this._retryAbortController?.abort();
+     }
+     /** Whether auto-retry is currently in progress */
+--- a/dist/core/compaction/compaction.js
++++ b/dist/core/compaction/compaction.js
+@@ -1,668 +1,581 @@
+-/**
+- * Context compaction for long sessions.
+- *
+- * Pure functions for compaction logic. The session manager handles I/O,
+- * and after compaction the session is reloaded.
+- */
+-import { contentText, retryAssistantCall, uuidv7 } from "@earendil-works/pi-ai";
+-import { completeSimple } from "@earendil-works/pi-ai/compat";
+-import { convertToLlm } from "../messages.js";
+-import { buildSessionContext, sessionEntryToContextMessages, } from "../session-manager.js";
+-import { computeFileLists, createFileOps, extractFileOpsFromMessage, formatFileOperations, SUMMARIZATION_SYSTEM_PROMPT, serializeConversation, } from "./utils.js";
+-/**
+- * Extract file operations from messages and previous compaction entries.
+- */
+-function extractFileOperations(messages, entries, prevCompactionIndex) {
+-    const fileOps = createFileOps();
+-    // Collect from previous compaction's details (if pi-generated)
+-    if (prevCompactionIndex >= 0) {
+-        const prevCompaction = entries[prevCompactionIndex];
+-        if (!prevCompaction.fromHook && prevCompaction.details) {
+-            // fromHook field kept for session file compatibility
+-            const details = prevCompaction.details;
+-            if (Array.isArray(details.readFiles)) {
+-                for (const f of details.readFiles)
+-                    fileOps.read.add(f);
+-            }
+-            if (Array.isArray(details.modifiedFiles)) {
+-                for (const f of details.modifiedFiles)
+-                    fileOps.edited.add(f);
+-            }
+-        }
+-    }
+-    // Extract from tool calls in messages
+-    for (const msg of messages) {
+-        extractFileOpsFromMessage(msg, fileOps);
+-    }
+-    return fileOps;
+-}
+-// ============================================================================
+-// Message Extraction
+-// ============================================================================
+-/**
+- * Extract AgentMessage from an entry if it produces one.
+- * Returns undefined for entries that don't contribute to LLM context.
+- */
+-function getMessageFromEntryForCompaction(entry) {
+-    if (entry.type === "compaction") {
+-        return undefined;
+-    }
+-    return sessionEntryToContextMessages(entry)[0];
+-}
+-function combineUsage(first, second) {
+-    return {
+-        input: first.input + second.input,
+-        output: first.output + second.output,
+-        cacheRead: first.cacheRead + second.cacheRead,
+-        cacheWrite: first.cacheWrite + second.cacheWrite,
+-        ...(first.cacheWrite1h !== undefined || second.cacheWrite1h !== undefined
+-            ? { cacheWrite1h: (first.cacheWrite1h ?? 0) + (second.cacheWrite1h ?? 0) }
+-            : {}),
+-        ...(first.reasoning !== undefined || second.reasoning !== undefined
+-            ? { reasoning: (first.reasoning ?? 0) + (second.reasoning ?? 0) }
+-            : {}),
+-        totalTokens: first.totalTokens + second.totalTokens,
+-        cost: {
+-            input: first.cost.input + second.cost.input,
+-            output: first.cost.output + second.cost.output,
+-            cacheRead: first.cost.cacheRead + second.cost.cacheRead,
+-            cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,
+-            total: first.cost.total + second.cost.total,
+-        },
+-    };
+-}
+-export const DEFAULT_COMPACTION_SETTINGS = {
+-    enabled: true,
+-    reserveTokens: 16384,
+-    keepRecentTokens: 20000,
+-};
+-// ============================================================================
+-// Token calculation
+-// ============================================================================
+-/**
+- * Calculate total context tokens from usage.
+- * Uses the native totalTokens field when available, falls back to computing from components.
+- */
+-export function calculateContextTokens(usage) {
+-    return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+-}
+-/**
+- * Get usage from an assistant message if available.
+- * Skips aborted, error, and all-zero usage messages as they don't have valid usage data.
+- */
+-function getAssistantUsage(msg) {
+-    if (msg.role === "assistant" && "usage" in msg) {
+-        const assistantMsg = msg;
+-        if (assistantMsg.stopReason !== "aborted" &&
+-            assistantMsg.stopReason !== "error" &&
+-            assistantMsg.usage &&
+-            calculateContextTokens(assistantMsg.usage) > 0) {
+-            return assistantMsg.usage;
+-        }
+-    }
+-    return undefined;
+-}
+-/**
+- * Find the last valid assistant message usage from session entries.
+- */
+-export function getLastAssistantUsage(entries) {
+-    for (let i = entries.length - 1; i >= 0; i--) {
+-        const entry = entries[i];
+-        if (entry.type === "message") {
+-            const usage = getAssistantUsage(entry.message);
+-            if (usage)
+-                return usage;
+-        }
+-    }
+-    return undefined;
+-}
+-function getLastAssistantUsageInfo(messages) {
+-    for (let i = messages.length - 1; i >= 0; i--) {
+-        const usage = getAssistantUsage(messages[i]);
+-        if (usage)
+-            return { usage, index: i };
+-    }
+-    return undefined;
+-}
+-/**
+- * Estimate context tokens from messages, using the last assistant usage when available.
+- * If there are messages after the last usage, estimate their tokens with estimateTokens.
+- */
+-export function estimateContextTokens(messages) {
+-    const usageInfo = getLastAssistantUsageInfo(messages);
+-    if (!usageInfo) {
+-        let estimated = 0;
+-        for (const message of messages) {
+-            estimated += estimateTokens(message);
+-        }
+-        return {
+-            tokens: estimated,
+-            usageTokens: 0,
+-            trailingTokens: estimated,
+-            lastUsageIndex: null,
+-        };
+-    }
+-    const usageTokens = calculateContextTokens(usageInfo.usage);
+-    let trailingTokens = 0;
+-    for (let i = usageInfo.index + 1; i < messages.length; i++) {
+-        trailingTokens += estimateTokens(messages[i]);
+-    }
+-    return {
+-        tokens: usageTokens + trailingTokens,
+-        usageTokens,
+-        trailingTokens,
+-        lastUsageIndex: usageInfo.index,
+-    };
+-}
+-/**
+- * Check if compaction should trigger based on context usage.
+- */
+-export function shouldCompact(contextTokens, contextWindow, settings) {
+-    if (!settings.enabled)
+-        return false;
+-    return contextTokens > contextWindow - settings.reserveTokens;
+-}
+-// ============================================================================
+-// Cut point detection
+-// ============================================================================
+-const ESTIMATED_IMAGE_CHARS = 4800;
+-function estimateTextAndImageContentChars(content) {
+-    if (typeof content === "string") {
+-        return content.length;
+-    }
+-    let chars = 0;
+-    for (const block of content) {
+-        if (block.type === "text" && block.text) {
+-            chars += block.text.length;
+-        }
+-        else if (block.type === "image") {
+-            chars += ESTIMATED_IMAGE_CHARS;
+-        }
+-    }
+-    return chars;
+-}
+-/**
+- * Estimate token count for a message using chars/4 heuristic.
+- * This is conservative (overestimates tokens).
+- */
+-export function estimateTokens(message) {
+-    let chars = 0;
+-    switch (message.role) {
+-        case "user": {
+-            chars = estimateTextAndImageContentChars(message.content);
+-            return Math.ceil(chars / 4);
+-        }
+-        case "assistant": {
+-            const assistant = message;
+-            for (const block of assistant.content) {
+-                if (block.type === "text") {
+-                    chars += block.text.length;
+-                }
+-                else if (block.type === "thinking") {
+-                    chars += block.thinking.length;
+-                }
+-                else if (block.type === "toolCall") {
+-                    chars += block.name.length + JSON.stringify(block.arguments).length;
+-                }
+-            }
+-            return Math.ceil(chars / 4);
+-        }
+-        case "custom":
+-        case "toolResult": {
+-            chars = estimateTextAndImageContentChars(message.content);
+-            return Math.ceil(chars / 4);
+-        }
+-        case "bashExecution": {
+-            chars = message.command.length + message.output.length;
+-            return Math.ceil(chars / 4);
+-        }
+-        case "branchSummary":
+-        case "compactionSummary": {
+-            chars = message.summary.length;
+-            return Math.ceil(chars / 4);
+-        }
+-    }
+-    return 0;
+-}
+-function isCutPointMessage(message) {
+-    switch (message.role) {
+-        case "user":
+-        case "assistant":
+-        case "bashExecution":
+-        case "custom":
+-        case "branchSummary":
+-        case "compactionSummary":
+-            return true;
+-        case "toolResult":
+-            return false;
+-    }
+-    return false;
+-}
+-function isTurnStartMessage(message) {
+-    switch (message.role) {
+-        case "user":
+-        case "bashExecution":
+-        case "custom":
+-        case "branchSummary":
+-        case "compactionSummary":
+-            return true;
+-        case "assistant":
+-        case "toolResult":
+-            return false;
+-    }
+-    return false;
+-}
+-function isTurnStartEntry(entry) {
+-    if (entry.type === "compaction") {
+-        return false;
+-    }
+-    return sessionEntryToContextMessages(entry).some(isTurnStartMessage);
+-}
+-/**
+- * Find valid cut points: indices of context-visible user-like or assistant messages.
+- * Never cut at tool results (they must follow their tool call).
+- * When we cut at an assistant message with tool calls, its tool results follow it
+- * and will be kept.
+- */
+-function findValidCutPoints(entries, startIndex, endIndex) {
+-    const cutPoints = [];
+-    for (let i = startIndex; i < endIndex; i++) {
+-        const entry = entries[i];
+-        if (entry.type === "compaction") {
+-            continue;
+-        }
+-        if (sessionEntryToContextMessages(entry).some(isCutPointMessage)) {
+-            cutPoints.push(i);
+-        }
+-    }
+-    return cutPoints;
+-}
+-/**
+- * Find the context-visible user-role message that starts the turn containing the given entry index.
+- * Returns -1 if no turn start found before the index.
+- */
+-export function findTurnStartIndex(entries, entryIndex, startIndex) {
+-    for (let i = entryIndex; i >= startIndex; i--) {
+-        if (isTurnStartEntry(entries[i])) {
+-            return i;
+-        }
+-    }
+-    return -1;
+-}
+-/**
+- * Find the cut point in session entries that keeps approximately `keepRecentTokens`.
+- *
+- * Algorithm: Walk backwards from newest, accumulating estimated message sizes.
+- * Stop when we've accumulated >= keepRecentTokens. Cut at that point.
+- *
+- * Can cut at user OR assistant messages (never tool results). When cutting at an
+- * assistant message with tool calls, its tool results come after and will be kept.
+- *
+- * Returns CutPointResult with:
+- * - firstKeptEntryIndex: the entry index to start keeping from
+- * - turnStartIndex: if cutting mid-turn, the user message that started that turn
+- * - isSplitTurn: whether we're cutting in the middle of a turn
+- *
+- * Only considers entries between `startIndex` and `endIndex` (exclusive).
+- */
+-export function findCutPoint(entries, startIndex, endIndex, keepRecentTokens) {
+-    const cutPoints = findValidCutPoints(entries, startIndex, endIndex);
+-    if (cutPoints.length === 0) {
+-        return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
+-    }
+-    // Walk backwards from newest, accumulating estimated message sizes
+-    let accumulatedTokens = 0;
+-    let cutIndex = cutPoints[0]; // Default: keep from first message (not header)
+-    for (let i = endIndex - 1; i >= startIndex; i--) {
+-        const entry = entries[i];
+-        const messageTokens = sessionEntryToContextMessages(entry).reduce((sum, message) => sum + estimateTokens(message), 0);
+-        if (messageTokens === 0)
+-            continue;
+-        accumulatedTokens += messageTokens;
+-        // Check if we've exceeded the budget
+-        if (accumulatedTokens >= keepRecentTokens) {
+-            // Find the closest valid cut point at or after this entry
+-            for (let c = 0; c < cutPoints.length; c++) {
+-                if (cutPoints[c] >= i) {
+-                    cutIndex = cutPoints[c];
+-                    break;
+-                }
+-            }
+-            break;
+-        }
+-    }
+-    // Scan backwards from cutIndex to include adjacent metadata entries that do not affect context.
+-    while (cutIndex > startIndex) {
+-        const prevEntry = entries[cutIndex - 1];
+-        // Stop at compaction boundaries or context-visible entries.
+-        if (prevEntry.type === "compaction" || sessionEntryToContextMessages(prevEntry).length > 0) {
+-            break;
+-        }
+-        cutIndex--;
+-    }
+-    // Determine if this is a split turn
+-    const cutEntry = entries[cutIndex];
+-    const startsTurn = isTurnStartEntry(cutEntry);
+-    const turnStartIndex = startsTurn ? -1 : findTurnStartIndex(entries, cutIndex, startIndex);
+-    return {
+-        firstKeptEntryIndex: cutIndex,
+-        turnStartIndex,
+-        isSplitTurn: !startsTurn && turnStartIndex !== -1,
+-    };
+-}
+-// ============================================================================
+-// Summarization
+-// ============================================================================
+-const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+-
+-Use this EXACT format:
+-
+-## Goal
+-[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+-
+-## Constraints & Preferences
+-- [Any constraints, preferences, or requirements mentioned by user]
+-- [Or "(none)" if none were mentioned]
+-
+-## Progress
+-### Done
+-- [x] [Completed tasks/changes]
+-
+-### In Progress
+-- [ ] [Current work]
+-
+-### Blocked
+-- [Issues preventing progress, if any]
+-
+-## Key Decisions
+-- **[Decision]**: [Brief rationale]
+-
+-## Next Steps
+-1. [Ordered list of what should happen next]
+-
+-## Critical Context
+-- [Any data, examples, or references needed to continue]
+-- [Or "(none)" if not applicable]
+-
+-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+-const UPDATE_SUMMARIZATION_INSTRUCTIONS = `Update the existing structured summary with new information. RULES:
+-- PRESERVE all existing information from the previous summary
+-- ADD new progress, decisions, and context from the new messages
+-- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
+-- UPDATE "Next Steps" based on what was accomplished
+-- PRESERVE exact file paths, function names, and error messages
+-- If something is no longer relevant, you may remove it
+-
+-Use this EXACT format:
+-
+-## Goal
+-[Preserve existing goals, add new ones if the task expanded]
+-
+-## Constraints & Preferences
+-- [Preserve existing, add new ones discovered]
+-
+-## Progress
+-### Done
+-- [x] [Include previously done items AND newly completed items]
+-
+-### In Progress
+-- [ ] [Current work - update based on progress]
+-
+-### Blocked
+-- [Current blockers - remove if resolved]
+-
+-## Key Decisions
+-- **[Decision]**: [Brief rationale] (preserve all previous, add new)
+-
+-## Next Steps
+-1. [Update based on current state]
+-
+-## Critical Context
+-- [Preserve important context, add new if needed]
+-
+-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+-const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+-
+-${UPDATE_SUMMARIZATION_INSTRUCTIONS}`;
+-/**
+- * Returns an error message when a summarization response cannot safely be persisted.
+- * A length stop contains partial text and must not become a session checkpoint.
+- */
+-export function getSummarizationFailure(response, label) {
+-    if (response.stopReason === "error") {
+-        return `${label} failed: ${response.errorMessage || "Unknown error"}`;
+-    }
+-    if (response.stopReason === "length") {
+-        return `${label} failed: generation hit the token cap and the summary is incomplete`;
+-    }
+-    return undefined;
+-}
+-function createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, sessionId) {
+-    const options = { maxTokens, signal, apiKey, headers, env, sessionId };
+-    if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
+-        options.reasoning = thinkingLevel;
+-    }
+-    return options;
+-}
+-/**
+- * Shared choke point for every compaction/branch-summary summarization call. Wraps the
+- * single LLM call in {@link retryAssistantCall} so transient stream drops (e.g.
+- * `terminated`, socket close) honor the configured retry policy instead of failing
+- * the whole compaction on the first attempt. Deterministic errors and aborts return
+- * immediately (see {@link retryAssistantCall}).
+- */
+-export async function completeSummarization(model, context, options, streamFn, retry, callbacks) {
+-    // Avoid cache writes for one-off summaries. Reuse caller-supplied routing when available;
+-    // callers without a session ID, including branch summaries, receive a fresh routing ID.
+-    const requestOptions = {
+-        ...options,
+-        cacheRetention: "none",
+-        sessionId: options.sessionId ?? uuidv7(),
+-    };
+-    const produce = async () => streamFn
+-        ? (await streamFn(model, context, requestOptions)).result()
+-        : completeSimple(model, context, requestOptions);
+-    return retryAssistantCall(produce, retry, requestOptions.signal, callbacks);
+-}
+-/**
+- * Generate a summary of the conversation using the LLM.
+- * If previousSummary is provided, uses the update prompt to merge.
+- */
+-export async function generateSummary(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
+-    return (await generateSummaryWithUsage(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId)).text;
+-}
+-/** Build the provider context for a standalone summary request. */
+-function buildSummarizationContext(promptText) {
+-    return {
+-        systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+-        messages: [
+-            {
+-                role: "user",
+-                content: [{ type: "text", text: promptText }],
+-                timestamp: Date.now(),
+-            },
+-        ],
+-    };
+-}
+-/** Generate or update a conversation summary and return its provider usage. */
+-export async function generateSummaryWithUsage(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
+-    const maxTokens = Math.min(Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
+-    // Use update prompt if we have a previous summary, otherwise initial prompt
+-    let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+-    if (customInstructions) {
+-        basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
+-    }
+-    // Serialize conversation to text so model doesn't try to continue it
+-    // Convert to LLM messages first (handles custom types like bashExecution, custom, etc.)
+-    const llmMessages = convertToLlm(currentMessages);
+-    const conversationText = serializeConversation(llmMessages);
+-    // Build the prompt with conversation wrapped in tags
+-    let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
+-    if (previousSummary) {
+-        promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
+-    }
+-    promptText += basePrompt;
+-    const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, sessionId);
+-    const response = await completeSummarization(model, buildSummarizationContext(promptText), completionOptions, streamFn, retry, callbacks);
+-    const failure = getSummarizationFailure(response, "Summarization");
+-    if (failure) {
+-        throw new Error(failure);
+-    }
+-    if (response.content.some((block) => block.type === "toolCall")) {
+-        throw new Error("Summarization attempted to call a tool");
+-    }
+-    const textContent = contentText(response.content);
+-    return { text: textContent, usage: response.usage };
+-}
+-export function prepareCompaction(pathEntries, settings) {
+-    if (pathEntries.length > 0 && pathEntries[pathEntries.length - 1].type === "compaction") {
+-        return undefined;
+-    }
+-    let prevCompactionIndex = -1;
+-    for (let i = pathEntries.length - 1; i >= 0; i--) {
+-        if (pathEntries[i].type === "compaction") {
+-            prevCompactionIndex = i;
+-            break;
+-        }
+-    }
+-    let previousSummary;
+-    let boundaryStart = 0;
+-    if (prevCompactionIndex >= 0) {
+-        const prevCompaction = pathEntries[prevCompactionIndex];
+-        previousSummary = prevCompaction.summary;
+-        const firstKeptEntryIndex = pathEntries.findIndex((entry) => entry.id === prevCompaction.firstKeptEntryId);
+-        boundaryStart = firstKeptEntryIndex >= 0 ? firstKeptEntryIndex : prevCompactionIndex + 1;
+-    }
+-    const boundaryEnd = pathEntries.length;
+-    const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages).tokens;
+-    const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+-    // Get UUID of first kept entry
+-    const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];
+-    if (!firstKeptEntry?.id) {
+-        return undefined; // Session needs migration
+-    }
+-    const firstKeptEntryId = firstKeptEntry.id;
+-    const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
+-    // Messages to summarize (will be discarded after summary)
+-    const messagesToSummarize = [];
+-    for (let i = boundaryStart; i < historyEnd; i++) {
+-        const msg = getMessageFromEntryForCompaction(pathEntries[i]);
+-        if (msg)
+-            messagesToSummarize.push(msg);
+-    }
+-    // Messages for turn prefix summary (if splitting a turn)
+-    const turnPrefixMessages = [];
+-    if (cutPoint.isSplitTurn) {
+-        for (let i = cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i++) {
+-            const msg = getMessageFromEntryForCompaction(pathEntries[i]);
+-            if (msg)
+-                turnPrefixMessages.push(msg);
+-        }
+-    }
+-    if (messagesToSummarize.length === 0 && turnPrefixMessages.length === 0) {
+-        return undefined;
+-    }
+-    // Extract file operations from messages and previous compaction
+-    const fileOps = extractFileOperations(messagesToSummarize, pathEntries, prevCompactionIndex);
+-    // Also extract file ops from turn prefix if splitting
+-    if (cutPoint.isSplitTurn) {
+-        for (const msg of turnPrefixMessages) {
+-            extractFileOpsFromMessage(msg, fileOps);
+-        }
+-    }
+-    return {
+-        firstKeptEntryId,
+-        messagesToSummarize,
+-        turnPrefixMessages,
+-        isSplitTurn: cutPoint.isSplitTurn,
+-        tokensBefore,
+-        previousSummary,
+-        fileOps,
+-        settings,
+-    };
+-}
+-// ============================================================================
+-// Main compaction function
+-// ============================================================================
+-const TURN_PREFIX_SUMMARIZATION_PROMPT = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
+-
+-Summarize the prefix to provide context for the retained suffix:
+-
+-## Original Request
+-[What did the user ask for in this turn?]
+-
+-## Early Progress
+-- [Key decisions and work done in the prefix]
+-
+-## Context for Suffix
+-- [Information needed to understand the retained recent work]
+-
+-Be concise. Focus on what's needed to understand the kept suffix.`;
+-/**
+- * Generate summaries for compaction using prepared data.
+- * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
+- *
+- * @param preparation - Pre-calculated preparation from prepareCompaction()
+- * @param customInstructions - Optional custom focus for the summary
+- * @param sessionId - Optional routing session ID forwarded without enabling prompt caching
+- */
+-export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
+-    const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;
+-    // Generate summaries and merge into one
+-    let summary;
+-    let summaryUsage;
+-    if (isSplitTurn && turnPrefixMessages.length > 0) {
+-        let historyText = "No prior history.";
+-        let historyUsage;
+-        if (messagesToSummarize.length > 0) {
+-            const historyResult = await generateSummaryWithUsage(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId);
+-            historyText = historyResult.text;
+-            historyUsage = historyResult.usage;
+-        }
+-        const turnPrefixResult = await generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn, retry, callbacks, sessionId);
+-        // Merge into single summary
+-        summary = `${historyText}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult.text}`;
+-        summaryUsage = historyUsage ? combineUsage(historyUsage, turnPrefixResult.usage) : turnPrefixResult.usage;
+-    }
+-    else {
+-        // Just generate history summary
+-        const result = await generateSummaryWithUsage(messagesToSummarize, model, settings.reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId);
+-        summary = result.text;
+-        summaryUsage = result.usage;
+-    }
+-    // Compute file lists and append to summary
+-    const { readFiles, modifiedFiles } = computeFileLists(fileOps);
+-    summary += formatFileOperations(readFiles, modifiedFiles);
+-    if (!firstKeptEntryId) {
+-        throw new Error("First kept entry has no UUID - session may need migration");
+-    }
+-    return {
+-        summary,
+-        firstKeptEntryId,
+-        tokensBefore,
+-        usage: summaryUsage,
+-        details: { readFiles, modifiedFiles },
+-    };
+-}
+-/**
+- * Generate a summary for a turn prefix (when splitting a turn).
+- */
+-async function generateTurnPrefixSummary(messages, model, reserveTokens, apiKey, headers, env, signal, thinkingLevel, streamFn, retry, callbacks, sessionId) {
+-    const maxTokens = Math.min(Math.floor(0.5 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY); // Smaller budget for turn prefix
+-    const llmMessages = convertToLlm(messages);
+-    const conversationText = serializeConversation(llmMessages);
+-    const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
+-    const response = await completeSummarization(model, buildSummarizationContext(promptText), createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, sessionId), streamFn, retry, callbacks);
+-    const failure = getSummarizationFailure(response, "Turn prefix summarization");
+-    if (failure) {
+-        throw new Error(failure);
+-    }
+-    if (response.content.some((block) => block.type === "toolCall")) {
+-        throw new Error("Turn prefix summarization attempted to call a tool");
+-    }
+-    return {
+-        text: contentText(response.content),
+-        usage: response.usage,
+-    };
+-}
++/**
++ * Context compaction for long sessions.
++ *
++ * Pure functions for compaction logic. The session manager handles I/O,
++ * and after compaction the session is reloaded.
++ */
++import { contentText, retryAssistantCall, uuidv7 } from "@earendil-works/pi-ai";
++import { completeSimple } from "@earendil-works/pi-ai/compat";
++import { convertToLlm, projectProviderContextMessages } from "../messages.js";
++import { buildSessionContext, sessionEntryToContextMessages, } from "../session-manager.js";
++import { computeFileLists, createFileOps, extractFileOpsFromMessage, formatFileOperations, SUMMARIZATION_SYSTEM_PROMPT, serializeConversation, } from "./utils.js";
++/**
++ * Extract file operations from messages and previous compaction entries.
++ */
++function extractFileOperations(messages, entries, prevCompactionIndex) {
++    const fileOps = createFileOps();
++    // Collect from previous compaction's details (if pi-generated)
++    if (prevCompactionIndex >= 0) {
++        const prevCompaction = entries[prevCompactionIndex];
++        if (!prevCompaction.fromHook && prevCompaction.details) {
++            // fromHook field kept for session file compatibility
++            const details = prevCompaction.details;
++            if (Array.isArray(details.readFiles)) {
++                for (const f of details.readFiles)
++                    fileOps.read.add(f);
++            }
++            if (Array.isArray(details.modifiedFiles)) {
++                for (const f of details.modifiedFiles)
++                    fileOps.edited.add(f);
++            }
++        }
++    }
++    // Extract from tool calls in messages
++    for (const msg of messages) {
++        extractFileOpsFromMessage(msg, fileOps);
++    }
++    return fileOps;
++}
++// ============================================================================
++// Message Extraction
++// ============================================================================
++/**
++ * Extract AgentMessage from an entry if it produces one.
++ * Returns undefined for entries that don't contribute to LLM context.
++ */
++function getMessageFromEntryForCompaction(entry) {
++    if (entry.type === "compaction") {
++        return undefined;
++    }
++    return sessionEntryToContextMessages(entry)[0];
++}
++const PROVIDER_RETAINED_HISTORY_MAX_TOKENS = 20000;
++export const DEFAULT_COMPACTION_SETTINGS = {
++    enabled: true,
++    reserveTokens: 16384,
++    keepRecentTokens: PROVIDER_RETAINED_HISTORY_MAX_TOKENS,
++};
++// ============================================================================
++// Token calculation
++// ============================================================================
++/**
++ * Calculate total context tokens from usage.
++ * Uses the native totalTokens field when available, falls back to computing from components.
++ */
++export function calculateContextTokens(usage) {
++    return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
++}
++/**
++ * Get usage from an assistant message if available.
++ * Skips aborted, error, and all-zero usage messages as they don't have valid usage data.
++ */
++function getAssistantUsage(msg) {
++    if (msg.role === "assistant" && "usage" in msg) {
++        const assistantMsg = msg;
++        if (assistantMsg.stopReason !== "aborted" &&
++            assistantMsg.stopReason !== "error" &&
++            assistantMsg.usage &&
++            calculateContextTokens(assistantMsg.usage) > 0) {
++            return assistantMsg.usage;
++        }
++    }
++    return undefined;
++}
++/**
++ * Find the last valid assistant message usage from session entries.
++ */
++export function getLastAssistantUsage(entries) {
++    for (let i = entries.length - 1; i >= 0; i--) {
++        const entry = entries[i];
++        if (entry.type === "message") {
++            const usage = getAssistantUsage(entry.message);
++            if (usage)
++                return usage;
++        }
++    }
++    return undefined;
++}
++function getLastAssistantUsageInfo(messages) {
++    for (let i = messages.length - 1; i >= 0; i--) {
++        const usage = getAssistantUsage(messages[i]);
++        if (usage)
++            return { usage, index: i };
++    }
++    return undefined;
++}
++/**
++ * Estimate context tokens from messages, using the last assistant usage when available.
++ * If there are messages after the last usage, estimate their tokens with estimateTokens.
++ */
++export function estimateContextTokens(messages) {
++    const usageInfo = getLastAssistantUsageInfo(messages);
++    if (!usageInfo) {
++        let estimated = 0;
++        for (const message of messages) {
++            estimated += estimateTokens(message);
++        }
++        return {
++            tokens: estimated,
++            usageTokens: 0,
++            trailingTokens: estimated,
++            lastUsageIndex: null,
++        };
++    }
++    const usageTokens = calculateContextTokens(usageInfo.usage);
++    let trailingTokens = 0;
++    for (let i = usageInfo.index + 1; i < messages.length; i++) {
++        trailingTokens += estimateTokens(messages[i]);
++    }
++    return {
++        tokens: usageTokens + trailingTokens,
++        usageTokens,
++        trailingTokens,
++        lastUsageIndex: usageInfo.index,
++    };
++}
++/**
++ * Check if compaction should trigger based on context usage.
++ */
++export function shouldCompact(contextTokens, contextWindow, settings) {
++    if (!settings.enabled)
++        return false;
++    return contextTokens > contextWindow - settings.reserveTokens;
++}
++// ============================================================================
++// Cut point detection
++// ============================================================================
++const ESTIMATED_IMAGE_CHARS = 4800;
++function estimateTextAndImageContentChars(content) {
++    if (typeof content === "string") {
++        return content.length;
++    }
++    let chars = 0;
++    for (const block of content) {
++        if (block.type === "text" && block.text) {
++            chars += block.text.length;
++        }
++        else if (block.type === "image") {
++            chars += ESTIMATED_IMAGE_CHARS;
++        }
++    }
++    return chars;
++}
++/**
++ * Estimate token count for a message using chars/4 heuristic.
++ * This is conservative (overestimates tokens).
++ */
++export function estimateTokens(message) {
++    let chars = 0;
++    switch (message.role) {
++        case "user": {
++            chars = estimateTextAndImageContentChars(message.content);
++            return Math.ceil(chars / 4);
++        }
++        case "assistant": {
++            const assistant = message;
++            for (const block of assistant.content) {
++                if (block.type === "text") {
++                    chars += block.text.length;
++                }
++                else if (block.type === "thinking") {
++                    chars += block.thinking.length;
++                }
++                else if (block.type === "toolCall") {
++                    chars += block.name.length + JSON.stringify(block.arguments).length;
++                }
++            }
++            return Math.ceil(chars / 4);
++        }
++        case "custom":
++        case "toolResult": {
++            chars = estimateTextAndImageContentChars(message.content);
++            return Math.ceil(chars / 4);
++        }
++        case "bashExecution": {
++            chars = message.command.length + message.output.length;
++            return Math.ceil(chars / 4);
++        }
++        case "branchSummary":
++        case "compactionSummary": {
++            chars = message.summary.length;
++            return Math.ceil(chars / 4);
++        }
++    }
++    return 0;
++}
++function isCutPointMessage(message) {
++    switch (message.role) {
++        case "user":
++        case "assistant":
++        case "bashExecution":
++        case "custom":
++        case "branchSummary":
++        case "compactionSummary":
++            return true;
++        case "toolResult":
++            return false;
++    }
++    return false;
++}
++function isTurnStartMessage(message) {
++    switch (message.role) {
++        case "user":
++        case "bashExecution":
++        case "custom":
++        case "branchSummary":
++        case "compactionSummary":
++            return true;
++        case "assistant":
++        case "toolResult":
++            return false;
++    }
++    return false;
++}
++function isTurnStartEntry(entry) {
++    if (entry.type === "compaction") {
++        return false;
++    }
++    return sessionEntryToContextMessages(entry).some(isTurnStartMessage);
++}
++/**
++ * Find valid cut points: indices of context-visible user-like or assistant messages.
++ * Never cut at tool results (they must follow their tool call).
++ * When we cut at an assistant message with tool calls, its tool results follow it
++ * and will be kept.
++ */
++function findValidCutPoints(entries, startIndex, endIndex) {
++    const cutPoints = [];
++    for (let i = startIndex; i < endIndex; i++) {
++        const entry = entries[i];
++        if (entry.type === "compaction") {
++            continue;
++        }
++        if (sessionEntryToContextMessages(entry).some(isCutPointMessage)) {
++            cutPoints.push(i);
++        }
++    }
++    return cutPoints;
++}
++/**
++ * Find the context-visible user-role message that starts the turn containing the given entry index.
++ * Returns -1 if no turn start found before the index.
++ */
++export function findTurnStartIndex(entries, entryIndex, startIndex) {
++    for (let i = entryIndex; i >= startIndex; i--) {
++        if (isTurnStartEntry(entries[i])) {
++            return i;
++        }
++    }
++    return -1;
++}
++/**
++ * Find the cut point in session entries that keeps approximately `keepRecentTokens`.
++ *
++ * Algorithm: Walk backwards from newest, accumulating estimated message sizes.
++ * Stop when we've accumulated >= keepRecentTokens. Cut at that point.
++ *
++ * Can cut at user OR assistant messages (never tool results). When cutting at an
++ * assistant message with tool calls, its tool results come after and will be kept.
++ *
++ * Returns CutPointResult with:
++ * - firstKeptEntryIndex: the entry index to start keeping from
++ * - turnStartIndex: if cutting mid-turn, the user message that started that turn
++ * - isSplitTurn: whether we're cutting in the middle of a turn
++ *
++ * Only considers entries between `startIndex` and `endIndex` (exclusive).
++ */
++export function findCutPoint(entries, startIndex, endIndex, keepRecentTokens) {
++    const cutPoints = findValidCutPoints(entries, startIndex, endIndex);
++    if (cutPoints.length === 0) {
++        return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
++    }
++    // Walk backwards from newest, accumulating estimated message sizes
++    let accumulatedTokens = 0;
++    let cutIndex = cutPoints[0]; // Default: keep from first message (not header)
++    for (let i = endIndex - 1; i >= startIndex; i--) {
++        const entry = entries[i];
++        const messageTokens = sessionEntryToContextMessages(entry).reduce((sum, message) => sum + estimateTokens(message), 0);
++        if (messageTokens === 0)
++            continue;
++        accumulatedTokens += messageTokens;
++        // Check if we've exceeded the budget
++        if (accumulatedTokens >= keepRecentTokens) {
++            // Find the closest valid cut point at or after this entry
++            for (let c = 0; c < cutPoints.length; c++) {
++                if (cutPoints[c] >= i) {
++                    cutIndex = cutPoints[c];
++                    break;
++                }
++            }
++            break;
++        }
++    }
++    // Scan backwards from cutIndex to include adjacent metadata entries that do not affect context.
++    while (cutIndex > startIndex) {
++        const prevEntry = entries[cutIndex - 1];
++        // Stop at compaction boundaries or context-visible entries.
++        if (prevEntry.type === "compaction" || sessionEntryToContextMessages(prevEntry).length > 0) {
++            break;
++        }
++        cutIndex--;
++    }
++    // Determine if this is a split turn
++    const cutEntry = entries[cutIndex];
++    const startsTurn = isTurnStartEntry(cutEntry);
++    const turnStartIndex = startsTurn ? -1 : findTurnStartIndex(entries, cutIndex, startIndex);
++    return {
++        firstKeptEntryIndex: cutIndex,
++        turnStartIndex,
++        isSplitTurn: !startsTurn && turnStartIndex !== -1,
++    };
++}
++// ============================================================================
++// Summarization
++// ============================================================================
++const CHECKPOINT_TARGET_MIN_TOKENS = 2500;
++const CHECKPOINT_TARGET_MAX_TOKENS = 4000;
++const COMPACTION_SUMMARY_HARD_MAX_TOKENS = 6144;
++const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint that another LLM can use to resume the work accurately.
++
++Use this EXACT format:
++
++## Goal
++## Constraints & Preferences
++## Progress
++### Done
++### In Progress
++### Blocked
++## Key Decisions
++## Failed Attempts
++## Validation
++## Next Steps
++## Critical Context
++
++Rules:
++- Aim for ${CHECKPOINT_TARGET_MIN_TOKENS}-${CHECKPOINT_TARGET_MAX_TOKENS} tokens; be shorter when the task is simple.
++- Preserve the current goal, active constraints, current state, unresolved issues, validation evidence, and ordered next actions.
++- Prefer concrete facts over narrative: exact paths, symbols, commands, errors, task state, and dependency or environment details.
++- Keep user corrections, failed attempts that should not be repeated, safety constraints, and quality-critical evidence.
++- Include exact file paths, function names, error messages, package versions, task or delegation IDs, and test commands when they matter.
++- Distinguish completed work from planned work. Do not claim success without evidence.
++- Remove superseded or stale history when later evidence clearly replaces it, but never erase unresolved failures or contrary evidence.
++- Do not include internal chain-of-thought, hidden reasoning, secret values, credentials, or unrelated conversation.
++- This checkpoint replaces the compacted transcript, so it must be self-contained.
++
++If a section has no content, write "(none)".`;
++const UPDATE_SUMMARIZATION_PROMPT = `${SUMMARIZATION_PROMPT}
++
++The messages above are NEW conversation messages to incorporate into the previous checkpoint. Produce a corrected, updated replacement checkpoint.
++
++Additional rules for updates:
++- Treat the previous checkpoint as fallible working state. Reconcile it against newer evidence and user corrections.
++- Merge duplicate completed items and consolidate repeated decisions.
++- Remove stale blockers only when later evidence clearly resolves them; otherwise preserve them.
++- Keep unresolved failures, incomplete validation, current task status, exact next commands, and any active safety or quality constraints.
++- Return the full replacement checkpoint, not a delta or commentary.`;
++/**
++ * Returns an error message when a summarization response cannot safely be persisted.
++ * A length stop contains partial text and must not become a session checkpoint.
++ */
++export function getSummarizationFailure(response, label) {
++    if (response.stopReason === "error") {
++        return `${label} failed: ${response.errorMessage || "Unknown error"}`;
++    }
++    if (response.stopReason === "length") {
++        return `${label} failed: generation hit the token cap and the summary is incomplete`;
++    }
++    return undefined;
++}
++function createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, sessionId) {
++    const options = { maxTokens, signal, apiKey, headers, env, sessionId };
++    if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
++        options.reasoning = thinkingLevel;
++    }
++    return options;
++}
++/**
++ * Shared choke point for every compaction/branch-summary summarization call. Wraps the
++ * single LLM call in {@link retryAssistantCall} so transient stream drops (e.g.
++ * `terminated`, socket close) honor the configured retry policy instead of failing
++ * the whole compaction on the first attempt. Deterministic errors and aborts return
++ * immediately (see {@link retryAssistantCall}).
++ */
++export async function completeSummarization(model, context, options, streamFn, retry, callbacks) {
++    // Avoid cache writes for one-off summaries. Reuse caller-supplied routing when available;
++    // callers without a session ID, including branch summaries, receive a fresh routing ID.
++    const requestOptions = {
++        ...options,
++        cacheRetention: "none",
++        sessionId: options.sessionId ?? uuidv7(),
++    };
++    const produce = async () => streamFn
++        ? (await streamFn(model, context, requestOptions)).result()
++        : completeSimple(model, context, requestOptions);
++    return retryAssistantCall(produce, retry, requestOptions.signal, callbacks);
++}
++/**
++ * Generate a summary of the conversation using the LLM.
++ * If previousSummary is provided, uses the update prompt to merge.
++ */
++export async function generateSummary(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
++    return (await generateSummaryWithUsage(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId)).text;
++}
++/** Build the provider context for a standalone summary request. */
++function buildSummarizationContext(promptText) {
++    return {
++        systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
++        messages: [
++            {
++                role: "user",
++                content: [{ type: "text", text: promptText }],
++                timestamp: Date.now(),
++            },
++        ],
++    };
++}
++/** Generate or update a conversation summary and return its provider usage. */
++export async function generateSummaryWithUsage(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
++    const maxTokens = Math.min(COMPACTION_SUMMARY_HARD_MAX_TOKENS, Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
++    // Use update prompt if we have a previous summary, otherwise initial prompt
++    let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
++    if (customInstructions) {
++        basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
++    }
++    // Serialize conversation to text so model doesn't try to continue it
++    // Convert to LLM messages first (handles custom types like bashExecution, custom, etc.)
++    const llmMessages = convertToLlm(projectProviderContextMessages(currentMessages, {
++        maxTotalToolTextChars: 16000,
++        maxToolTextChars: 4000,
++        minToolTextChars: 2000,
++    }));
++    const conversationText = serializeConversation(llmMessages);
++    // Build the prompt with conversation wrapped in tags
++    let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
++    if (previousSummary) {
++        promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
++    }
++    promptText += basePrompt;
++    const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, sessionId);
++    const response = await completeSummarization(model, buildSummarizationContext(promptText), completionOptions, streamFn, retry, callbacks);
++    const failure = getSummarizationFailure(response, "Summarization");
++    if (failure) {
++        throw new Error(failure);
++    }
++    if (response.content.some((block) => block.type === "toolCall")) {
++        throw new Error("Summarization attempted to call a tool");
++    }
++    const textContent = contentText(response.content);
++    return { text: textContent, usage: response.usage };
++}
++export function prepareCompaction(pathEntries, settings) {
++    if (pathEntries.length > 0 && pathEntries[pathEntries.length - 1].type === "compaction") {
++        return undefined;
++    }
++    let prevCompactionIndex = -1;
++    for (let i = pathEntries.length - 1; i >= 0; i--) {
++        if (pathEntries[i].type === "compaction") {
++            prevCompactionIndex = i;
++            break;
++        }
++    }
++    let previousSummary;
++    let boundaryStart = 0;
++    if (prevCompactionIndex >= 0) {
++        const prevCompaction = pathEntries[prevCompactionIndex];
++        previousSummary = prevCompaction.summary;
++        const firstKeptEntryIndex = pathEntries.findIndex((entry) => entry.id === prevCompaction.firstKeptEntryId);
++        boundaryStart = firstKeptEntryIndex >= 0 ? firstKeptEntryIndex : prevCompactionIndex + 1;
++    }
++    const boundaryEnd = pathEntries.length;
++    const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages).tokens;
++    // Keep a bounded recent suffix in provider context independently of user settings.
++    // The cut-point algorithm still keeps tool calls and their results together, while
++    // the complete SessionManager entries remain persisted outside the provider copy.
++    const retainedHistoryTokenBudget = Math.min(settings.keepRecentTokens, PROVIDER_RETAINED_HISTORY_MAX_TOKENS);
++    const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, retainedHistoryTokenBudget);
++    // Get UUID of first kept entry
++    const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];
++    if (!firstKeptEntry?.id) {
++        return undefined; // Session needs migration
++    }
++    const firstKeptEntryId = firstKeptEntry.id;
++    const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
++    // Messages to summarize (will be discarded after summary)
++    const messagesToSummarize = [];
++    for (let i = boundaryStart; i < historyEnd; i++) {
++        const msg = getMessageFromEntryForCompaction(pathEntries[i]);
++        if (msg)
++            messagesToSummarize.push(msg);
++    }
++    // Messages for turn prefix summary (if splitting a turn)
++    const turnPrefixMessages = [];
++    if (cutPoint.isSplitTurn) {
++        for (let i = cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i++) {
++            const msg = getMessageFromEntryForCompaction(pathEntries[i]);
++            if (msg)
++                turnPrefixMessages.push(msg);
++        }
++    }
++    if (messagesToSummarize.length === 0 && turnPrefixMessages.length === 0) {
++        return undefined;
++    }
++    // Extract file operations from messages and previous compaction
++    const fileOps = extractFileOperations(messagesToSummarize, pathEntries, prevCompactionIndex);
++    // Also extract file ops from turn prefix if splitting
++    if (cutPoint.isSplitTurn) {
++        for (const msg of turnPrefixMessages) {
++            extractFileOpsFromMessage(msg, fileOps);
++        }
++    }
++    return {
++        firstKeptEntryId,
++        messagesToSummarize,
++        turnPrefixMessages,
++        isSplitTurn: cutPoint.isSplitTurn,
++        tokensBefore,
++        previousSummary,
++        fileOps,
++        settings,
++    };
++}
++// ============================================================================
++// Main compaction function
++// ============================================================================
++/**
++ * Generate summaries for compaction using prepared data.
++ * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
++ *
++ * @param preparation - Pre-calculated preparation from prepareCompaction()
++ * @param customInstructions - Optional custom focus for the summary
++ * @param sessionId - Optional routing session ID forwarded without enabling prompt caching
++ */
++export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
++    const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;
++    // Use one physical summarization request so a split turn cannot create competing checkpoints.
++    const messagesForSummary = isSplitTurn && turnPrefixMessages.length > 0
++        ? [...messagesToSummarize, ...turnPrefixMessages]
++        : messagesToSummarize;
++    const splitTurnInstructions = isSplitTurn && turnPrefixMessages.length > 0
++        ? [
++            customInstructions,
++            "The transcript ends inside an active turn. Produce one self-contained checkpoint covering both prior history and the current turn prefix, and state what the retained suffix needs to continue.",
++        ].filter(Boolean).join("\n\n")
++        : customInstructions;
++    const result = await generateSummaryWithUsage(messagesForSummary, model, settings.reserveTokens, apiKey, headers, signal, splitTurnInstructions, previousSummary, thinkingLevel, streamFn, env, retry, callbacks, sessionId);
++    let summary = result.text;
++    const summaryUsage = result.usage;
++    // Compute file lists and append to summary
++    const { readFiles, modifiedFiles } = computeFileLists(fileOps);
++    summary += formatFileOperations(readFiles, modifiedFiles);
++    if (!firstKeptEntryId) {
++        throw new Error("First kept entry has no UUID - session may need migration");
++    }
++    return {
++        summary,
++        firstKeptEntryId,
++        tokensBefore,
++        usage: summaryUsage,
++        details: { readFiles, modifiedFiles },
++    };
++}
+ //# sourceMappingURL=compaction.js.map
+\ No newline at end of file
+--- a/dist/core/compaction/utils.js
++++ b/dist/core/compaction/utils.js
+@@ -53,16 +53,27 @@
+     const modifiedFiles = [...modified].sort();
+     return { readFiles: readOnly, modifiedFiles };
+ }
++/** Maximum file paths rendered into the checkpoint body per category. */
++const CHECKPOINT_FILE_LIST_LIMIT = 20;
++function formatLimitedFileList(files, label) {
++    const visible = files.slice(0, CHECKPOINT_FILE_LIST_LIMIT);
++    const omitted = files.length - visible.length;
++    if (omitted > 0) {
++        visible.push(`[... ${omitted} additional ${label} files omitted from checkpoint; complete list stored in compaction details ...]`);
++    }
++    return visible.join("\n");
++}
+ /**
+- * Format file operations as XML tags for summary.
++ * Format a bounded file-operation index for the checkpoint body. The complete,
++ * deduplicated lists remain in the compaction entry details for auditing and UI.
+  */
+ export function formatFileOperations(readFiles, modifiedFiles) {
+     const sections = [];
+     if (readFiles.length > 0) {
+-        sections.push(`<read-files>\n${readFiles.join("\n")}\n</read-files>`);
++        sections.push(`<read-files>\n${formatLimitedFileList(readFiles, "read")}\n</read-files>`);
+     }
+     if (modifiedFiles.length > 0) {
+-        sections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
++        sections.push(`<modified-files>\n${formatLimitedFileList(modifiedFiles, "modified")}\n</modified-files>`);
+     }
+     if (sections.length === 0)
+         return "";
+@@ -72,16 +83,24 @@
+ // Message Serialization
+ // ============================================================================
+ /** Maximum characters for a tool result in serialized summaries. */
+-const TOOL_RESULT_MAX_CHARS = 2000;
++const TOOL_RESULT_MAX_CHARS = 4000;
+ /**
+- * Truncate text to a maximum character length for summarization.
+- * Keeps the beginning and appends a truncation marker.
++ * Project large tool text for summarization while retaining both diagnostics at
++ * the beginning and exit/error/path details commonly printed at the end.
+  */
+ function truncateForSummary(text, maxChars) {
+     if (text.length <= maxChars)
+         return text;
+-    const truncatedChars = text.length - maxChars;
+-    return `${text.slice(0, maxChars)}\n\n[... ${truncatedChars} more characters truncated]`;
++    let marker = "";
++    let omittedChars = text.length - maxChars;
++    for (let i = 0; i < 2; i++) {
++        marker = `\n\n[... ${omittedChars} characters omitted from provider context. Original tool output: ${text.length} characters ...]\n\n`;
++        omittedChars = Math.max(0, text.length - Math.max(0, maxChars - marker.length));
++    }
++    const contentBudget = Math.max(0, maxChars - marker.length);
++    const headChars = Math.ceil(contentBudget / 2);
++    const tailChars = Math.max(0, contentBudget - headChars);
++    return text.slice(0, headChars) + marker + (tailChars > 0 ? text.slice(-tailChars) : "");
+ }
+ /**
+  * Serialize LLM messages to text for summarization.
+--- a/dist/core/messages.d.ts
++++ b/dist/core/messages.d.ts
+@@ -10,6 +10,12 @@
+ export declare const COMPACTION_SUMMARY_SUFFIX = "\n</summary>";
+ export declare const BRANCH_SUMMARY_PREFIX = "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n";
+ export declare const BRANCH_SUMMARY_SUFFIX = "</summary>";
++export interface ProviderContextProjectionOptions {
++    maxTotalToolTextChars?: number;
++    maxToolTextChars?: number;
++    minToolTextChars?: number;
++}
++export declare const DEFAULT_PROVIDER_CONTEXT_PROJECTION: Required<ProviderContextProjectionOptions>;
+ /**
+  * Message type for bash executions via the ! command.
+  */
+@@ -65,6 +71,8 @@
+ export declare function createCompactionSummaryMessage(summary: string, tokensBefore: number, timestamp: string): CompactionSummaryMessage;
+ /** Convert CustomMessageEntry to AgentMessage format */
+ export declare function createCustomMessage(customType: string, content: string | (TextContent | ImageContent)[], display: boolean, details: unknown | undefined, timestamp: string): CustomMessage;
++/** Build a provider-only copy with bounded tool output text without mutating source messages. */
++export declare function projectProviderContextMessages(messages: AgentMessage[], options?: ProviderContextProjectionOptions): AgentMessage[];
+ /**
+  * Transform AgentMessages (including custom types) to LLM-compatible Messages.
+  *
+--- a/dist/core/messages.js
++++ b/dist/core/messages.js
+@@ -15,6 +15,106 @@
+ <summary>
+ `;
+ export const BRANCH_SUMMARY_SUFFIX = `</summary>`;
++export const DEFAULT_PROVIDER_CONTEXT_PROJECTION = {
++    maxTotalToolTextChars: 32000,
++    maxToolTextChars: 12000,
++    minToolTextChars: 4000,
++};
++function toolTextLength(message) {
++    if (message.role === "bashExecution") {
++        return message.excludeFromContext ? 0 : message.output.length;
++    }
++    if (message.role !== "toolResult") {
++        return 0;
++    }
++    return message.content.reduce((total, block) => total + (block.type === "text" ? block.text.length : 0), 0);
++}
++function projectText(text, targetChars) {
++    if (text.length <= targetChars) {
++        return text;
++    }
++    let marker = "";
++    let omittedChars = Math.max(0, text.length - targetChars);
++    for (let i = 0; i < 2; i++) {
++        marker = `\n\n[... ${omittedChars} characters omitted from provider context. Original tool output: ${text.length} characters ...]\n\n`;
++        omittedChars = Math.max(0, text.length - Math.max(0, targetChars - marker.length));
++    }
++    const contentBudget = Math.max(0, targetChars - marker.length);
++    const headChars = Math.ceil(contentBudget / 2);
++    const tailChars = Math.max(0, contentBudget - headChars);
++    return text.slice(0, headChars) + marker + (tailChars > 0 ? text.slice(-tailChars) : "");
++}
++function projectToolResult(message, targetChars) {
++    const textBlocks = message.content.filter((block) => block.type === "text");
++    const originalChars = textBlocks.reduce((total, block) => total + block.text.length, 0);
++    if (originalChars <= targetChars || textBlocks.length === 0) {
++        return message;
++    }
++    let remainingChars = targetChars;
++    let remainingOriginalChars = originalChars;
++    let changed = false;
++    const content = message.content.map((block) => {
++        if (block.type !== "text") {
++            return block;
++        }
++        const blockTarget = Math.max(256, Math.floor(remainingChars * (block.text.length / remainingOriginalChars)));
++        remainingChars = Math.max(0, remainingChars - blockTarget);
++        remainingOriginalChars = Math.max(0, remainingOriginalChars - block.text.length);
++        const text = projectText(block.text, blockTarget);
++        if (text !== block.text) {
++            changed = true;
++            return { ...block, text };
++        }
++        return block;
++    });
++    return changed ? { ...message, content } : message;
++}
++/**
++ * Build a provider-only context copy with bounded text from tool outputs.
++ * Source AgentMessages are never mutated, so JSONL/transcript/tool details retain the full output.
++ */
++export function projectProviderContextMessages(messages, options = {}) {
++    const settings = { ...DEFAULT_PROVIDER_CONTEXT_PROJECTION, ...options };
++    const toolMessages = messages
++        .map((message, index) => ({ message, index, chars: toolTextLength(message) }))
++        .filter((entry) => entry.chars > settings.minToolTextChars);
++    const totalToolChars = toolMessages.reduce((total, entry) => total + entry.chars, 0);
++    if (totalToolChars <= settings.maxTotalToolTextChars && toolMessages.every((entry) => entry.chars <= settings.maxToolTextChars)) {
++        return messages;
++    }
++    let remainingBudget = settings.maxTotalToolTextChars;
++    let remainingCount = toolMessages.length;
++    const targetByIndex = new Map();
++    for (const entry of toolMessages) {
++        const sharedBudget = remainingCount > 0 ? Math.floor(remainingBudget / remainingCount) : 0;
++        // minToolTextChars is the eligibility threshold, not a per-message floor;
++        // keeping it out of allocation prevents many tool results from multiplying
++        // beyond the total provider-context budget.
++        const target = Math.min(entry.chars, settings.maxToolTextChars, Math.max(128, sharedBudget));
++        targetByIndex.set(entry.index, target);
++        remainingBudget = Math.max(0, remainingBudget - target);
++        remainingCount -= 1;
++    }
++    let changed = false;
++    const projected = messages.map((message, index) => {
++        const target = targetByIndex.get(index);
++        if (target === undefined) {
++            return message;
++        }
++        let next = message;
++        if (message.role === "toolResult") {
++            next = projectToolResult(message, target);
++        }
++        else if (message.role === "bashExecution" && message.output.length > target) {
++            next = { ...message, output: projectText(message.output, target) };
++        }
++        if (next !== message) {
++            changed = true;
++        }
++        return next;
++    });
++    return changed ? projected : messages;
++}
+ /**
+  * Convert a BashExecutionMessage to user message text for LLM context.
+  */
+@@ -87,6 +187,9 @@
+                     timestamp: m.timestamp,
+                 };
+             case "custom": {
++                if (m.details?.excludeFromContext === true) {
++                    return undefined;
++                }
+                 const content = typeof m.content === "string" ? [{ type: "text", text: m.content }] : m.content;
+                 return {
+                     role: "user",
+--- a/dist/core/settings-manager.d.ts
++++ b/dist/core/settings-manager.d.ts
+@@ -17,8 +17,16 @@
+ }
+ export interface RetrySettings {
+     enabled?: boolean;
++    /** 连续失败段内最多调度的 retry 次数。 */
+     maxRetries?: number;
++    /** 指数退避的基础等待时间。 */
+     baseDelayMs?: number;
++    /** 指数退避的对称抖动比例，范围为 0 至 1；默认 0。 */
++    jitterRatio?: number;
++    /** 单次顶层 prompt 跨多个模型回合的总 retry 预算。 */
++    maxTotalRetries?: number;
++    /** 单次顶层 prompt 跨多个模型回合的累计退避等待预算。 */
++    maxTotalDelayMs?: number;
+     provider?: ProviderRetrySettings;
+ }
+ export type TuiMode = RendererTuiMode;
+@@ -236,6 +244,9 @@
+         enabled: boolean;
+         maxRetries: number;
+         baseDelayMs: number;
++        jitterRatio: number;
++        maxTotalRetries: number;
++        maxTotalDelayMs: number;
+     };
+     getHttpIdleTimeoutMs(): number;
+     setHttpIdleTimeoutMs(timeoutMs: number): void;
+--- a/dist/core/settings-manager.js
++++ b/dist/core/settings-manager.js
+@@ -590,10 +590,16 @@
+         this.save();
+     }
+     getRetrySettings() {
++        const jitterRatio = this.settings.retry?.jitterRatio ?? 0;
++        const maxTotalRetries = this.settings.retry?.maxTotalRetries;
++        const maxTotalDelayMs = this.settings.retry?.maxTotalDelayMs;
+         return {
+             enabled: this.getRetryEnabled(),
+             maxRetries: this.settings.retry?.maxRetries ?? 3,
+             baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
++            jitterRatio: Number.isFinite(jitterRatio) ? Math.min(1, Math.max(0, jitterRatio)) : 0,
++            maxTotalRetries: Number.isFinite(maxTotalRetries) ? Math.max(0, Math.floor(maxTotalRetries)) : Number.MAX_SAFE_INTEGER,
++            maxTotalDelayMs: Number.isFinite(maxTotalDelayMs) ? Math.max(0, Math.floor(maxTotalDelayMs)) : Number.MAX_SAFE_INTEGER,
+         };
+     }
+     getHttpIdleTimeoutMs() {

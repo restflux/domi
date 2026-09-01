@@ -1,0 +1,48 @@
+{
+  "name": "domi",
+  "version": "0.1.1",
+  "description": "Domi — local-first Personal Coding Workbench with multi-model Chat and general Agent workflows",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter='@domi/electron' dev",
+    "electron:dev": "bun run --filter='@domi/electron' dev",
+    "electron:build": "bun run --filter='@domi/electron' build",
+    "electron:start": "bun run --filter='@domi/electron' start",
+    "build": "bun run --filter='*' build",
+    "typecheck": "bun run --filter='*' typecheck",
+    "test": "bun test --parallel=2 --max-concurrency=4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/dompurify": "^3.2.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "dompurify": "^3.4.2",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "jotai": "^2.17.1"
+  },
+  "overrides": {
+    "@earendil-works/pi-agent-core": "0.84.4",
+    "@earendil-works/pi-ai": "0.84.4",
+    "@earendil-works/pi-coding-agent": "0.84.4",
+    "@earendil-works/pi-tui": "0.84.4"
+  },
+  "patchedDependencies": {
+    "@earendil-works/pi-agent-core@0.84.4": "patches/@earendil-works%2Fpi-agent-core@0.84.4.patch",
+    "@earendil-works/pi-ai@0.84.4": "patches/@earendil-works%2Fpi-ai@0.84.4.patch",
+    "@earendil-works/pi-coding-agent@0.84.4": "patches/@earendil-works%2Fpi-coding-agent@0.84.4.patch",
+    "node-pty@1.1.0": "patches/node-pty@1.1.0.patch"
+  }
+}

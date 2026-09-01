@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "skills": {
+    "agent-collaboration": {
+      "version": "1.1.5",
+      "currentHash": "3e6eba8079ee558e20c66adaeb28a531ed42a37ca326637f82629c8c190507d7",
+      "knownBaselineHashes": [
+        "df604cd79bb905ba08d6a2b15e661cad724013dd1d18914d738d296534217948",
+        "3e6eba8079ee558e20c66adaeb28a531ed42a37ca326637f82629c8c190507d7"
+      ]
+    },
+    "automation": {
+      "version": "1.0.14",
+      "currentHash": "761ddbcb49b676e333d9ac610020f1acfe2f662180eb26028dc98b0b76860392",
+      "knownBaselineHashes": [
+        "052e2fb9a2e2ffad0bc4a6b244a9b7cf9daf79fc7dc586a7bf40aa6fb5c69d68",
+        "cf20f3e30ee1a4ea8d7e8ac54b91bc397f5ad31d3268c1c7c13c191bfcc20b49",
+        "761ddbcb49b676e333d9ac610020f1acfe2f662180eb26028dc98b0b76860392"
+      ]
+    },
+    "brainstorming": {
+      "version": "1.0.1",
+      "currentHash": "cabd80e769d192ccc5746393f9afbcbf5a56b6efa59fa6905137837a71813423",
+      "knownBaselineHashes": [
+        "cabd80e769d192ccc5746393f9afbcbf5a56b6efa59fa6905137837a71813423"
+      ]
+    },
+    "code-review": {
+      "version": "1.0.0",
+      "currentHash": "72bde38d7ba99f951b7011d93dce56641cb8a472ef84e37458bf4aa9c3030f2d",
+      "knownBaselineHashes": [
+        "6d5d8f476934d4e98b2041706836fc9539d3a55aecee9e80c6f72118f4a958da",
+        "72bde38d7ba99f951b7011d93dce56641cb8a472ef84e37458bf4aa9c3030f2d"
+      ]
+    },
+    "diagnosing-bugs": {
+      "version": "1.0.1",
+      "currentHash": "5a6184fbb83e3406085962d9c56025e469e6e0ded7eb3ffb2cf01c0b83501f35",
+      "knownBaselineHashes": [
+        "3d8d151feffbf1d0bc1a9e475bb32df39ebde74b32165b8f82fcf9bd250cba2d",
+        "ff7fa00b25f0718566f1b03fdaa690da760b3a61408893719a30db444aa1d06e",
+        "5a6184fbb83e3406085962d9c56025e469e6e0ded7eb3ffb2cf01c0b83501f35"
+      ]
+    },
+    "docx": {
+      "version": "2.0.0",
+      "currentHash": "93ab9cea988c2cc58b5a71f0138478084c12878eb84c1874fbe5f28166e82fea",
+      "knownBaselineHashes": [
+        "8efdf4cf32027bda12c01b1401e44e8cee571cd4a8ec07f28a1926fab827a479",
+        "17000f6e0dac58f650aefc7c3299e985e7592003bf43e903f9057ea0a4b2da20",
+        "93ab9cea988c2cc58b5a71f0138478084c12878eb84c1874fbe5f28166e82fea"
+      ]
+    },
+    "domi-coach": {
+      "version": "1.0.11",
+      "currentHash": "c866f28a2491884031d89c7992a1360c1cd9815fb12ed8f11f5c77be350a9747",
+      "knownBaselineHashes": [
+        "2b89ab1f1dac06944af15e61a6edea325f0ef475bcb4794712e5dcb3f87d4f2b",
+        "7d94837a3158c9fa7edcc2320f4082ae4983ed4a9bc02a9cd7226d8cc41be1bc",
+        "c866f28a2491884031d89c7992a1360c1cd9815fb12ed8f11f5c77be350a9747"
+      ]
+    },
+    "executing-plans": {
+      "version": "1.0.6",
+      "currentHash": "4cfc50f13d682f9be6f27ea49b1cf18173a3802486d8fb7b8f77f4a41b3b99ff",
+      "knownBaselineHashes": [
+        "5811cbc1d4d17514857259a3b4677362b84b19e27a33ac89c1355570de80a7c2",
+        "7b3c3d7398c33ecfaa1504fa941e9b5fdbdac37294f778926f795c05881e6df2",
+        "4cfc50f13d682f9be6f27ea49b1cf18173a3802486d8fb7b8f77f4a41b3b99ff"
+      ]
+    },
+    "find-skills": {
+      "version": "1.0.2",
+      "currentHash": "9960710640a1d9759b9c5ceb783f98fb740a65fe91f718a99e9b1b9f77f68060",
+      "knownBaselineHashes": [
+        "21fe35ba5804d4514dfdd90279f17a24b100e3c8fbb89709a815fac64652585c",
+        "9960710640a1d9759b9c5ceb783f98fb740a65fe91f718a99e9b1b9f77f68060"
+      ]
+    },
+    "guizang-ppt-skill": {
+      "version": "1.0.1",
+      "currentHash": "e86eda1d676a20a28379bea2de9a0ea3868c93c0e6e193d5704110de0ca7e0c7",
+      "knownBaselineHashes": [
+        "2f77838701f85ddc4e0806ca89a9b6fbe9e49b62651077b166edb18c1bf90c94",
+        "e86eda1d676a20a28379bea2de9a0ea3868c93c0e6e193d5704110de0ca7e0c7"
+      ]
+    },
+    "improve-codebase-architecture": {
+      "version": "1.0.0",
+      "currentHash": "956eb4266ccda4958cd6aeb86c5bdf565488d119b937d3ea39b08db2cb3da9eb",
+      "knownBaselineHashes": [
+        "3843b1c623fca17f013f830a43d26e75c1e9bc3a7456a60fe36864940b56d73f",
+        "956eb4266ccda4958cd6aeb86c5bdf565488d119b937d3ea39b08db2cb3da9eb"
+      ]
+    },
+    "pdf": {
+      "version": "2.0.0",
+      "currentHash": "ce1eecd3a4104f0b0bc521400687bcc71a5ad4e946d32018b38300d2dfa57c74",
+      "knownBaselineHashes": [
+        "251a156f1aa6763b6f47e263321e83a051478b6855e38e751f722fd9f04cf68b",
+        "f9d52877945d4227244692dc953cd1b488fa5aaf366058f54c7c9e328ca6026d",
+        "ce1eecd3a4104f0b0bc521400687bcc71a5ad4e946d32018b38300d2dfa57c74"
+      ]
+    },
+    "pptx": {
+      "version": "2.0.0",
+      "currentHash": "c34fa42cb0813e30adde3a70a3c4dfab8152849bdc5a711d267b837684b3d357",
+      "knownBaselineHashes": [
+        "8f83d644b4711fb23b5919c048425499aa95cb23340f25fdf73616a26b2cc089",
+        "dd099966a832ec5ac74bb2c65570054f0cea2be75be6deffc12deec82d9e6c24",
+        "c34fa42cb0813e30adde3a70a3c4dfab8152849bdc5a711d267b837684b3d357"
+      ]
+    },
+    "session-cleaner": {
+      "version": "2.0.2",
+      "currentHash": "08a9e09ca0ffed13b8d600a2a3dcfe5ecda67842601cb5a6ba60483568f775a2",
+      "knownBaselineHashes": [
+        "7b6a54e1ba195a29383d6d3e32926cdedbe0ff22442cc9339f4630b39294e0fa",
+        "0609ddfad01e7f35bee926f3dac9d0890c7ba3ed4d7da125d1110db12e989723",
+        "08a9e09ca0ffed13b8d600a2a3dcfe5ecda67842601cb5a6ba60483568f775a2"
+      ]
+    },
+    "skill-creator": {
+      "version": "1.1.1",
+      "currentHash": "afa0c685edc9a5b50de88736162a1eab2f6e047893079ac654f6321b9e62b812",
+      "knownBaselineHashes": [
+        "762e22133cbfbcf243bc2957c35f91ea126f2f079c0d3db2e4aff847f50a72b4",
+        "afa0c685edc9a5b50de88736162a1eab2f6e047893079ac654f6321b9e62b812"
+      ]
+    },
+    "tdd": {
+      "version": "1.0.1",
+      "currentHash": "cfae86291effff08ccfefe39b5cc7ef99782f8fc63a89d2090a0f3686e0b1cdf",
+      "knownBaselineHashes": [
+        "757f437599949572839565802145a955a859f8e2cfd09dc88833dab68dc795da",
+        "af2f6c50a76f8322b667545fb1661ea78097804caeb4dc8ae7c8671b365e929b",
+        "cfae86291effff08ccfefe39b5cc7ef99782f8fc63a89d2090a0f3686e0b1cdf"
+      ]
+    },
+    "tool-builder": {
+      "version": "1.0.3",
+      "currentHash": "a3398c5aa3ea4ba6edf535bab47fc40ea0af211464f00fb2bc44ca83f172fc8e",
+      "knownBaselineHashes": [
+        "2e040f25621efd97717dafa3bf2e61e3d1f000c4182eb7c4921f45c59ca65061",
+        "a3398c5aa3ea4ba6edf535bab47fc40ea0af211464f00fb2bc44ca83f172fc8e"
+      ]
+    },
+    "writing-plans": {
+      "version": "1.0.7",
+      "currentHash": "b8bb1e49698f72d19acf15a5ecdc8d82a9043e9c129d1012e1d56b6e33c880dc",
+      "knownBaselineHashes": [
+        "01e01010e29a74b22f7b2ecac67906a920780e71783e9d3ddc07607d2320251a",
+        "96babb2e029a5769261af3b16e74deb676e42975c92c29dd34fdb7974d1d5f42",
+        "b8bb1e49698f72d19acf15a5ecdc8d82a9043e9c129d1012e1d56b6e33c880dc"
+      ]
+    },
+    "xlsx": {
+      "version": "2.0.0",
+      "currentHash": "a98e56411d935357928fb17c80982f14953ee447f2fe42ff3909cbaabb888e7d",
+      "knownBaselineHashes": [
+        "7a2144b47c091404e09292ea2b226998e4746486ab4197cf5ad3e283fc39e3c1",
+        "a5ec6c2ab9f566a7afff029bb4d9cc0473c86ab4fe1ce2bd4b971cf857482f5e",
+        "a98e56411d935357928fb17c80982f14953ee447f2fe42ff3909cbaabb888e7d"
+      ]
+    }
+  }
+}
