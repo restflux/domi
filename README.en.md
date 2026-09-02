@@ -6,6 +6,10 @@ Domi is a local-first Personal Coding Workbench. It brings multi-model Chat, exe
 
 [中文 README](./README.md) · [User Guide](./tutorial/tutorial-v2.md) · [Engineering Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
+![A Domi Work session edits code in an isolated Worktree while showing the live Diff](./docs/images/readme/work-session.webp)
+
+<p align="center"><sub>A Work session keeps running in an isolated Worktree while file changes and Diffs remain visible.</sub></p>
+
 ## Core capabilities
 
 - **Coding-focused Work sessions**: the Pi Agent Runtime can investigate code, edit files, run tests, start services, and complete multi-step tasks.
@@ -80,12 +84,24 @@ A Work session may use the Local Checkout directly or a Domi-managed Isolated Wo
 - conflict preflight, recovery state, retention, bulk cleanup, and cross-session handoff are host-tracked;
 - when owner and inherited sessions share a target, delivery, cleanup, and Local writes remain owner-only.
 
+![Domi previews isolated Worktree changes into Local with options to confirm or safely withdraw](./docs/images/readme/worktree-preview.webp)
+
+<p align="center"><sub>Task changes are Previewed into Local for acceptance before they are finalized or safely withdrawn.</sub></p>
+
 ### Git, terminal, and browser
 
 - the changes panel provides a lightweight Git loop rather than a full Git client;
 - the terminal supports multiple PTYs, shell profiles, isolation between user terminals and Agent Runs, and local service URL detection;
 - the browser exposes a visible page with bounded Snapshot/ref, click, ordinary text input, scroll, and text extraction operations;
 - Right Workspace keeps multiple file, Browser, Terminal, Preview, and helper tabs alive together.
+
+### Long-task continuity
+
+Follow-up requests can be queued without interrupting the Agent's current step. Background sessions, Steering, context compaction, and cross-session handoff keep longer tasks moving.
+
+![Domi runs a task in an isolated Worktree while an additional request waits in the Follow-up queue](./docs/images/readme/follow-up-worktree.webp)
+
+<p align="center"><sub>The active Worktree, live progress, and Follow-up queue remain together in one session.</sub></p>
 
 ### Security boundaries
 

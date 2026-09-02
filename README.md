@@ -6,6 +6,10 @@ Domi 是一款本地优先的 Personal Coding Workbench。它把多模型 Chat�
 
 [English README](./README.en.md) · [使用教程](./tutorial/tutorial-v2.md) · [工程文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
+![Domi Work 会话在隔离 Worktree 中编辑代码，并在右侧实时展示 Diff](./docs/images/readme/work-session.webp)
+
+<p align="center"><sub>Work 会话在隔离 Worktree 中持续执行，文件改动与 Diff 同步可见。</sub></p>
+
 ## 核心能力
 
 - **面向 coding 的 Work 会话**：Pi Agent Runtime 可以调查代码、修改文件、运行测试、启动服务并持续完成多步骤任务。
@@ -82,12 +86,24 @@ Work 会话可以直接使用 Local Checkout，也可以由 Domi 创建隔离 Wo
 - 冲突预检、恢复状态、保留策略、批量清理和跨会话 handoff 都由宿主追踪；
 - owner / inherited 会话共享目标时，交付、清理和 Local 写入仍只允许 owner 执行。
 
+![Domi 将隔离 Worktree 的任务改动预览到 Local，并提供确认保存或安全撤回](./docs/images/readme/worktree-preview.webp)
+
+<p align="center"><sub>任务改动先 Preview 到 Local 验收，再确认保存或安全撤回。</sub></p>
+
 ### Git、终端与浏览器
 
 - 文件改动面板提供轻量 Git 闭环，不尝试成为完整 Git 客户端；
 - 内置终端支持多个 PTY、Shell profile、用户终端与 Agent Run 隔离，以及本地服务地址检测；
 - 内置浏览器提供用户可见页面和有界 Snapshot/ref、点击、普通文本输入、滚动与文本提取；
 - Right Workspace 可以同时保留多个文件、Browser、Terminal、Preview 和辅助工具标签。
+
+### 长任务连续性
+
+Agent 工作期间可以继续排入 Follow-up，不需要打断当前步骤；后台会话、Steering、上下文压缩和跨会话 handoff 让长任务保持连续。
+
+![Domi 在隔离 Worktree 中执行任务，并将追加要求放入 Follow-up 队列](./docs/images/readme/follow-up-worktree.webp)
+
+<p align="center"><sub>执行中的 Worktree、实时进度与 Follow-up 队列保持在同一会话。</sub></p>
 
 ### 安全边界
 
