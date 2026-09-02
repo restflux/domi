@@ -844,8 +844,8 @@ export interface AgentSessionMeta {
   handoffId?: string
   /** durable handoff 的来源会话。 */
   handoffOriginSessionId?: string
-  /** 完整 Pi 历史 fork，或 fork 不可用后的有界上下文降级交接。 */
-  handoffMode?: 'fork' | 'degraded'
+  /** 完整 Pi 历史 fork、故障降级交接，或跨项目全新会话使用的 portable handoff。 */
+  handoffMode?: 'fork' | 'degraded' | 'portable'
   /** 降级交接的稳定故障类别；不得包含绝对路径或原始异常文本。 */
   handoffDegradedReason?:
     | 'sdk_session_missing'
@@ -1456,6 +1456,7 @@ export interface MoveSessionToWorkspaceInput {
 /** Fork 后的 Session Target 策略；省略时兼容为继承父会话。 */
 export type ForkSessionTargetChoice =
   | { kind: 'inherit' }
+  | { kind: 'local' }
   | { kind: 'isolated'; confirmDirty: boolean }
   /** 从已有 Isolated Worktree 的当前 Git 状态创建独立副本。 */
   | { kind: 'isolated-copy' }

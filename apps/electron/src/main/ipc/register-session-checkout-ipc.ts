@@ -23,6 +23,8 @@ import {
   type WorktreeRecoveryHandoffResult,
   type AgentSessionHandoffInput,
   type AgentSessionHandoffResult,
+  type ExportAgentSessionHandoffPromptInput,
+  type ExportAgentSessionHandoffPromptResult,
 } from '@domi/shared'
 
 interface SessionCheckoutIpcRegistrar {
@@ -270,21 +272,31 @@ function parseManageInput(input: unknown): ManageWorktreeInput | null {
 }
 
 function parseSessionHandoffInput(input: unknown): AgentSessionHandoffInput | null {
+  if (!isRecord(input)) return null
+  const keys = Object.keys(input)
+  const allowedKeys = ['sessionId', 'expectedRevision', 'targetKind', 'confirmedIgnoreDirtyLocal', 'targetWorkspaceId']
   if (
-    !isRecord(input)
-    || !hasExactKeys(input, ['sessionId', 'expectedRevision', 'targetKind', 'confirmedIgnoreDirtyLocal'])
+    keys.some((key) => !allowedKeys.includes(key))
+    || !['sessionId', 'expectedRevision', 'targetKind', 'confirmedIgnoreDirtyLocal'].every((key) => key in input)
     || !isSessionId(input.sessionId)
     || typeof input.expectedRevision !== 'number'
     || !Number.isSafeInteger(input.expectedRevision)
     || (input.targetKind !== 'local' && input.targetKind !== 'isolated')
     || typeof input.confirmedIgnoreDirtyLocal !== 'boolean'
+    || (input.targetWorkspaceId !== undefined && !isSessionId(input.targetWorkspaceId))
   ) return null
   return {
     sessionId: input.sessionId,
     expectedRevision: input.expectedRevision,
     targetKind: input.targetKind,
     confirmedIgnoreDirtyLocal: input.confirmedIgnoreDirtyLocal,
+    ...(typeof input.targetWorkspaceId === 'string' ? { targetWorkspaceId: input.targetWorkspaceId } : {}),
   }
+}
+
+function parseExportHandoffPromptInput(input: unknown): ExportAgentSessionHandoffPromptInput | null {
+  if (!isRecord(input) || !hasExactKeys(input, ['sessionId']) || !isSessionId(input.sessionId)) return null
+  return { sessionId: input.sessionId }
 }
 
 function parseRecoveryHandoffInput(input: unknown): WorktreeRecoveryHandoffInput | null {
@@ -344,6 +356,7 @@ export function registerSessionCheckoutIpc(
   getActiveManagedSessions?: (ownerSessionId: string) => Promise<string[]>,
   prepareRecoveryHandoff?: (input: WorktreeRecoveryHandoffInput) => Promise<WorktreeRecoveryHandoffResult>,
   prepareSessionHandoff?: (input: AgentSessionHandoffInput) => Promise<AgentSessionHandoffResult>,
+  exportHandoffPrompt?: (input: ExportAgentSessionHandoffPromptInput) => Promise<ExportAgentSessionHandoffPromptResult>,
   confirmIteration?: (input: ConfirmWorktreeIterationInput) => Promise<ConfirmWorktreeIterationResult>,
 ): void {
   ipc.handle(HANDOFF_SESSION_CHANNEL, async (_, input) => {
@@ -352,6 +365,15 @@ export function registerSessionCheckoutIpc(
     return invoke(async () => {
       await assertIdle?.(parsed.sessionId)
       return prepareSessionHandoff(parsed)
+    })
+  })
+
+  ipc.handle(SESSION_CHECKOUT_IPC_CHANNELS.EXPORT_HANDOFF_PROMPT, async (_, input) => {
+    const parsed = parseExportHandoffPromptInput(input)
+    if (!parsed || !exportHandoffPrompt) return INVALID_REQUEST
+    return invoke(async () => {
+      await assertIdle?.(parsed.sessionId)
+      return exportHandoffPrompt(parsed)
     })
   })
 

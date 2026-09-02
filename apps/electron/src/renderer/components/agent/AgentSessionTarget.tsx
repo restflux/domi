@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import type { AgentSessionHandoffInput, SessionTargetRef, SessionTargetView } from '@domi/shared'
+import type { SessionTargetRef, SessionTargetView } from '@domi/shared'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,9 +21,7 @@ import { SessionTargetControl } from './SessionTargetControl.tsx'
 import type { SessionTargetDisplayInput } from '@/lib/session-target-view-model.ts'
 import { toast } from 'sonner'
 import { worktreeManagerAtom } from '@/atoms/worktree-manager-atoms.ts'
-import { agentSessionsAtom } from '@/atoms/agent-atoms.ts'
-import { useOpenSession } from '@/hooks/useOpenSession.ts'
-import { getSessionHandoffFeedback } from '@/lib/session-handoff-feedback.ts'
+import { sessionHeaderCommandAtom } from '@/atoms/session-header-actions.ts'
 
 interface AgentSessionTargetProps {
   sessionId: string
@@ -72,19 +70,14 @@ export function AgentSessionTargetBadge({
   const state = useAtomValue(sessionTargetStateAtomFamily(sessionId))
   const operate = useSetAtom(operateSessionTargetAtomFamily(sessionId))
   const setWorktreeManager = useSetAtom(worktreeManagerAtom)
-  const setAgentSessions = useSetAtom(agentSessionsAtom)
-  const openSession = useOpenSession()
+  const setSessionCommand = useSetAtom(sessionHeaderCommandAtom)
   const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = React.useState(false)
-  const [handoffOpen, setHandoffOpen] = React.useState(false)
-  const [handoffTargetKind, setHandoffTargetKind] = React.useState<'local' | 'isolated'>('isolated')
-  const [handoffPending, setHandoffPending] = React.useState(false)
   useInspectAgentSessionTarget(sessionId)
   if (!state.snapshot) return null
 
   const target = displayTarget(state.snapshot, state.pendingAction)
   const delivery = target.delivery
   const isOwnerWorktree = target.checkout.kind === 'isolated' && target.ownership === 'owner'
-  const canCreateWorktree = target.source?.oid !== 'unversioned'
   const previewActive = delivery?.state === 'preview_active'
   const canDiscardWorktree = isOwnerWorktree
     && (target.checkout.phase === 'ready' || target.checkout.phase === 'recovery_required')
@@ -111,33 +104,6 @@ export function AgentSessionTargetBadge({
         }
       : undefined
 
-  const confirmHandoff = async (): Promise<void> => {
-    if (!state.snapshot || !window.electronAPI.sessionCheckout.handoffSession || handoffPending) return
-    setHandoffPending(true)
-    try {
-      const input: AgentSessionHandoffInput = {
-        sessionId,
-        expectedRevision: state.snapshot.revision,
-        targetKind: handoffTargetKind,
-        confirmedIgnoreDirtyLocal: handoffTargetKind === 'isolated',
-      }
-      const result = await window.electronAPI.sessionCheckout.handoffSession(input)
-      if (!result.ok) {
-        toast.error('无法交接到新会话', { description: result.error.message })
-        return
-      }
-      setAgentSessions((sessions) => sessions.some((session) => session.id === result.value.session.id)
-        ? sessions.map((session) => session.id === result.value.session.id ? result.value.session : session)
-        : [result.value.session, ...sessions])
-      setHandoffOpen(false)
-      openSession('agent', result.value.session.id, result.value.session.title)
-      const feedback = getSessionHandoffFeedback(result.value, handoffTargetKind)
-      toast.success(feedback.title, { description: feedback.description })
-    } finally {
-      setHandoffPending(false)
-    }
-  }
-
   const confirmCleanup = (): void => {
     setCleanupConfirmationOpen(false)
     void operate({ action: 'discard', confirmDirty: true })
@@ -154,11 +120,8 @@ export function AgentSessionTargetBadge({
         worktreeLifecycleAction={lifecycleAction}
         sessionHandoffAction={{
           disabled: state.loading || state.pendingAction !== null,
-          pending: handoffPending,
-          onClick: () => {
-            setHandoffTargetKind(target.checkout.kind === 'local' && !canCreateWorktree ? 'local' : target.checkout.kind === 'local' ? 'local' : 'isolated')
-            setHandoffOpen(true)
-          },
+          pending: false,
+          onClick: () => setSessionCommand({ sessionType: 'agent', sessionId, action: 'move' }),
         }}
         onOpenWorktreeManager={(scope) => setWorktreeManager({
           open: true,
@@ -180,45 +143,6 @@ export function AgentSessionTargetBadge({
           })
         }}
       />
-      <AlertDialog open={handoffOpen} onOpenChange={setHandoffOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>交接到新会话</AlertDialogTitle>
-            <AlertDialogDescription>
-              Domi 会从当前已持久化的对话创建 durable handoff，并自动打开新的 Agent 会话。原会话和现有文件保持不变。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="grid gap-2">
-            {target.checkout.kind === 'local' ? (
-              <label className="flex cursor-pointer gap-3 rounded-md border p-3 text-sm">
-                <input type="radio" name="handoff-target" checked={handoffTargetKind === 'local'} onChange={() => setHandoffTargetKind('local')} />
-                <span><strong>继续使用当前 Local</strong><span className="mt-1 block text-xs text-muted-foreground">只换新会话和上下文，不创建 Worktree、不复制文件。</span></span>
-              </label>
-            ) : null}
-            {canCreateWorktree ? (
-              <label className="flex cursor-pointer gap-3 rounded-md border p-3 text-sm">
-                <input type="radio" name="handoff-target" checked={handoffTargetKind === 'isolated'} onChange={() => setHandoffTargetKind('isolated')} />
-                <span><strong>创建新的 Worktree</strong><span className="mt-1 block text-xs text-muted-foreground">基于最新 Local HEAD 创建 fresh managed Worktree，并自动继续未完成任务。</span></span>
-              </label>
-            ) : null}
-          </div>
-          {handoffTargetKind === 'isolated' ? (
-            <div className="rounded-md border border-amber-500/25 bg-amber-500/5 p-2.5 text-xs leading-5 text-amber-700 dark:text-amber-300">
-              新 Worktree 只基于点击时的最新 Local HEAD 创建；Local 中现有 staged、unstaged 或 untracked 修改不会复制，也不会被 reset、rebase 或覆盖。
-            </div>
-          ) : null}
-          {target.checkout.kind === 'isolated' ? (
-            <p className="text-xs text-muted-foreground">当前 Worktree 的稳定任务快照和旧恢复证据会保留；为避免绕过 Preview，不能直接交接到 Local。</p>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={handoffPending}>取消</AlertDialogCancel>
-            <AlertDialogAction disabled={handoffPending} onClick={() => void confirmHandoff()}>
-              {handoffPending ? '正在交接…' : '确认交接并自动继续'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       <AlertDialog open={cleanupConfirmationOpen} onOpenChange={setCleanupConfirmationOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

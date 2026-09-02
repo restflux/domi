@@ -25,6 +25,12 @@ type CodexTitleTransport = 'auto' | 'sse'
 const TITLE_MAX_OUTPUT_TOKENS = 40
 const TITLE_REQUEST_TIMEOUT_MS = 30_000
 
+export interface CodexTextGenerationOptions {
+  maxTokens?: number
+  timeoutMs?: number
+  textVerbosity?: 'low' | 'medium' | 'high'
+}
+
 export interface CodexTitleGenerationInput {
   modelId: string
   prompt: string
@@ -99,6 +105,7 @@ export async function completeCodexTitleRequest(
   environment: CodexTitleRequestEnvironment,
   signal?: AbortSignal,
   transport: CodexTitleTransport = 'auto',
+  options: CodexTextGenerationOptions = {},
 ): Promise<string | null> {
   try {
     environment.installRequestProxyFetch()
@@ -113,13 +120,13 @@ export async function completeCodexTitleRequest(
         sessionId: randomUUID(),
         transport,
         ...(signal && { signal }),
-        maxTokens: TITLE_MAX_OUTPUT_TOKENS,
-        timeoutMs: TITLE_REQUEST_TIMEOUT_MS,
+        maxTokens: options.maxTokens ?? TITLE_MAX_OUTPUT_TOKENS,
+        timeoutMs: options.timeoutMs ?? TITLE_REQUEST_TIMEOUT_MS,
         maxRetries: 0,
         // Codex Responses 仅接受 concise/detailed/auto；省略 summary 让 Pi 使用
         // 协议默认的 auto，避免向 ChatGPT OAuth 发送不兼容的 off。
         reasoningEffort: 'none',
-        textVerbosity: 'low',
+        textVerbosity: options.textVerbosity ?? 'low',
         toolChoice: 'none',
       } satisfies OpenAICodexResponsesOptions,
     ))
@@ -138,7 +145,10 @@ export async function completeCodexTitleRequest(
  * 使用已登录的 ChatGPT Codex 模型生成一个短文本。连接策略与前台 Pi Agent 对齐：
  * 无代理时使用 auto（优先 WebSocket），有 HTTP 代理时使用 SSE。请求失败由调用方按产品语义决定降级方式。
  */
-export async function generateCodexTitle(input: CodexTitleGenerationInput): Promise<string | null> {
+export async function generateCodexText(
+  input: CodexTitleGenerationInput,
+  options: CodexTextGenerationOptions = {},
+): Promise<string | null> {
   const sdk: PiSdk = await import('@earendil-works/pi-coding-agent')
   const { modelRuntime, model } = await buildCodexModel(sdk, {
     model: input.modelId,
@@ -164,5 +174,10 @@ export async function generateCodexTitle(input: CodexTitleGenerationInput): Prom
     },
     input.signal,
     connection.transport,
+    options,
   )
+}
+
+export async function generateCodexTitle(input: CodexTitleGenerationInput): Promise<string | null> {
+  return generateCodexText(input)
 }

@@ -1556,6 +1556,7 @@ const electronAPI: ElectronAPI = {
     revealManaged: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.REVEAL_MANAGED, input),
     handoffRecovery: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.HANDOFF_RECOVERY, input),
     handoffSession: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.HANDOFF_SESSION, input),
+    exportHandoffPrompt: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.EXPORT_HANDOFF_PROMPT, input),
   },
 
   // 运行时

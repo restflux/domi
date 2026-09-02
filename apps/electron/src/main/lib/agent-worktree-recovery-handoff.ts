@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type {
   AgentSessionMeta,
+  AgentWorkspace,
   AgentWorkflow,
   ExecutionPolicyMode,
   DomiPermissionMode,
@@ -24,6 +25,7 @@ import {
   type HostPiForkPoint,
   type PiForkUnavailableReason,
 } from './agent-session-manager.ts'
+import { resolveWorkspaceFilesDir } from './config-paths.ts'
 import { getAgentWorkspace } from './agent-workspace-manager.ts'
 import {
   bindProductionAgentSessionTargetForLaunch,
@@ -33,11 +35,12 @@ import { runRegisteredHeadlessAgent } from './agent-headless-runner-registry.ts'
 import { isAgentSessionActive } from './agent-service.ts'
 import { getSessionCheckoutModule } from './session-checkout/production.ts'
 import { SessionCheckoutError, type SessionHandoffSnapshot, type WorktreeRecoveryHandoffSnapshot } from './session-checkout/index.ts'
+import { synthesizeAgentSessionHandoff } from './agent-session-handoff-synthesis.ts'
 
 export type { SessionHandoffSnapshot, WorktreeRecoveryHandoffSnapshot } from './session-checkout/index.ts'
 
 export type AgentSessionHandoffTargetKind = 'local' | 'isolated'
-export type AgentSessionHandoffMode = 'fork' | 'degraded'
+export type AgentSessionHandoffMode = 'fork' | 'degraded' | 'portable'
 export type AgentSessionHandoffDegradedReason = PiForkUnavailableReason
 
 export type AgentSessionHandoffForkPoint =
@@ -49,6 +52,7 @@ export interface PrepareAgentSessionHandoffInput {
   expectedRevision: number
   targetKind: AgentSessionHandoffTargetKind
   confirmedIgnoreDirtyLocal: boolean
+  targetWorkspaceId?: string
 }
 
 export interface PrepareAgentWorktreeRecoveryHandoffInput {
@@ -67,7 +71,9 @@ export interface PreparedAgentSessionHandoff {
   launch(): void
 }
 
-export type PreparedAgentWorktreeRecoveryHandoff = PreparedAgentSessionHandoff
+export interface PreparedAgentWorktreeRecoveryHandoff extends Omit<PreparedAgentSessionHandoff, 'mode'> {
+  mode: Exclude<AgentSessionHandoffMode, 'portable'>
+}
 
 export interface AgentSessionHandoffDependencies {
   getSession(sessionId: string): AgentSessionMeta | undefined
@@ -76,14 +82,21 @@ export interface AgentSessionHandoffDependencies {
   captureSnapshot(sessionId: string, expectedRevision: number): Promise<SessionHandoffSnapshot>
   findForkPoint(session: AgentSessionMeta): AgentSessionHandoffForkPoint
   exportFallbackContext(session: AgentSessionMeta): string
+  synthesizeHandoff(session: AgentSessionMeta, snapshot: SessionHandoffSnapshot, handoffId: string): Promise<string>
   writeHandoff(session: AgentSessionMeta, handoffId: string, markdown: string): Promise<{ sourcePath: string; relativePath: string }>
   forkSession(input: {
     sessionId: string
     upToMessageUuid: string
     modelId?: string
-    target: { kind: 'inherit' } | { kind: 'isolated'; confirmDirty: boolean }
+    target: { kind: 'inherit' } | { kind: 'local' } | { kind: 'isolated'; confirmDirty: boolean }
   }, hostPiForkPoint?: HostPiForkPoint): Promise<AgentSessionMeta>
   createFallbackSession(source: AgentSessionMeta): AgentSessionMeta
+  getWorkspace?(workspaceId: string): AgentWorkspace | undefined
+  createPortableSession?(source: AgentSessionMeta, targetWorkspaceId: string): AgentSessionMeta
+  bindPortableSession?(
+    child: AgentSessionMeta,
+    targetKind: AgentSessionHandoffTargetKind,
+  ): Promise<AgentSessionMeta>
   bindFallbackSession(
     child: AgentSessionMeta,
     targetKind: AgentSessionHandoffTargetKind,
@@ -179,6 +192,116 @@ interface SessionHandoffMarkdownOptions {
   fallbackContext?: string
 }
 
+export interface PortableSessionHandoffPromptInput {
+  session: AgentSessionMeta
+  snapshot?: SessionHandoffSnapshot
+  originalProjectPath?: string
+  persistedContext: string
+}
+
+function portableTaskList(session: AgentSessionMeta): string {
+  const unfinished = session.workActivityTasks?.filter((task) => (
+    task.status === 'pending' || task.status === 'in_progress' || task.status === 'blocked'
+  )) ?? []
+  return unfinished.length > 0
+    ? unfinished.map((task) => `- **${task.status}** ${task.subject}${task.activeForm ? ` — ${task.activeForm}` : ''}`).join('\n')
+    : '- 持久化任务状态中没有明确标记的未完成事项；请结合下方会话摘录核对。'
+}
+
+/**
+ * 生成可直接粘贴到任意新会话的 portable handoff。
+ * 文本只引用来源路径，不携带任何目标绑定意图；新会话必须以自己的 Session Target 为准。
+ */
+export function buildPortableSessionHandoffPrompt(input: PortableSessionHandoffPromptInput): string {
+  const { session, snapshot } = input
+  const targetState = snapshot
+    ? `- 来源项目：${snapshot.projectName}\n- 来源 Target：${snapshot.originTargetKind === 'isolated' ? 'managed Isolated Worktree' : 'Local'}\n- 来源 revision：${snapshot.originRevision}\n- 来源 Local HEAD：\`${snapshot.localHeadOid}\`\n- 来源 Local 状态：${snapshot.localDirty ? 'dirty' : 'clean'}`
+    : '- 来源会话尚未绑定 Session Target，未捕获 Git 状态。'
+  const completed = snapshot?.detailsMarkdown?.trim() || snapshot?.summary || '未记录独立的完成摘要；请结合会话摘录核对。'
+  const validation = snapshot
+    ? `- 状态：**${snapshot.validationStatus}**\n- 摘要：${compactLine(snapshot.validationSummary)}\n\n${validationList(snapshot.tests)}`
+    : '- 尚未绑定 Session Target，未捕获宿主验证快照。'
+
+  return `# Domi 可移植会话交接提示词
+
+> 这是宿主根据已持久化会话生成的 portable handoff。请在新会话中先核对目标项目与当前文件状态，只继续仍未完成的工作，不要假设旧路径、旧 Checkout 或未提交修改已被迁移。
+
+## 任务目标
+
+${session.title || snapshot?.summary || '继续来源 Agent 会话'}
+
+## 已完成工作
+
+${completed}
+
+## 关键决策
+
+- 来源会话 ID：\`${session.id}\`
+- 本交接不迁移原会话，不修改原 Session Target 或 Checkout 绑定。
+- 下方已持久化会话摘录是上下文证据；新会话应结合目标项目现状重新确认。
+
+## 当前代码状态
+
+${targetState}
+
+## 未完成事项
+
+${portableTaskList(session)}
+
+## 验证结果
+
+${validation}
+
+## 重要文件
+
+${markdownList(snapshot?.changedFiles ?? [])}
+
+## 风险与注意事项
+
+- 来源项目的 staged、unstaged、untracked 修改和本地 Commit 不会自动出现在其他项目。
+- 如果目标项目是重新克隆或换路径后的仓库，请先比较分支、HEAD 和文件内容，再决定如何继续。
+- 不要对来源仓库执行 reset、rebase、force checkout 或清理操作，除非用户在新会话中另行明确要求。
+
+## 原项目路径
+
+\`${input.originalProjectPath || '未记录'}\`
+
+**仅供参考，不作为新会话目标。新会话必须使用自身绑定的项目与 Session Target。**
+
+## 已持久化会话摘录
+
+${input.persistedContext.trim() || '未读取到可用的持久化文本消息。'}
+`
+}
+
+function resolveWorkspaceProjectPath(workspace: AgentWorkspace | undefined): string | undefined {
+  if (!workspace) return undefined
+  return workspace.projectRootPath ?? resolveWorkspaceFilesDir(workspace.slug)
+}
+
+export async function exportAgentSessionHandoffPrompt(sessionId: string): Promise<{
+  prompt: string
+  sourceWorkspaceId?: string
+}> {
+  const session = getAgentSessionMeta(sessionId)
+  if (!session) throw new SessionCheckoutError('session_not_found', '来源 Agent 会话不存在')
+  if (isAgentSessionActive(session.id)) {
+    throw new SessionCheckoutError('operation_not_allowed', '来源会话正在运行，请停止后再生成交接提示词')
+  }
+  let snapshot: SessionHandoffSnapshot | undefined
+  if (session.sessionTarget?.kind !== 'unselected') {
+    const checkout = getSessionCheckoutModule()
+    const target = await checkout.inspect(session.id)
+    snapshot = await checkout.captureSessionHandoff(session.id, target.revision)
+  }
+  if (!snapshot) throw new SessionCheckoutError('target_unselected', '请先开始会话，再生成交接内容')
+  const synthesisId = buildSessionHandoffSynthesisId(snapshot, session.updatedAt)
+  return {
+    prompt: await synthesizeDefaultHandoff(session, snapshot, synthesisId),
+    ...(session.workspaceId ? { sourceWorkspaceId: session.workspaceId } : {}),
+  }
+}
+
 /** 宿主持有的 durable handoff；优先继承完整历史，能力故障时显式携带有界上下文。 */
 export function buildSessionHandoffMarkdown(
   snapshot: SessionHandoffSnapshot,
@@ -264,7 +387,12 @@ export function buildWorktreeRecoveryHandoffMarkdown(snapshot: WorktreeRecoveryH
   return buildSessionHandoffMarkdown(snapshot, handoffId, 'isolated')
 }
 
-export function buildSessionHandoffId(snapshot: SessionHandoffSnapshot, targetKind: AgentSessionHandoffTargetKind, forkEntryId = ''): string {
+export function buildSessionHandoffId(
+  snapshot: SessionHandoffSnapshot,
+  targetKind: AgentSessionHandoffTargetKind,
+  forkEntryId = '',
+  targetWorkspaceId = snapshot.projectId,
+): string {
   return createHash('sha256')
     .update([
       snapshot.originSessionId,
@@ -272,6 +400,7 @@ export function buildSessionHandoffId(snapshot: SessionHandoffSnapshot, targetKi
       snapshot.originCheckoutId,
       String(snapshot.originRevision),
       targetKind,
+      targetWorkspaceId,
       forkEntryId,
       snapshot.localHeadOid,
       snapshot.isolatedSnapshotOid ?? 'no-isolated-snapshot',
@@ -284,6 +413,20 @@ export function buildWorktreeRecoveryHandoffId(snapshot: WorktreeRecoveryHandoff
   return buildSessionHandoffId(snapshot, 'isolated')
 }
 
+export function buildSessionHandoffSynthesisId(snapshot: SessionHandoffSnapshot, sessionUpdatedAt: number): string {
+  return createHash('sha256')
+    .update([
+      snapshot.originSessionId,
+      snapshot.originCheckoutId,
+      String(snapshot.originRevision),
+      snapshot.localHeadOid,
+      snapshot.isolatedSnapshotOid ?? 'no-isolated-snapshot',
+      String(sessionUpdatedAt),
+    ].join('\0'))
+    .digest('hex')
+    .slice(0, 24)
+}
+
 export function buildSessionHandoffContinuationPrompt(
   handoffPath: string,
   originSessionId: string,
@@ -292,11 +435,11 @@ export function buildSessionHandoffContinuationPrompt(
 ): string {
   return `<domi_session_handoff>
 Domi 已从会话 ${originSessionId} 创建 durable handoff，并派生了新的 Agent 会话。
-${mode === 'degraded' ? '\n重要：这是降级交接，未继承完整 Pi 历史。不得假装拥有原会话的全部上下文。\n' : ''}
+${mode === 'degraded' ? '\n重要：这是降级交接，未继承完整 Pi 历史。不得假装拥有原会话的全部上下文。\n' : ''}${mode === 'portable' ? '\n重要：这是跨项目 portable handoff。原会话、原路径和原 Checkout 都没有迁移。\n' : ''}
 读取并执行：${handoffPath}
 
-- 当前 Session Target 是${targetKind === 'isolated' ? '新的 managed Worktree' : '来源会话使用的 Local Checkout'}。
-- ${mode === 'fork' ? '先阅读 fork 后的完整对话与 handoff' : '先阅读 handoff 中的有界上下文并核对当前文件/Git 状态'}，只继续未完成事项，不要重复已完成工作。
+- 当前 Session Target 是${targetKind === 'isolated' ? '目标项目中新建的 managed Worktree' : mode === 'portable' ? '目标项目的 Local Checkout' : '来源会话使用的 Local Checkout'}。
+- ${mode === 'fork' ? '先阅读 fork 后的完整对话与 handoff' : mode === 'portable' ? '先阅读 portable handoff 并核对目标项目当前文件/Git 状态' : '先阅读 handoff 中的有界上下文并核对当前文件/Git 状态'}，只继续未完成事项，不要重复已完成工作。
 - 严格遵守文档中的 Local、Git、验证与交付边界。
 </domi_session_handoff>`
 }
@@ -351,6 +494,53 @@ function findLatestForkableAssistant(session: AgentSessionMeta): AgentSessionHan
   }
 }
 
+const inflightHandoffSynthesis = new Map<string, Promise<string>>()
+
+async function synthesizeDefaultHandoff(
+  session: AgentSessionMeta,
+  snapshot: SessionHandoffSnapshot,
+  handoffId: string,
+): Promise<string> {
+  if (!session.channelId || !session.modelId) {
+    throw new Error('来源会话没有可用于生成交接内容的模型')
+  }
+  const workspace = session.workspaceId ? getAgentWorkspace(session.workspaceId) : undefined
+  const workbench = resolveAgentWorkbenchDir(workspace, session.id)
+  if (!workbench) throw new Error('无法解析来源会话工作台，不能生成交接内容')
+  const synthesisPath = join(workbench, `.context/handoff-synthesis--${handoffId}.md`)
+  if (existsSync(synthesisPath)) {
+    const cached = (await readFile(synthesisPath, 'utf8')).trim()
+    if (cached) return cached
+  }
+  const inflight = inflightHandoffSynthesis.get(synthesisPath)
+  if (inflight) return inflight
+
+  const synthesis = (async () => {
+    const evidence = buildPortableSessionHandoffPrompt({
+      session,
+      snapshot,
+      originalProjectPath: resolveWorkspaceProjectPath(workspace),
+      persistedContext: exportBoundedSessionContext(getAgentSessionSDKMessagesRaw(session.id)),
+    })
+    const generated = await synthesizeAgentSessionHandoff({
+      channelId: session.channelId!,
+      modelId: session.modelId!,
+      evidence,
+    })
+    await mkdir(dirname(synthesisPath), { recursive: true })
+    await writeFile(synthesisPath, `${generated.trim()}\n`, 'utf8')
+    return generated.trim()
+  })()
+  inflightHandoffSynthesis.set(synthesisPath, synthesis)
+  try {
+    return await synthesis
+  } finally {
+    if (inflightHandoffSynthesis.get(synthesisPath) === synthesis) {
+      inflightHandoffSynthesis.delete(synthesisPath)
+    }
+  }
+}
+
 async function writeDefaultHandoff(
   session: AgentSessionMeta,
   handoffId: string,
@@ -380,6 +570,7 @@ const defaultDependencies: AgentSessionHandoffDependencies = {
   captureSnapshot: (sessionId, expectedRevision) => getSessionCheckoutModule().captureSessionHandoff(sessionId, expectedRevision),
   findForkPoint: findLatestForkableAssistant,
   exportFallbackContext: (session) => exportBoundedSessionContext(getAgentSessionSDKMessagesRaw(session.id)),
+  synthesizeHandoff: synthesizeDefaultHandoff,
   writeHandoff: writeDefaultHandoff,
   forkSession: forkAgentSession,
   createFallbackSession: (source) => createAgentSession(
@@ -389,6 +580,21 @@ const defaultDependencies: AgentSessionHandoffDependencies = {
     source.modelId,
     getAgentCwdMode(source),
   ),
+  getWorkspace: getAgentWorkspace,
+  createPortableSession: (source, targetWorkspaceId) => createAgentSession(
+    `${source.title} · 跨项目接力`,
+    source.channelId,
+    targetWorkspaceId,
+    source.modelId,
+    'project',
+  ),
+  bindPortableSession: async (child, targetKind) => {
+    await bindProductionAgentSessionTargetForLaunch({
+      sessionId: child.id,
+      choice: { kind: targetKind },
+    })
+    return getAgentSessionMeta(child.id) ?? child
+  },
   bindFallbackSession: async (child, targetKind, snapshot) => {
     if (targetKind === 'isolated') {
       await bindProductionVerifiedIsolatedTarget(child.id, {
@@ -459,6 +665,111 @@ function launchPreparedChild(input: {
   })
 }
 
+async function preparePortableAgentSessionHandoff(input: {
+  source: AgentSessionMeta
+  snapshot: SessionHandoffSnapshot
+  targetWorkspaceId: string
+  targetKind: AgentSessionHandoffTargetKind
+  dependencies: AgentSessionHandoffDependencies
+}): Promise<PreparedAgentSessionHandoff> {
+  const { source, snapshot, targetWorkspaceId, targetKind, dependencies } = input
+  const targetWorkspace = dependencies.getWorkspace?.(targetWorkspaceId)
+  if (!targetWorkspace) throw new SessionCheckoutError('project_not_found', '目标项目不存在')
+  if (targetWorkspace.projectRootStatus && targetWorkspace.projectRootStatus !== 'available') {
+    throw new SessionCheckoutError('project_root_missing', '目标项目路径当前不可用')
+  }
+  if (!dependencies.createPortableSession || !dependencies.bindPortableSession) {
+    throw new SessionCheckoutError('operation_not_allowed', '当前宿主不支持跨项目 session handoff')
+  }
+
+  const handoffId = buildSessionHandoffId(
+    snapshot,
+    targetKind,
+    `portable:${source.updatedAt}`,
+    targetWorkspaceId,
+  )
+  const handoff = await dependencies.writeHandoff(
+    source,
+    handoffId,
+    await dependencies.synthesizeHandoff(
+      source,
+      snapshot,
+      buildSessionHandoffSynthesisId(snapshot, source.updatedAt),
+    ),
+  )
+  const existing = dependencies.getExistingHandoffSession(handoffId)
+  if (existing) {
+    const childHandoffPath = dependencies.resolveChildHandoffPath(existing, handoff.relativePath)
+    await dependencies.ensureChildHandoff?.(handoff.sourcePath, childHandoffPath)
+    const activationToken = dependencies.createActivationToken()
+    let launched = false
+    return {
+      child: existing,
+      handoffId,
+      reused: true,
+      mode: 'portable',
+      activationToken,
+      launch() {
+        if (launched || existing.handoffStartedAt) return
+        launched = true
+        launchPreparedChild({
+          dependencies,
+          child: existing,
+          source,
+          handoffPath: childHandoffPath,
+          targetKind,
+          mode: 'portable',
+          activationToken,
+          rollbackOnRejectedLaunch: false,
+        })
+      },
+    }
+  }
+
+  let child: AgentSessionMeta | undefined
+  try {
+    child = dependencies.createPortableSession(source, targetWorkspaceId)
+    child = await dependencies.bindPortableSession(child, targetKind)
+    child = dependencies.updateSession(child.id, {
+      title: `${source.title} · 跨项目接力`,
+      handoffId,
+      handoffOriginSessionId: source.id,
+      handoffMode: 'portable',
+      executionPolicy: source.executionPolicy,
+      workflow: source.workflow,
+      permissionMode: source.permissionMode,
+    })
+    const childHandoffPath = dependencies.resolveChildHandoffPath(child, handoff.relativePath)
+    await dependencies.ensureChildHandoff?.(handoff.sourcePath, childHandoffPath)
+    const activationToken = dependencies.createActivationToken()
+    let launched = false
+    return {
+      child,
+      handoffId,
+      reused: false,
+      mode: 'portable',
+      activationToken,
+      launch() {
+        if (launched) return
+        launched = true
+        launchPreparedChild({
+          dependencies,
+          child: child!,
+          source,
+          handoffPath: childHandoffPath,
+          targetKind,
+          mode: 'portable',
+          activationToken,
+          rollbackOnRejectedLaunch: true,
+        })
+      },
+    }
+  } catch (error) {
+    if (child) await dependencies.rollbackFork(child.id)
+    throw error
+  }
+}
+
 export async function prepareAgentSessionHandoff(
   input: PrepareAgentSessionHandoffInput,
   dependencies: AgentSessionHandoffDependencies = defaultDependencies,
@@ -474,8 +785,14 @@ export async function prepareAgentSessionHandoff(
   if (snapshot.originSessionId !== source.id) {
     throw new SessionCheckoutError('stale_target', 'Session handoff 来源身份已变化，请刷新后重试')
   }
-  if (snapshot.originTargetKind === 'isolated' && input.targetKind === 'local') {
-    throw new SessionCheckoutError('operation_not_allowed', 'Worktree 会话不能直接交接到 Local，以免绕过 Preview 验收')
+  if (input.targetWorkspaceId && input.targetWorkspaceId !== source.workspaceId) {
+    return preparePortableAgentSessionHandoff({
+      source,
+      snapshot,
+      targetWorkspaceId: input.targetWorkspaceId,
+      targetKind: input.targetKind,
+      dependencies,
+    })
   }
   if (snapshot.localDirty && input.targetKind === 'isolated' && !input.confirmedIgnoreDirtyLocal) {
     throw new SessionCheckoutError('dirty_confirmation_required', 'Local 存在未提交状态；需要明确确认新 Worktree 不复制这些修改')
@@ -495,15 +812,15 @@ export async function prepareAgentSessionHandoff(
   let degradedReason: AgentSessionHandoffDegradedReason | undefined = existing?.handoffDegradedReason
     ?? (forkPoint.status === 'unavailable' ? forkPoint.reason : undefined)
 
-  const persistHandoff = async () => {
-    const fallbackContext = mode === 'degraded' ? dependencies.exportFallbackContext(source) : undefined
-    return dependencies.writeHandoff(source, handoffId, buildSessionHandoffMarkdown(
+  const persistHandoff = async () => dependencies.writeHandoff(
+    source,
+    handoffId,
+    await dependencies.synthesizeHandoff(
+      source,
       snapshot,
-      handoffId,
-      input.targetKind,
-      { mode, ...(degradedReason ? { degradedReason } : {}), ...(fallbackContext ? { fallbackContext } : {}) },
-    ))
-  }
+      buildSessionHandoffSynthesisId(snapshot, source.updatedAt),
+    ),
+  )
 
   let handoff = await persistHandoff()
   if (existing) {
@@ -540,7 +857,9 @@ export async function prepareAgentSessionHandoff(
           modelId: source.modelId,
           target: useFreshWorktree
             ? { kind: 'isolated', confirmDirty: snapshot.localDirty }
-            : { kind: 'inherit' },
+            : snapshot.originTargetKind === 'isolated'
+              ? { kind: 'local' }
+              : { kind: 'inherit' },
         }, useFreshWorktree ? {
           piEntryId: forkPoint.piEntryId,
           uiUpToMessageUuid: forkPoint.assistantMessageUuid,
@@ -604,5 +923,10 @@ export async function prepareAgentWorktreeRecoveryHandoff(
   input: PrepareAgentWorktreeRecoveryHandoffInput,
   dependencies: AgentSessionHandoffDependencies = defaultDependencies,
 ): Promise<PreparedAgentWorktreeRecoveryHandoff> {
-  return prepareAgentSessionHandoff({ ...input, targetKind: 'isolated' }, dependencies)
+  const prepared = await prepareAgentSessionHandoff({ ...input, targetKind: 'isolated' }, dependencies)
+  if (prepared.mode === 'portable') {
+    throw new SessionCheckoutError('operation_not_allowed', 'Preview recovery 不能创建跨项目 portable handoff')
+  }
+  const { mode, ...rest } = prepared
+  return { ...rest, mode }
 }

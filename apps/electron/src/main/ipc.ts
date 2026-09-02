@@ -317,7 +317,11 @@ import { registerBrowserIpc, type BrowserIpcGuard } from './ipc/register-browser
 import type { BrowserSessionService } from './lib/browser/browser-session-service.ts'
 import { registerTerminalIpc, type TerminalIpcGuard } from './ipc/register-terminal-ipc.ts'
 import type { TerminalSessionService } from './lib/terminal/terminal-session-service.ts'
-import { prepareAgentSessionHandoff, prepareAgentWorktreeRecoveryHandoff } from './lib/agent-worktree-recovery-handoff.ts'
+import {
+  exportAgentSessionHandoffPrompt,
+  prepareAgentSessionHandoff,
+  prepareAgentWorktreeRecoveryHandoff,
+} from './lib/agent-worktree-recovery-handoff.ts'
 import { PiRunTimingQuery } from './lib/audit/pi-run-timing-query.ts'
 import { SessionTargetFileAccessService } from './lib/session-target-file-access-service.ts'
 import { resolvePreviewReadPath as resolveAuthorizedPreviewReadPath } from './lib/preview-read-path-resolver.ts'
@@ -1119,13 +1123,14 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
       expectedRevision: input.expectedRevision,
       targetKind: input.targetKind,
       confirmedIgnoreDirtyLocal: input.confirmedIgnoreDirtyLocal,
+      ...(input.targetWorkspaceId ? { targetWorkspaceId: input.targetWorkspaceId } : {}),
     })
     prepared.launch()
     return {
       session: prepared.child, handoffId: prepared.handoffId, reused: prepared.reused,
       mode: prepared.mode, ...(prepared.degradedReason ? { degradedReason: prepared.degradedReason } : {}),
     }
-  }, async (input) => confirmAgentWorktreeIterationContinuation(
+  }, async (input) => exportAgentSessionHandoffPrompt(input.sessionId), async (input) => confirmAgentWorktreeIterationContinuation(
     input.sessionId,
     input.requestId,
     worktreeContinuationAuthorizationRegistry,

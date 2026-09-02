@@ -64,6 +64,28 @@ describe('Codex OAuth 标题生成', () => {
     expect(environment.closed).toBe(dispatcher)
   })
 
+  test('Given a longer text request When options are provided Then it uses the requested output budget', async () => {
+    let receivedOptions: OpenAICodexResponsesOptions | undefined
+    const runtime: CodexTitleRuntime = {
+      async complete(_model, _context, options) {
+        receivedOptions = options
+        return { content: [{ type: 'text', text: '交接内容' }], stopReason: 'stop' }
+      },
+    }
+    const environment = createEnvironment()
+
+    await expect(completeCodexTitleRequest(
+      runtime,
+      model,
+      '生成交接内容',
+      environment,
+      undefined,
+      'auto',
+      { maxTokens: 2_400, timeoutMs: 90_000, textVerbosity: 'medium' },
+    )).resolves.toBe('交接内容')
+    expect(receivedOptions).toMatchObject({ maxTokens: 2_400, timeoutMs: 90_000, textVerbosity: 'medium' })
+  })
+
   test('Given Codex request failure When completing title Then still closes its proxy', async () => {
     const runtime: CodexTitleRuntime = {
       async complete() { throw new Error('quota exceeded') },

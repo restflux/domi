@@ -94,6 +94,7 @@ import { sessionHoverPreviewEnabledAtom, updateWorkSidebarPreferences } from '@/
 import { CollapsedWorkspacePopover } from '@/components/agent/CollapsedWorkspacePopover'
 import { LocalProjectBadge } from '@/components/agent/LocalProjectBadge'
 import { MoveSessionDialog } from '@/components/agent/MoveSessionDialog'
+import { getAgentSessionTransferLabel } from '@/components/session-header-menu-model'
 import {
   SessionMiniMapPopover,
   useSessionMiniMapHover,
@@ -1147,8 +1148,11 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const [restoringProjectRootId, setRestoringProjectRootId] = React.useState<string | null>(null)
   /** 待迁移会话 ID，非空时显示迁移对话框 */
   const [moveTargetId, setMoveTargetId] = React.useState<string | null>(null)
-  /** 待迁移会话所属的工作区 ID（用于对话框排除当前分区） */
+  /** 待迁移/交接会话所属的工作区 ID（用于对话框排除当前分区） */
   const [moveSourceWorkspaceId, setMoveSourceWorkspaceId] = React.useState<string | undefined>()
+  /** 只有尚未绑定 Target 的草稿才能迁移；已执行会话使用跨项目交接。 */
+  const [moveSourceIsDraft, setMoveSourceIsDraft] = React.useState(false)
+  const [moveSourceTarget, setMoveSourceTarget] = React.useState<AgentSessionMeta['sessionTarget']>()
   /** 每个项目额外展开显示的会话数量（每次点击"显示更多" +10），未点击则为 0 或无值 */
   const [expandedExtraCountMap, setExpandedExtraCountMap] = React.useState<Map<string, number>>(new Map())
   /** 记录被用户手动折叠的工作区 ID（点击当前工作区标题时折叠/展开）。刻意不持久化：折叠被视为临时查看行为，刷新/重启后恢复默认展开 */
@@ -2601,6 +2605,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     // 查找被迁移会话所属的工作区——排除分区应基于此而非当前 UI 工作区
     const session = agentSessions.find((s) => s.id === id)
     setMoveSourceWorkspaceId(session?.workspaceId)
+    setMoveSourceIsDraft(session?.sessionTarget?.kind === 'unselected')
+    setMoveSourceTarget(session?.sessionTarget)
   }, [agentSessions])
 
   /** 迁移会话到另一个项目后的回调 */
@@ -2636,6 +2642,29 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     setMoveTargetId(null)
     toast.success('会话已迁移', {
       description: `已迁移到「${targetWorkspaceName}」，子会话会一起移动`,
+    })
+  }
+
+  /** 跨项目交接成功后保留来源会话，并打开目标项目中的继任会话。 */
+  const handleSessionHandedOff = async (
+    newSession: AgentSessionMeta,
+    targetWorkspaceName: string,
+  ): Promise<void> => {
+    try {
+      setAgentSessions(await window.electronAPI.listAgentSessions())
+    } catch (error) {
+      console.error('[侧边栏] 交接后刷新 Agent 会话列表失败:', error)
+      setAgentSessions((previous) => replaceAgentSessionInFreshnessOrder(previous, newSession))
+    }
+    setMoveTargetId(null)
+    if (newSession.workspaceId) {
+      setCurrentWorkspaceId(newSession.workspaceId)
+      void window.electronAPI.updateSettings({ agentWorkspaceId: newSession.workspaceId })
+        .catch((error) => console.error('[侧边栏] 保存交接目标项目失败:', error))
+    }
+    handleSelectAgentSession(newSession.id, newSession.title)
+    toast.success('已创建跨项目继任会话', {
+      description: `已在「${targetWorkspaceName}」注入交接内容并自动继续，原会话保持不变`,
     })
   }
 
@@ -3055,8 +3084,11 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       onOpenChange={(open) => { if (!open) setMoveTargetId(null) }}
       sessionId={moveTargetId ?? ''}
       sourceWorkspaceId={moveSourceWorkspaceId ?? undefined}
+      sourceTarget={moveSourceTarget}
+      isDraft={moveSourceIsDraft}
       workspaces={workspaces}
       onMoved={handleSessionMoved}
+      onHandedOff={handleSessionHandedOff}
     />
   )
 
@@ -4602,7 +4634,8 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
     }
   }, [session.id, setAgentSessions])
 
-  const canMove = indicatorStatus === 'idle' || indicatorStatus === 'completed'
+  const canTransfer = indicatorStatus === 'idle' || indicatorStatus === 'completed'
+  const isDraft = session.sessionTarget?.kind === 'unselected'
 
   const childCount = delegationSummary?.total ?? 0
   const hasChildren = childCount > 0
@@ -4637,10 +4670,10 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
         <Flag fill={session.needsFollowUp ? 'currentColor' : 'none'} className={session.needsFollowUp ? 'text-violet-500' : undefined} />
         {session.needsFollowUp ? '取消待继续' : '标记为待继续'}
       </MenuItem>
-      {canMove && (
+      {canTransfer && (
         <MenuItem className="text-xs py-1 [&>svg]:size-3.5" onSelect={() => onRequestMove(session.id)}>
           <ArrowRightLeft size={14} />
-          迁移到其他项目
+          {getAgentSessionTransferLabel(isDraft)}
         </MenuItem>
       )}
       <MenuItem className="text-xs py-1 [&>svg]:size-3.5" onSelect={() => startEdit()}>

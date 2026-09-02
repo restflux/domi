@@ -60,11 +60,13 @@ export function AgentHeader({
     workspace
     && (!workspace.projectRootPath || !workspace.projectRootStatus || workspace.projectRootStatus === 'available'),
   )
+  const canTransfer = indicatorStatus === 'idle' || indicatorStatus === 'completed'
   const menuEntries = buildAgentSessionHeaderMenu({
     pinned: !!session.pinned,
     needsFollowUp: !!session.needsFollowUp,
     archived: !!session.archived,
-    canMove: indicatorStatus === 'idle' || indicatorStatus === 'completed',
+    canTransfer,
+    isDraft: session.sessionTarget?.kind === 'unselected',
     canOpenProjectFolder,
     hasSessionPath: !!sessionPath,
   })

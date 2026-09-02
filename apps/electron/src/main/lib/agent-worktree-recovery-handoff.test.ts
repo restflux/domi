@@ -5,6 +5,7 @@ import type { AgentSessionHandoffDependencies, SessionHandoffSnapshot } from './
 mock.module('electron', () => ({
   app: { isPackaged: true, getPath: () => process.cwd() },
   BrowserWindow: class {},
+  WebContentsView: class {},
   clipboard: {}, dialog: {}, nativeImage: { createFromPath: () => ({}) }, nativeTheme: {},
   powerMonitor: {}, powerSaveBlocker: {}, screen: {}, shell: {},
   safeStorage: { isEncryptionAvailable: () => false, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString('utf8') },
@@ -16,6 +17,8 @@ beforeAll(async () => {
   handoff = await import('./agent-worktree-recovery-handoff.ts')
   ;({ PiForkUnavailableError } = await import('./agent-session-manager.ts'))
 })
+
+const AI_HANDOFF = `## 任务目标\n继续任务\n## 已完成工作\n已完成基础实现\n## 关键决定\n保持来源不变\n## 当前状态\n可继续\n## 剩余事项\n完成验证\n## 验证结果\n尚未运行\n## 重要文件\nsrc/a.ts\n## 风险与注意事项\n核对目标项目\n## 原项目路径\n仅供参考，不作为新会话目标`
 
 const source: AgentSessionMeta = {
   id: 'origin', title: '继续 Agent 任务', workspaceId: 'workspace', channelId: 'channel', modelId: 'model',
@@ -64,14 +67,39 @@ function dependencies(
     captureSnapshot: async () => snapshot,
     findForkPoint: () => ({ status: 'available', assistantMessageUuid: 'assistant-ready', piEntryId: 'pi-assistant-ready' }),
     exportFallbackContext: () => '## 降级会话上下文\n\n- 用户：继续原任务',
+    synthesizeHandoff: async () => AI_HANDOFF,
     writeHandoff: async () => ({ sourcePath: 'C:/source/.context/handoff.md', relativePath: '.context/handoff.md' }),
     forkSession: async (input) => child(input.target.kind === 'isolated' ? 'isolated' : 'local'),
     createFallbackSession: () => ({ ...child('local'), id: 'fallback-child', sessionTarget: { kind: 'unselected' } }),
+    getWorkspace: (workspaceId) => ({
+      id: workspaceId,
+      name: workspaceId === 'target-workspace' ? '目标项目' : '来源项目',
+      slug: workspaceId,
+      projectRootPath: `D:/workspace/${workspaceId}`,
+      projectRootStatus: 'available',
+      createdAt: 1,
+      updatedAt: 1,
+    }),
+    createPortableSession: (_source, targetWorkspaceId) => ({
+      ...child('local'),
+      id: 'portable-child',
+      workspaceId: targetWorkspaceId,
+      sessionTarget: { kind: 'unselected' },
+    }),
+    bindPortableSession: async (created, targetKind) => ({
+      ...created,
+      sessionTarget: targetKind === 'isolated' ? { kind: 'isolated', checkoutId: 'checkout-portable' } : { kind: 'local' },
+    }),
     bindFallbackSession: async (created, targetKind) => ({
       ...created,
       sessionTarget: targetKind === 'isolated' ? { kind: 'isolated', checkoutId: 'checkout-fallback' } : { kind: 'local' },
     }),
-    updateSession: (id, updates) => ({ ...child(), id, ...updates }),
+    updateSession: (id, updates) => ({
+      ...child(),
+      id,
+      ...(id === 'portable-child' ? { workspaceId: 'target-workspace' } : {}),
+      ...updates,
+    }),
     resolveChildHandoffPath: () => 'C:/child/.context/handoff.md',
     rollbackFork: async () => undefined,
     runChild: async () => undefined,
@@ -95,6 +123,107 @@ describe('Durable Agent Session handoff', () => {
     }])
     expect(prepared.child.handoffOriginSessionId).toBe('origin')
     expect(prepared.mode).toBe('fork')
+  })
+
+  test('跨项目 handoff 创建 portable 继任会话，不尝试迁移或 fork 来源会话', async () => {
+    const forkCalls: unknown[] = []
+    const portableCalls: unknown[] = []
+    const prepared = await handoff.prepareAgentSessionHandoff({
+      originSessionId: 'origin',
+      expectedRevision: 4,
+      targetKind: 'isolated',
+      confirmedIgnoreDirtyLocal: false,
+      targetWorkspaceId: 'target-workspace',
+    }, dependencies(localSnapshot, {
+      forkSession: async (input) => {
+        forkCalls.push(input)
+        return child()
+      },
+      createPortableSession: (input, targetWorkspaceId) => {
+        portableCalls.push({ input, targetWorkspaceId })
+        return {
+          ...child('local'),
+          id: 'portable-child',
+          workspaceId: targetWorkspaceId,
+          sessionTarget: { kind: 'unselected' },
+        }
+      },
+    }))
+
+    expect(forkCalls).toEqual([])
+    expect(portableCalls).toHaveLength(1)
+    expect(prepared).toMatchObject({
+      mode: 'portable',
+      reused: false,
+      child: {
+        id: 'portable-child',
+        workspaceId: 'target-workspace',
+        handoffOriginSessionId: 'origin',
+        handoffMode: 'portable',
+        sessionTarget: { kind: 'isolated' },
+      },
+    })
+    expect(source).toMatchObject({ workspaceId: 'workspace' })
+  })
+
+  test('来源为 Isolated 时可以交接到其他项目的当前目录，来源绑定保持不变', async () => {
+    const prepared = await handoff.prepareAgentSessionHandoff({
+      originSessionId: 'origin',
+      expectedRevision: 12,
+      targetKind: 'local',
+      confirmedIgnoreDirtyLocal: false,
+      targetWorkspaceId: 'target-workspace',
+    }, dependencies(isolatedSnapshot, {
+      updateSession: (id, updates) => ({
+        ...child('local'),
+        id,
+        workspaceId: 'target-workspace',
+        ...updates,
+      }),
+    }))
+
+    expect(prepared).toMatchObject({
+      mode: 'portable',
+      child: {
+        workspaceId: 'target-workspace',
+        sessionTarget: { kind: 'local' },
+      },
+    })
+  })
+
+  test('AI 生成失败时不创建继任会话，也不使用默认模板继续', async () => {
+    let createCalls = 0
+    let forkCalls = 0
+    await expect(handoff.prepareAgentSessionHandoff({
+      originSessionId: 'origin',
+      expectedRevision: 4,
+      targetKind: 'local',
+      confirmedIgnoreDirtyLocal: false,
+      targetWorkspaceId: 'target-workspace',
+    }, dependencies(localSnapshot, {
+      synthesizeHandoff: async () => { throw new Error('AI generation failed') },
+      createPortableSession: () => { createCalls += 1; return child('local') },
+      forkSession: async () => { forkCalls += 1; return child('local') },
+    }))).rejects.toThrow('AI generation failed')
+
+    expect(createCalls).toBe(0)
+    expect(forkCalls).toBe(0)
+  })
+
+  test('跨项目 handoff 绑定失败时回滚尚未发布的目标会话', async () => {
+    const rolledBack: string[] = []
+    await expect(handoff.prepareAgentSessionHandoff({
+      originSessionId: 'origin',
+      expectedRevision: 4,
+      targetKind: 'local',
+      confirmedIgnoreDirtyLocal: false,
+      targetWorkspaceId: 'target-workspace',
+    }, dependencies(localSnapshot, {
+      bindPortableSession: async () => { throw new Error('bind failed') },
+      rollbackFork: async (sessionId) => { rolledBack.push(sessionId) },
+    }))).rejects.toThrow('bind failed')
+
+    expect(rolledBack).toEqual(['portable-child'])
   })
 
   test('没有安全 fork point 时自动降级为全新 Local 会话，并明确标记未继承完整历史', async () => {
@@ -121,8 +250,7 @@ describe('Durable Agent Session handoff', () => {
       handoffDegradedReason: 'safe_fork_point_unavailable', parentSessionId: 'origin',
     })
     expect(fallbackCalls).toHaveLength(1)
-    expect(writes.at(-1)).toContain('降级交接：未继承完整 Pi 历史')
-    expect(writes.at(-1)).toContain('降级会话上下文')
+    expect(writes.at(-1)).toBe(AI_HANDOFF)
   })
 
   test('Local fork 不可用时仍可在 dirty 确认后降级到最新 HEAD 的 fresh Worktree', async () => {
@@ -205,6 +333,40 @@ describe('Durable Agent Session handoff', () => {
     expect((runs[0] as { userMessage: string }).userMessage).toContain('C:/child/.context/handoff.md')
   })
 
+  test('同一来源快照对复制和不同目标交接复用同一个 AI synthesis ID', () => {
+    const first = handoff.buildSessionHandoffSynthesisId(localSnapshot, source.updatedAt)
+    const second = handoff.buildSessionHandoffSynthesisId(localSnapshot, source.updatedAt)
+
+    expect(first).toBe(second)
+    expect(first).toHaveLength(24)
+  })
+
+  test('portable handoff prompt 可粘贴到任意项目，并明确原路径只供参考', () => {
+    const prompt = handoff.buildPortableSessionHandoffPrompt({
+      session: source,
+      snapshot: localSnapshot,
+      originalProjectPath: 'D:/workspace/old-repository',
+      persistedContext: '## 已持久化会话摘录\n\n### 用户\n\n实现跨项目交接',
+    })
+
+    for (const heading of [
+      '任务目标',
+      '已完成工作',
+      '关键决策',
+      '当前代码状态',
+      '未完成事项',
+      '验证结果',
+      '重要文件',
+      '风险与注意事项',
+      '原项目路径',
+    ]) {
+      expect(prompt).toContain(`## ${heading}`)
+    }
+    expect(prompt).toContain('D:/workspace/old-repository')
+    expect(prompt).toContain('仅供参考，不作为新会话目标')
+    expect(prompt).toContain('实现跨项目交接')
+  })
+
   test('降级上下文只导出有界 user/assistant 文本，并保留首个用户任务与最近对话', () => {
     const messages = [
       { type: 'user', message: { content: [{ type: 'text', text: '最初任务' }] } },
@@ -231,10 +393,21 @@ describe('Durable Agent Session handoff', () => {
     }, dependencies({ ...localSnapshot, originSessionId: 'other-session' }))).rejects.toMatchObject({ code: 'stale_target' })
   })
 
-  test('Worktree 不允许直接交接到 Local，以免绕过 Preview', async () => {
-    await expect(handoff.prepareAgentSessionHandoff({
+  test('Worktree 会话可以交接到项目当前目录，并为新会话显式选择 Local', async () => {
+    const forkTargets: unknown[] = []
+    const localChild = child('local')
+    const prepared = await handoff.prepareAgentSessionHandoff({
       originSessionId: 'origin', expectedRevision: 12, targetKind: 'local', confirmedIgnoreDirtyLocal: false,
-    }, dependencies(isolatedSnapshot))).rejects.toThrow('不能直接交接到 Local')
+    }, dependencies(isolatedSnapshot, {
+      forkSession: async (input) => {
+        forkTargets.push(input.target)
+        return localChild
+      },
+      updateSession: (id, updates) => ({ ...localChild, id, ...updates }),
+    }))
+
+    expect(forkTargets).toEqual([{ kind: 'local' }])
+    expect(prepared.child.sessionTarget).toEqual({ kind: 'local' })
   })
 
   test('来源 Agent 仍在运行时拒绝交接，避免并行写同一目标', async () => {

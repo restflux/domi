@@ -690,6 +690,14 @@ describe('Fork Session Target 输入边界', () => {
     } as never)).rejects.toThrow('无效的 Fork Session Target')
   })
 
+  test('Given local target passes input validation When source is missing Then fork reaches the source lookup boundary', async () => {
+    await expect(manager.forkAgentSession({
+      sessionId: 'missing-session',
+      upToMessageUuid: 'assistant-1',
+      target: { kind: 'local' },
+    })).rejects.toThrow('源 Agent 会话不存在')
+  })
+
   test('Given isolated-copy target passes input validation When source is missing Then fork reaches the source lookup boundary', async () => {
     await expect(manager.forkAgentSession({
       sessionId: 'missing-session',

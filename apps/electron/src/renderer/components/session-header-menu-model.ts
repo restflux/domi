@@ -23,9 +23,14 @@ interface AgentSessionHeaderMenuState {
   pinned: boolean
   needsFollowUp: boolean
   archived: boolean
-  canMove: boolean
+  canTransfer: boolean
+  isDraft: boolean
   canOpenProjectFolder: boolean
   hasSessionPath: boolean
+}
+
+export function getAgentSessionTransferLabel(isDraft: boolean): '迁移到其他项目' | '交接到新会话' {
+  return isDraft ? '迁移到其他项目' : '交接到新会话'
 }
 
 interface ChatSessionHeaderMenuState {
@@ -42,8 +47,12 @@ export function buildAgentSessionHeaderMenu(
     { type: 'item', action: 'rename', label: '重命名' },
     { type: 'item', action: 'archive', label: state.archived ? '取消归档' : '归档' },
     { type: 'separator' },
-    ...(state.canMove
-      ? [{ type: 'item', action: 'move', label: '迁移到其他项目' } as const]
+    ...(state.canTransfer
+      ? [{
+          type: 'item',
+          action: 'move',
+          label: getAgentSessionTransferLabel(state.isDraft),
+        } as const]
       : []),
     { type: 'item', action: 'openProject', label: '打开项目文件夹', disabled: !state.canOpenProjectFolder },
     { type: 'item', action: 'copyPath', label: '复制会话目录', disabled: !state.hasSessionPath },

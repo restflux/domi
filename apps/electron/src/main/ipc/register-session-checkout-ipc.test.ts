@@ -116,7 +116,7 @@ function setup(): {
       mode: 'fork' as const,
     }
   }, async (input) => {
-    calls.push(`session-handoff:${input.sessionId}:${input.expectedRevision}:${input.targetKind}:${input.confirmedIgnoreDirtyLocal}`)
+    calls.push(`session-handoff:${input.sessionId}:${input.expectedRevision}:${input.targetKind}:${input.confirmedIgnoreDirtyLocal}:${input.targetWorkspaceId ?? 'same'}`)
     return {
       session: { id: 'handoff-child', title: 'Handoff', createdAt: 1, updatedAt: 1 },
       handoffId: 'handoff-2',
@@ -124,6 +124,9 @@ function setup(): {
       mode: 'degraded' as const,
       degradedReason: 'session_artifact_missing' as const,
     }
+  }, async (input) => {
+    calls.push(`export-handoff:${input.sessionId}`)
+    return { prompt: '# portable handoff', sourceWorkspaceId: 'workspace-1' }
   }, async (input) => {
     calls.push(`confirm-iteration:${input.sessionId}:${input.requestId}`)
     return {
@@ -206,6 +209,7 @@ describe('Session Checkout IPC', () => {
     })
     const isolated = await handoff({}, {
       sessionId: 'session-1', expectedRevision: 2, targetKind: 'isolated', confirmedIgnoreDirtyLocal: true,
+      targetWorkspaceId: 'workspace-2',
     })
     const forged = await handoff({}, {
       sessionId: 'session-1', expectedRevision: 2, targetKind: 'isolated', confirmedIgnoreDirtyLocal: true,
@@ -218,8 +222,26 @@ describe('Session Checkout IPC', () => {
     })
     expect(isolated).toMatchObject({ ok: true })
     expect(forged).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
-    expect(calls).toContain('session-handoff:session-1:2:local:false')
-    expect(calls).toContain('session-handoff:session-1:2:isolated:true')
+    expect(calls).toContain('session-handoff:session-1:2:local:false:same')
+    expect(calls).toContain('session-handoff:session-1:2:isolated:true:workspace-2')
+  })
+
+  test('Given a persisted Agent session When exporting a portable handoff Then only the session identity crosses IPC', async () => {
+    const { handlers, calls } = setup()
+    const exportPrompt = handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.EXPORT_HANDOFF_PROMPT)!
+
+    const accepted = await exportPrompt({}, { sessionId: 'session-1' })
+    const forged = await exportPrompt({}, { sessionId: 'session-1', projectPath: 'D:/forged' })
+
+    expect(accepted).toEqual({
+      ok: true,
+      value: { prompt: '# portable handoff', sourceWorkspaceId: 'workspace-1' },
+    })
+    expect(forged).toEqual({
+      ok: false,
+      error: { code: 'invalid_request', message: 'Session Target 请求参数无效' },
+    })
+    expect(calls).toContain('export-handoff:session-1')
   })
 
   test('Given recovery handoff confirmation When it crosses IPC Then only stable identity and explicit dirty confirmation reach main', async () => {

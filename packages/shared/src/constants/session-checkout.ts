@@ -21,6 +21,7 @@ export const SESSION_CHECKOUT_IPC_CHANNELS = {
   REVEAL_MANAGED: 'session-checkout:reveal-managed',
   HANDOFF_RECOVERY: 'session-checkout:handoff-recovery',
   HANDOFF_SESSION: 'session-checkout:handoff-session',
+  EXPORT_HANDOFF_PROMPT: 'session-checkout:export-handoff-prompt',
 } as const
 
 /** Renderer 只能选择公开 target，inherit 仅供主进程协作会话接线。 */
@@ -163,9 +164,22 @@ export interface AgentSessionHandoffInput {
   expectedRevision: number
   targetKind: 'local' | 'isolated'
   confirmedIgnoreDirtyLocal: boolean
+  /** 缺省时在来源项目内交接；设置后在目标项目创建 portable 继任会话。 */
+  targetWorkspaceId?: string
 }
 
-export type AgentSessionHandoffResult = WorktreeRecoveryHandoffResult
+export interface ExportAgentSessionHandoffPromptInput {
+  sessionId: string
+}
+
+export interface ExportAgentSessionHandoffPromptResult {
+  prompt: string
+  sourceWorkspaceId?: string
+}
+
+export interface AgentSessionHandoffResult extends Omit<WorktreeRecoveryHandoffResult, 'mode'> {
+  mode: 'fork' | 'degraded' | 'portable'
+}
 
 export interface SessionCheckoutIpcError {
   code: string
@@ -188,4 +202,5 @@ export interface SessionCheckoutRendererApi {
   revealManaged?(input: RevealManagedWorktreeInput): Promise<SessionCheckoutIpcResult<void>>
   handoffRecovery?(input: WorktreeRecoveryHandoffInput): Promise<SessionCheckoutIpcResult<WorktreeRecoveryHandoffResult>>
   handoffSession?(input: AgentSessionHandoffInput): Promise<SessionCheckoutIpcResult<AgentSessionHandoffResult>>
+  exportHandoffPrompt?(input: ExportAgentSessionHandoffPromptInput): Promise<SessionCheckoutIpcResult<ExportAgentSessionHandoffPromptResult>>
 }

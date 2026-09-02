@@ -452,6 +452,7 @@ React UI 更新与 JSONL 持久化
 - ✅ **工作区管理**：多工作区隔离、MCP Server 配置、Skills 管理
 - ✅ **Work 工作方式**：研究 / 执行两档持久模式、本次执行 run lease 与 Plan 生命周期；底层统一当前用户权限，关键宿主事务保持独立确认
 - ✅ **宿主安全门禁**：Canonical Shell Analysis、Workspace Boundary、Local Baseline、owner Isolated target provenance、Local 写回事务、Managed Web secret/私网防护
+- ✅ **跨项目会话交接**：未绑定 Target 的草稿可迁移项目；已执行会话统一通过“交接到新会话”选择当前或其他项目，由来源模型基于持久化证据生成可复制 handoff，并在目标 Local / 新 Isolated Worktree 创建继任会话，绝不改写来源项目与 Checkout 绑定
 - ✅ **Pi Extension Trust**：按项目 canonical path + SHA-256 显式授权、变化失效与撤销
 - ✅ **本地审计**：策略、Managed Web 和 Pi run timing 脱敏写入 JSONL
 - ✅ **手动更新说明**：About 页面说明源码或外部二进制构建的手动更新方式；自动更新 intentionally disabled

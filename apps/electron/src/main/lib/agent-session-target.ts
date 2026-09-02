@@ -67,7 +67,7 @@ export async function resolveAgentSessionTarget(
 }
 
 export type PiForkResolvedTargetChoice =
-  | Extract<SessionTargetBindChoice, { kind: 'inherit' | 'isolated' }>
+  | Extract<SessionTargetBindChoice, { kind: 'inherit' | 'local' | 'isolated' }>
   | { kind: 'isolated-copy'; parentSessionId: string; expectedSourceRevision: number }
 
 /** 将 Fork 意图收敛成明确的 bind 或 Isolated snapshot copy；不在调用方散落来源规则。 */
@@ -78,6 +78,9 @@ export function resolvePiForkTargetChoice(
 ): PiForkResolvedTargetChoice {
   if (!requestedTarget || requestedTarget.kind === 'inherit') {
     return { kind: 'inherit', parentSessionId }
+  }
+  if (requestedTarget.kind === 'local') {
+    return { kind: 'local' }
   }
   if (requestedTarget.kind === 'isolated-copy') {
     if (sourceTarget.checkout.kind !== 'isolated') {

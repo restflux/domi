@@ -10,7 +10,8 @@ describe('session header menu model', () => {
       pinned: false,
       needsFollowUp: true,
       archived: false,
-      canMove: true,
+      canTransfer: true,
+      isDraft: true,
       canOpenProjectFolder: true,
       hasSessionPath: true,
     })
@@ -35,7 +36,8 @@ describe('session header menu model', () => {
       pinned: true,
       needsFollowUp: false,
       archived: true,
-      canMove: false,
+      canTransfer: false,
+      isDraft: false,
       canOpenProjectFolder: false,
       hasSessionPath: true,
     })
@@ -46,6 +48,22 @@ describe('session header menu model', () => {
     expect(actions.find((item) => item.action === 'archive')?.label).toBe('取消归档')
     expect(actions.find((item) => item.action === 'openProject')?.disabled).toBe(true)
     expect(actions.find((item) => item.action === 'copyPath')?.disabled).toBe(false)
+  })
+
+  test('已绑定会话只显示统一的交接到新会话入口', () => {
+    const items = buildAgentSessionHeaderMenu({
+      pinned: false,
+      needsFollowUp: false,
+      archived: false,
+      canTransfer: true,
+      isDraft: false,
+      canOpenProjectFolder: true,
+      hasSessionPath: true,
+    })
+    const actions = items.filter((item) => item.type === 'item')
+
+    expect(actions.find((item) => item.action === 'move')?.label).toBe('交接到新会话')
+    expect(actions.map((item) => item.action)).not.toContain('copyHandoff')
   })
 
   test('Chat 菜单保持轻量，不暴露 Agent 专属操作', () => {

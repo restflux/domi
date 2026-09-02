@@ -17,7 +17,7 @@ Domi 是一款本地优先的 Personal Coding Workbench。它把多模型 Chat�
 - **Isolated Worktree 交付**：每个会话可使用 Local 或 Domi managed Isolated Checkout，并通过 Checkpoint、Preview、验收提交、可证明安全的撤回、恢复和交接完成闭环。
 - **轻量 Git 工作流**：在文件改动面板完成状态查看、Diff、暂存/取消暂存、提交、同步、分支选择和最近历史。
 - **完整 coding 工作区**：多实例 Right Workspace 标签统一承载文件 Preview、Scratch Pad、可见 PTY 终端、Agent Run、服务地址和内置浏览器。
-- **长任务连续性**：支持后台会话、实时 Steering、Follow-up 队列、Pi 原生上下文压缩、session handoff 和 Collaboration 子会话。
+- **长任务连续性**：支持后台会话、实时 Steering、Follow-up 队列、Pi 原生上下文压缩、AI 生成的可复制交接内容、跨项目继任会话和 Collaboration 子会话。
 - **多模型 Chat**：支持 Anthropic、OpenAI、Google、DeepSeek、Kimi、智谱、MiniMax、豆包、通义千问和自定义兼容端点。
 - **本地优先与扩展**：会话、配置、Skills、MCP、审计、Automation 和 Planning 保存在本机，并支持 Chat HTTP 工具与飞书集成。
 
@@ -99,7 +99,7 @@ Work 会话可以直接使用 Local Checkout，也可以由 Domi 创建隔离 Wo
 
 ### 长任务连续性
 
-Agent 工作期间可以继续排入 Follow-up，不需要打断当前步骤；后台会话、Steering、上下文压缩和跨会话 handoff 让长任务保持连续。
+Agent 工作期间可以继续排入 Follow-up，不需要打断当前步骤；后台会话、Steering、上下文压缩和跨会话 handoff 让长任务保持连续。尚未执行的草稿可以迁移项目；已执行会话统一通过“交接到新会话”选择当前或其他项目，并可使用项目当前目录或新建独立工作区（Worktree）。交接内容由来源会话的当前模型根据持久化对话、代码状态和验证证据生成，可直接创建继任会话，也可仅复制；原会话绑定保持不变。
 
 ![Domi 在隔离 Worktree 中执行任务，并将追加要求放入 Follow-up 队列](./docs/images/readme/follow-up-worktree.webp)
 

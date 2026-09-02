@@ -906,7 +906,7 @@ function assertForkSessionTargetChoice(value: unknown): asserts value is ForkSes
   if (!value || typeof value !== 'object' || !('kind' in value)) {
     throw new Error('无效的 Fork Session Target')
   }
-  if (value.kind === 'inherit' || value.kind === 'isolated-copy') return
+  if (value.kind === 'inherit' || value.kind === 'local' || value.kind === 'isolated-copy') return
   if (value.kind === 'isolated' && 'confirmDirty' in value && typeof value.confirmDirty === 'boolean') return
   throw new Error('无效的 Fork Session Target')
 }

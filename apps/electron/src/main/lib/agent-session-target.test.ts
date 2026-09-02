@@ -222,6 +222,14 @@ describe('Pi Fork Session Target 策略', () => {
     })
   })
 
+  test('Given Isolated 父目标与 local 请求 When Fork Then 子会话显式绑定项目当前目录', () => {
+    expect(resolvePiForkTargetChoice('parent-session', { kind: 'local' }, {
+      ...localTarget,
+      checkout: { ...localTarget.checkout, id: 'checkout-a', kind: 'isolated' },
+      revision: 5,
+    })).toEqual({ kind: 'local' })
+  })
+
   test('Given clean Local 与 isolated 请求 When Fork Then 为子会话创建独立 Isolated Target', () => {
     expect(resolvePiForkTargetChoice('parent-session', {
       kind: 'isolated',
