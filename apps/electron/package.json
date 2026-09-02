@@ -1,6 +1,6 @@
 {
   "name": "@domi/electron",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "Domi personal coding workbench - Electron App",
   "license": "AGPL-3.0-only",
   "main": "dist/main.cjs",

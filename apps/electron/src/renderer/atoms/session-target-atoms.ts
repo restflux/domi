@@ -6,6 +6,7 @@ import type {
   SessionCheckoutConflictResult,
   SessionCheckoutIpcError,
   SessionCheckoutOperationResult,
+  SessionCheckoutRendererApi,
   SessionTargetView,
   WorktreeRetentionMode,
   WorktreeApplyPreflightView,
@@ -50,6 +51,30 @@ const OPERATION_SETTLE_POLL_INTERVAL_MS = 2_000
 const OPERATION_SETTLE_POLL_ATTEMPT_TIMEOUT_MS = 10_000
 const OPERATION_SETTLE_POLL_DEADLINE_MS = 120_000
 
+type SessionTargetInspectResult = Awaited<ReturnType<SessionCheckoutRendererApi['inspect']>>
+
+let pendingInspectApi: SessionCheckoutRendererApi | null = null
+const pendingInspects = new Map<string, Promise<SessionTargetInspectResult>>()
+
+/** Renderer 超时不会取消 Main IPC；复用未结束请求，避免“重试”持续向后台追加排队检查。 */
+function inspectSessionTarget(sessionId: string): Promise<SessionTargetInspectResult> {
+  const api = window.electronAPI.sessionCheckout
+  if (pendingInspectApi !== api) {
+    pendingInspectApi = api
+    pendingInspects.clear()
+  }
+  const existing = pendingInspects.get(sessionId)
+  if (existing) return existing
+
+  const request = api.inspect({ sessionId })
+  pendingInspects.set(sessionId, request)
+  const clearRequest = (): void => {
+    if (pendingInspects.get(sessionId) === request) pendingInspects.delete(sessionId)
+  }
+  void request.then(clearRequest, clearRequest)
+  return request
+}
+
 async function invokeWithTimeout<T>(
   invoke: () => Promise<T>,
   timeoutMs: number = SESSION_CHECKOUT_IPC_TIMEOUT_MS,
@@ -79,7 +104,7 @@ async function waitForOperationSettlement(sessionId: string): Promise<SessionTar
     let result: Awaited<ReturnType<typeof window.electronAPI.sessionCheckout.inspect>> | null = null
     try {
       result = await invokeWithTimeout(
-        () => window.electronAPI.sessionCheckout.inspect({ sessionId }),
+        () => inspectSessionTarget(sessionId),
         OPERATION_SETTLE_POLL_ATTEMPT_TIMEOUT_MS,
       )
     } catch {
@@ -163,7 +188,7 @@ export const inspectSessionTargetAtomFamily = atomFamily((sessionId: string) => 
     if (!options.silent) set(stateAtom, (state) => ({ ...state, loading: true, error: null }))
     let result: Awaited<ReturnType<typeof window.electronAPI.sessionCheckout.inspect>> | null = null
     try {
-      result = await invokeWithTimeout(() => window.electronAPI.sessionCheckout.inspect({ sessionId }))
+      result = await invokeWithTimeout(() => inspectSessionTarget(sessionId))
     } catch (error) {
       set(stateAtom, (state) => {
         // 已有权威快照时，inspect 只是后台刷新。它可能排在 Session Checkout 的
@@ -485,7 +510,7 @@ export const operateSessionTargetAtomFamily = atomFamily((sessionId: string) => 
     // Operation result 只表达动作结果；完成后始终重新 inspect 获取权威 SessionTargetView。
     let refreshed: Awaited<ReturnType<typeof window.electronAPI.sessionCheckout.inspect>> | null = null
     try {
-      refreshed = await invokeWithTimeout(() => window.electronAPI.sessionCheckout.inspect({ sessionId }))
+      refreshed = await invokeWithTimeout(() => inspectSessionTarget(sessionId))
     } catch {
       refreshed = null
     }

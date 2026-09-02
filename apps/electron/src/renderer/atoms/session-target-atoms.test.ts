@@ -379,6 +379,37 @@ describe('session target atoms', () => {
     })
   })
 
+  test('Given inspect already timed out in Renderer When user retries before Main settles Then the pending IPC is reused instead of queued again', async () => {
+    enableFakeTimers()
+    const store = createStore()
+    const snapshot = view('checkout-recovered', 8)
+    let inspectCalls = 0
+    let resolveInspect!: (result: { ok: true; value: SessionTargetView }) => void
+    installApi({
+      inspect: async () => {
+        inspectCalls += 1
+        if (inspectCalls > 1) return { ok: true, value: snapshot }
+        return new Promise((resolve) => { resolveInspect = resolve })
+      },
+      bind: async () => ({ ok: true, value: snapshot }),
+      operate: async () => ({ ok: true, value: { status: 'discarded', target: snapshot } }),
+    })
+
+    const initial = store.set(inspectSessionTargetAtomFamily('retry-session'))
+    await tickFakeTimers(45_000)
+    await initial
+    const retry = store.set(inspectSessionTargetAtomFamily('retry-session'))
+    await flushMicrotasks()
+
+    expect(inspectCalls).toBe(1)
+    resolveInspect({ ok: true, value: snapshot })
+    await retry
+    expect(store.get(sessionTargetStateAtomFamily('retry-session')).snapshot).toEqual(snapshot)
+
+    await store.set(inspectSessionTargetAtomFamily('retry-session'))
+    expect(inspectCalls).toBe(2)
+  })
+
   test('Given inspect completes while an operation atom is still pending When state refreshes Then it does not unlock the operation early', async () => {
     const store = createStore()
     const snapshot = view('checkout-1', 7)

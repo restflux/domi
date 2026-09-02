@@ -932,39 +932,108 @@ export function createSessionCheckoutModule(
     throw new SessionCheckoutError('target_unselected', '会话尚未选择 Session Target')
   }
 
-  type BindingOperationMode = 'exclusive' | 'maintenance' | 'maintenance_draining'
+  type BindingOperationMode = 'exclusive' | 'maintenance'
+
+  interface BindingOperationScope {
+    sessionIds: ReadonlySet<string>
+    targetKeys: ReadonlySet<string>
+  }
+
+  interface BindingLockOptions {
+    allowConcurrentInspect?: boolean
+    sessionIds?: readonly string[]
+    targetKeys?: readonly string[]
+  }
+
+  interface ConcurrentInspect {
+    sessionId: string
+    targetKey?: string
+    done: Promise<void>
+    finish(): void
+  }
 
   let bindingQueue: Promise<void> = Promise.resolve()
   let activeBindingOperation: BindingOperationMode | null = null
+  let activeBindingOperationScope: BindingOperationScope | null = null
   let activeBindingOperationDone: Promise<void> = Promise.resolve()
   let pendingMaintenanceOperations = 0
   let maintenanceReady: Promise<void> | undefined
   let signalMaintenanceReady = (): void => undefined
-  let activeMaintenanceInspects = 0
-  let maintenanceInspectsDrained: Promise<void> = Promise.resolve()
-  let signalMaintenanceInspectsDrained = (): void => undefined
+  const activeConcurrentInspects = new Set<ConcurrentInspect>()
 
   function prepareMaintenanceReadySignal(): void {
     maintenanceReady = new Promise<void>((resolveReady) => { signalMaintenanceReady = resolveReady })
   }
 
-  function beginMaintenanceInspect(): void {
-    if (activeMaintenanceInspects === 0) {
-      maintenanceInspectsDrained = new Promise<void>((resolveDrained) => {
-        signalMaintenanceInspectsDrained = resolveDrained
-      })
-    }
-    activeMaintenanceInspects += 1
+  function targetKeyForBinding(binding: SessionBindingRecord | undefined): string | undefined {
+    if (!binding) return undefined
+    return binding.target.kind === 'isolated'
+      ? `isolated:${binding.target.checkoutId}`
+      : `local:${binding.projectId}`
   }
 
-  function finishMaintenanceInspect(): void {
-    activeMaintenanceInspects -= 1
-    if (activeMaintenanceInspects === 0) signalMaintenanceInspectsDrained()
+  function createBindingOperationScope(options: BindingLockOptions): BindingOperationScope | null {
+    const sessionIds = options.sessionIds ?? []
+    const targetKeys = options.targetKeys ?? []
+    if (sessionIds.length === 0 && targetKeys.length === 0) return null
+    const registry = dependencies.registry.read()
+    return {
+      sessionIds: new Set(sessionIds),
+      targetKeys: new Set([
+        ...targetKeys,
+        ...sessionIds.flatMap((sessionId) => {
+          const targetKey = targetKeyForBinding(registry.sessionBindings[sessionId])
+          return targetKey ? [targetKey] : []
+        }),
+      ]),
+    }
+  }
+
+  function inspectConflictsWithActiveOperation(sessionId: string): boolean {
+    const scope = activeBindingOperationScope
+    if (!scope) return true
+    if (scope.sessionIds.has(sessionId)) return true
+    const binding = dependencies.registry.read().sessionBindings[sessionId]
+    const targetKey = targetKeyForBinding(binding)
+    return targetKey !== undefined && scope.targetKeys.has(targetKey)
+  }
+
+  function beginConcurrentInspect(sessionId: string): ConcurrentInspect {
+    const binding = dependencies.registry.read().sessionBindings[sessionId]
+    const targetKey = targetKeyForBinding(binding)
+    let signalDone = (): void => undefined
+    const inspect: ConcurrentInspect = {
+      sessionId,
+      ...(targetKey ? { targetKey } : {}),
+      done: new Promise<void>((resolveDone) => { signalDone = resolveDone }),
+      finish: () => {
+        activeConcurrentInspects.delete(inspect)
+        signalDone()
+      },
+    }
+    activeConcurrentInspects.add(inspect)
+    return inspect
+  }
+
+  function concurrentInspectConflicts(
+    inspect: ConcurrentInspect,
+    operationScope: BindingOperationScope | null,
+  ): boolean {
+    if (!operationScope) return true
+    if (operationScope.sessionIds.has(inspect.sessionId)) return true
+    return inspect.targetKey !== undefined && operationScope.targetKeys.has(inspect.targetKey)
+  }
+
+  async function waitForConflictingInspects(operationScope: BindingOperationScope | null): Promise<void> {
+    const blockers = [...activeConcurrentInspects]
+      .filter((inspect) => concurrentInspectConflicts(inspect, operationScope))
+      .map((inspect) => inspect.done)
+    if (blockers.length > 0) await Promise.all(blockers)
   }
 
   async function withBindingLock<T>(
     operation: () => Promise<T>,
-    options: { allowConcurrentInspect?: boolean } = {},
+    options: BindingLockOptions = {},
   ): Promise<T> {
     const maintenance = options.allowConcurrentInspect === true
     if (maintenance) {
@@ -979,20 +1048,21 @@ export function createSessionCheckoutModule(
 
     let signalOperationDone = (): void => undefined
     activeBindingOperationDone = new Promise<void>((resolveDone) => { signalOperationDone = resolveDone })
+    activeBindingOperationScope = createBindingOperationScope(options)
     activeBindingOperation = maintenance ? 'maintenance' : 'exclusive'
     if (maintenance) signalMaintenanceReady()
+    // 先公布即将执行的作用域，阻止新的冲突 inspect；只等待此前已启动且真正冲突的读取。
+    await waitForConflictingInspects(activeBindingOperationScope)
 
     try {
       return await operation()
     } finally {
       if (maintenance) {
-        // 先关闭新的只读旁路，再等待已启动 inspect 结束，之后 mutation 才能接管队列。
-        activeBindingOperation = 'maintenance_draining'
-        if (activeMaintenanceInspects > 0) await maintenanceInspectsDrained
         pendingMaintenanceOperations -= 1
         if (pendingMaintenanceOperations > 0) prepareMaintenanceReadySignal()
         else maintenanceReady = undefined
       }
+      activeBindingOperationScope = null
       activeBindingOperation = null
       signalOperationDone()
       release()
@@ -1005,33 +1075,34 @@ export function createSessionCheckoutModule(
     return inspectIsolated(binding, persistRecovery)
   }
 
-  async function inspectDuringMaintenance(sessionId: string): Promise<SessionTargetView> {
-    if (activeBindingOperation !== 'maintenance') return inspectAvailable(sessionId)
-    beginMaintenanceInspect()
+  async function inspectConcurrently(sessionId: string): Promise<SessionTargetView> {
+    const inspect = beginConcurrentInspect(sessionId)
     try {
-      // 后台 reconcile/retention cleanup 可能因 Windows 文件占用持续数十秒。
-      // 此时 inspect 只读取权威快照，不写 registry，避免一个历史 Worktree 阻塞所有会话。
+      // 并发 inspect 只读取 registry/Git 权威快照，不持久化恢复状态，避免与 mutation 交叉写入。
       return await inspectTarget(sessionId, false)
     } finally {
-      finishMaintenanceInspect()
+      inspect.finish()
     }
   }
 
   async function inspectAvailable(sessionId: string): Promise<SessionTargetView> {
     while (true) {
-      if (activeBindingOperation === 'maintenance') return inspectDuringMaintenance(sessionId)
-      if (activeBindingOperation === 'maintenance_draining') {
+      if (activeBindingOperation === 'maintenance') return inspectConcurrently(sessionId)
+      if (
+        activeBindingOperation === 'exclusive'
+        && !inspectConflictsWithActiveOperation(sessionId)
+      ) return inspectConcurrently(sessionId)
+      if (activeBindingOperation !== null) {
         const operationDone = activeBindingOperationDone
         await operationDone.catch(() => undefined)
         continue
       }
       if (pendingMaintenanceOperations > 0 && maintenanceReady) {
-        // maintenance 可能排在当前交互操作之后；等它真正取得锁后再走只读旁路，
-        // 避免 inspect 被预先排到 maintenance 后面，也避免与当前交互 mutation 并发。
+        // maintenance 可能排在当前交互操作之后；等它取得锁并公布并发读取边界。
         await maintenanceReady
         continue
       }
-      return withBindingLock(() => inspectTarget(sessionId, true))
+      return withBindingLock(() => inspectTarget(sessionId, true), { sessionIds: [sessionId] })
     }
   }
 
@@ -4188,50 +4259,74 @@ export function createSessionCheckoutModule(
     readSessionChangedFiles,
     preflight: (sessionId, expectedRevision) => withBindingLock(
       () => preflightTarget(sessionId, expectedRevision),
+      { sessionIds: [sessionId] },
     ),
     runExclusiveSessionMutation: (sessionId, operation) => withBindingLock(async () => (
       operation(await inspectTarget(sessionId, true))
-    )),
+    ), { sessionIds: [sessionId] }),
     bind: (sessionId, choice) => {
       const requestStartedAt = Date.now()
-      return withBindingLock(() => bindTarget(sessionId, choice, undefined, 0, requestStartedAt))
+      return withBindingLock(
+        () => bindTarget(sessionId, choice, undefined, 0, requestStartedAt),
+        { sessionIds: choice.kind === 'inherit' ? [sessionId, choice.parentSessionId] : [sessionId] },
+      )
     },
     cloneIsolatedTarget: (sourceSessionId, childSessionId, expectedSourceRevision) => withBindingLock(
       () => cloneIsolatedTarget(sourceSessionId, childSessionId, expectedSourceRevision),
+      { sessionIds: [sourceSessionId, childSessionId] },
     ),
     bindVerifiedIsolated: (sessionId, proof) => {
       const requestStartedAt = Date.now()
-      return withBindingLock(() => bindTarget(sessionId, { kind: 'isolated' }, proof, 0, requestStartedAt))
+      return withBindingLock(
+        () => bindTarget(sessionId, { kind: 'isolated' }, proof, 0, requestStartedAt),
+        { sessionIds: [sessionId] },
+      )
     },
     beginNextIteration: (sessionId) => {
       const requestStartedAt = Date.now()
-      return withBindingLock(() => bindTarget(sessionId, { kind: 'isolated' }, undefined, 0, requestStartedAt))
+      return withBindingLock(
+        () => bindTarget(sessionId, { kind: 'isolated' }, undefined, 0, requestStartedAt),
+        { sessionIds: [sessionId] },
+      )
     },
     captureSessionHandoff: (sessionId, expectedRevision) => withBindingLock(
       () => captureSessionHandoff(sessionId, expectedRevision),
+      { sessionIds: [sessionId] },
     ),
     captureRecoveryHandoff: (sessionId, expectedRevision) => withBindingLock(
       () => captureRecoveryHandoff(sessionId, expectedRevision),
+      { sessionIds: [sessionId] },
     ),
     markReadyForReview: (sessionId, input) => withBindingLock(
       () => markReadyForReviewTarget(sessionId, input),
+      { sessionIds: [sessionId] },
     ),
-    operate: (input) => withBindingLock(() => operateTarget(input)),
+    operate: (input) => withBindingLock(
+      () => operateTarget(input),
+      { sessionIds: [input.sessionId] },
+    ),
     // 只读管理列表不占用全局 mutation lock；慢速目录诊断与用户操作互不阻塞。
     listManagedWorktrees,
     inspectManagedWorktreeCleanup,
     bulkCleanupManagedWorktrees: (candidates) => withBindingLock(() => bulkCleanupManagedWorktrees(candidates)),
-    manageManagedWorktree: (input) => withBindingLock(() => manageManagedWorktree(input)),
-    resolveManagedRootForReveal: (checkoutId) => withBindingLock(() => resolveManagedRootForReveal(checkoutId)),
+    manageManagedWorktree: (input) => withBindingLock(
+      () => manageManagedWorktree(input),
+      { targetKeys: [`isolated:${input.checkoutId}`] },
+    ),
+    resolveManagedRootForReveal: (checkoutId) => withBindingLock(
+      () => resolveManagedRootForReveal(checkoutId),
+      { targetKeys: [`isolated:${checkoutId}`] },
+    ),
     cleanupExpiredRetained: (now) => withBindingLock(
       () => cleanupExpiredRetained(now),
       { allowConcurrentInspect: true },
     ),
     assertReleaseSession: (sessionId, intent) => withBindingLock(async () => {
       await assertReleaseSession(sessionId, intent)
-    }),
+    }, { sessionIds: [sessionId] }),
     releaseSession: (sessionId, intent) => withBindingLock(
       () => releaseSession(sessionId, intent),
+      { sessionIds: [sessionId] },
     ),
     reconcile: () => withBindingLock(reconcile, { allowConcurrentInspect: true }),
     lease: async (sessionId): Promise<CheckoutLease> => {

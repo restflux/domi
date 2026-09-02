@@ -377,6 +377,128 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect((await bind).checkout.kind).toBe('local')
   })
 
+  test('Given one session owns a long target mutation When another independent session inspects Then it does not wait for the global queue', async () => {
+    const context = createContext()
+    context.addSession('session-2', 'project-1', '并发检查会话')
+    await context.module.bind('session-1', { kind: 'isolated' })
+    await context.module.bind('session-2', { kind: 'local' })
+
+    let signalStarted = (): void => undefined
+    let release = (): void => undefined
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const exclusive = context.module.runExclusiveSessionMutation('session-1', async () => {
+      signalStarted()
+      await gate
+    })
+    await started
+
+    const inspection = context.module.inspect('session-2')
+    const winner = await Promise.race([
+      inspection.then(() => 'resolved' as const),
+      Bun.sleep(2_000).then(() => 'timeout' as const),
+    ])
+
+    release()
+    await Promise.all([exclusive, inspection])
+    expect(winner).toBe('resolved')
+  })
+
+  test('Given another target mutation is active When a fresh session inspects Then target selection remains immediately available', async () => {
+    const context = createContext()
+    context.addSession('fresh-session', 'project-1', '全新会话')
+    await context.module.bind('session-1', { kind: 'isolated' })
+
+    let signalStarted = (): void => undefined
+    let release = (): void => undefined
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const exclusive = context.module.runExclusiveSessionMutation('session-1', async () => {
+      signalStarted()
+      await gate
+    })
+    await started
+
+    const inspection = context.module.inspect('fresh-session')
+    const winner = await Promise.race([
+      inspection.then(() => 'unexpected' as const, (error: unknown) => (
+        error instanceof Error && 'code' in error && error.code === 'target_unselected'
+          ? 'target_unselected' as const
+          : 'unexpected' as const
+      )),
+      Bun.sleep(500).then(() => 'timeout' as const),
+    ])
+
+    release()
+    await exclusive
+    expect(winner).toBe('target_unselected')
+  })
+
+  test('Given inherited sessions share one target When the owner mutates it Then collaborator inspect remains serialized', async () => {
+    const context = createContext()
+    await context.module.bind('session-1', { kind: 'isolated' })
+    await context.module.bind('child-session', { kind: 'inherit', parentSessionId: 'session-1' })
+
+    let signalStarted = (): void => undefined
+    let release = (): void => undefined
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const exclusive = context.module.runExclusiveSessionMutation('session-1', async () => {
+      signalStarted()
+      await gate
+    })
+    await started
+
+    const inspection = context.module.inspect('child-session')
+    const winner = await Promise.race([
+      inspection.then(() => 'resolved' as const),
+      Bun.sleep(200).then(() => 'waiting' as const),
+    ])
+
+    release()
+    await Promise.all([exclusive, inspection])
+    expect(winner).toBe('waiting')
+  })
+
+  test('Given a non-conflicting inspect bypasses an active mutation When the next mutation is queued Then it waits for the inspect to drain', async () => {
+    const context = createContext()
+    context.addSession('session-2', 'project-1', '并发检查会话')
+    context.addSession('session-3', 'project-1', '后续变更会话')
+    await context.module.bind('session-1', { kind: 'isolated' })
+    await context.module.bind('session-2', { kind: 'local' })
+
+    let signalStarted = (): void => undefined
+    let release = (): void => undefined
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const exclusive = context.module.runExclusiveSessionMutation('session-1', async () => {
+      signalStarted()
+      await gate
+    })
+    await started
+
+    const inspectPause = context.pauseNextGitInspect(context.projectRoot)
+    const inspection = context.module.inspect('session-2')
+    await inspectPause.started
+
+    let bindCompleted = false
+    const bind = context.module.bind('session-3', { kind: 'local' }).then((target) => {
+      bindCompleted = true
+      return target
+    })
+    release()
+    const exclusiveWinner = await Promise.race([
+      exclusive.then(() => 'resolved' as const),
+      Bun.sleep(500).then(() => 'timeout' as const),
+    ])
+    expect(exclusiveWinner).toBe('resolved')
+    expect(bindCompleted).toBe(false)
+
+    inspectPause.resume()
+    await Promise.all([inspection, bind])
+    expect(bindCompleted).toBe(true)
+  })
+
   test('Given 一个 Git 项目 When 会话绑定 Local Then inspect 展示项目与实时 branch/HEAD', async () => {
     const context = createContext()
     const expectedOid = git(context.projectRoot, 'rev-parse', 'HEAD')
