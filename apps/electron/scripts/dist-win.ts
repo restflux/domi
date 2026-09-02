@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Windows 双通道打包脚本。
+ * Windows 三通道打包脚本。
  *
  * fast：本地快速验证。跳过 Electron Builder 的 executable edit/sign，使用
  * Electron Builder 缓存中的原生 rcedit 注入图标与版本元数据，并使用 store 压缩生成 NSIS。
- * release：正式发布。保留 Electron Builder 标准 executable edit 与代码签名流程。
+ * unsigned：公开预发布。沿用手动 rcedit，但保留正式压缩。
+ * release：签名正式发布。保留 Electron Builder 标准 executable edit 与代码签名流程。
  */
 
 import { spawnSync } from 'node:child_process'
@@ -15,7 +16,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyPiCompactionRuntime } from './verify-pi-compaction-runtime'
 
-type DistWinMode = 'fast' | 'release'
+type DistWinMode = 'fast' | 'unsigned' | 'release'
 
 export interface DistWinOptions {
   mode: DistWinMode
@@ -52,7 +53,7 @@ export interface DistWinPlan {
   artifactPath: string
   /** 强制全量重建（忽略 win-unpacked 复用指纹）。 */
   full: boolean
-  /** 本次打包是否启用 asar（fast 通道默认 false；release 恒为 true）。 */
+  /** 本次打包是否启用 asar（仅 fast 可通过 --no-asar 关闭）。 */
   asarMode: boolean
   steps: DistWinStep[]
 }
@@ -70,17 +71,21 @@ const defaultRepoRoot = resolve(defaultAppDir, '../..')
 const SOURCE_FINGERPRINT_FILE = '.source-fingerprint'
 
 export function parseDistWinArgs(args: string[]): DistWinOptions {
-  const fast = args.includes('--fast')
-  const release = args.includes('--release')
-  if (fast && release) {
-    throw new Error('不能同时指定 --fast 和 --release')
+  const selectedModes = [
+    args.includes('--fast') ? 'fast' : undefined,
+    args.includes('--unsigned') ? 'unsigned' : undefined,
+    args.includes('--release') ? 'release' : undefined,
+  ].filter((mode): mode is DistWinMode => mode !== undefined)
+  if (selectedModes.length > 1) {
+    throw new Error('--fast、--unsigned 和 --release 只能选择一个')
   }
-  const unknown = args.filter((arg) => !['--fast', '--release', '--dry-run', '--full', '--no-parallel', '--no-asar', '--help', '-h'].includes(arg))
+  const knownArgs = ['--fast', '--unsigned', '--release', '--dry-run', '--full', '--no-parallel', '--no-asar', '--help', '-h']
+  const unknown = args.filter((arg) => !knownArgs.includes(arg))
   if (unknown.length > 0) {
     throw new Error(`未知参数: ${unknown.join(', ')}`)
   }
   return {
-    mode: fast ? 'fast' : 'release',
+    mode: selectedModes[0] ?? 'release',
     dryRun: args.includes('--dry-run'),
     full: args.includes('--full'),
     parallel: !args.includes('--no-parallel'),
@@ -300,10 +305,22 @@ export function createDistWinPlan(
   }
 
   const outputArg = `--config.directories.output=${outputDir}`
-  // fast 通道默认启用 asar：保证 NSIS 安装器快速（单文件）且安装体验正常。
-  // --no-asar 可关闭（--dir 从 ~13min 降至 ~20s），但安装会因 2 万+ 平铺小文件显著变慢。
-  const useAsar = !options.noAsar
+  const isFast = options.mode === 'fast'
+  // fast 可用 --no-asar 缩短本地验证；公开的 unsigned 产物始终启用 asar 和正式压缩。
+  const useAsar = isFast ? !options.noAsar : true
   const asarArgs = useAsar ? [] : ['--config.asar=false']
+  const nsisArgs = [
+    '--win',
+    '--x64',
+    '--prepackaged',
+    unpackedDir,
+    '--publish',
+    'never',
+    '--config.win.signAndEditExecutable=false',
+    ...(isFast ? ['--config.compression=store'] : []),
+    outputArg,
+    ...asarArgs,
+  ]
   return {
     mode: options.mode,
     outputDir,
@@ -314,7 +331,9 @@ export function createDistWinPlan(
       ...commonSteps,
       {
         id: 'package-unpacked',
-        name: useAsar ? '生成本地 Windows unpacked 目录（源未变化时复用缓存）' : '生成本地 Windows unpacked 目录（无 asar，源未变化时复用缓存）',
+        name: isFast
+          ? (useAsar ? '生成本地 Windows unpacked 目录（源未变化时复用缓存）' : '生成本地 Windows unpacked 目录（无 asar，源未变化时复用缓存）')
+          : '生成未签名 Windows unpacked 目录',
         command: context.electronBuilderPath,
         args: [
           '--win',
@@ -335,20 +354,9 @@ export function createDistWinPlan(
       },
       {
         id: 'package-nsis',
-        name: '生成本地快速 NSIS 安装包',
+        name: isFast ? '生成本地快速 NSIS 安装包' : '生成未签名正式压缩 NSIS 安装包',
         command: context.electronBuilderPath,
-        args: [
-          '--win',
-          '--x64',
-          '--prepackaged',
-          unpackedDir,
-          '--publish',
-          'never',
-          '--config.win.signAndEditExecutable=false',
-          '--config.compression=store',
-          outputArg,
-          ...asarArgs,
-        ],
+        args: nsisArgs,
         env: unsignedEnv,
       },
     ],
@@ -376,6 +384,8 @@ function printPlan(plan: DistWinPlan): void {
   if (plan.mode === 'fast') {
     console.log('[dist:win] 注意: fast 产物未签名且使用 store 压缩，文件会更大，仅用于本地验证。')
     console.log(`[dist:win] 提示: ${plan.asarMode ? 'asar 已启用' : 'asar 已关闭（--no-asar 已指定，安装会显著变慢）'}；源未变化时复用上次 win-unpacked（--full 可强制全量重建）。`)
+  } else if (plan.mode === 'unsigned') {
+    console.log('[dist:win] 注意: unsigned 产物使用正式压缩，但没有 Authenticode 签名，只能作为明确标注风险的 Pre-release。')
   }
 }
 
@@ -412,11 +422,12 @@ function runPlan(plan: DistWinPlan, context: DistWinContext): void {
   if (process.platform !== 'win32') {
     throw new Error('Windows 打包脚本只能在 Windows 上执行')
   }
-  const requiredPaths = plan.mode === 'fast'
+  const requiresRcedit = plan.mode === 'fast' || plan.mode === 'unsigned'
+  const requiredPaths = requiresRcedit
     ? [context.electronBuilderPath, context.rceditPath]
     : [context.electronBuilderPath]
   for (const requiredPath of requiredPaths) {
-    if (!requiredPath) throw new Error('fast 通道缺少 rcedit-x64.exe')
+    if (!requiredPath) throw new Error(`${plan.mode} 通道缺少 rcedit-x64.exe`)
     if (!existsSync(requiredPath)) {
       throw new Error(`缺少打包工具: ${requiredPath}`)
     }
@@ -434,7 +445,7 @@ function runPlan(plan: DistWinPlan, context: DistWinContext): void {
   for (const [index, step] of plan.steps.entries()) {
     console.log(`\n[dist:win] ${index + 1}/${plan.steps.length} ${step.name}`)
 
-    if (step.id === 'package-unpacked' && !plan.full) {
+    if (step.id === 'package-unpacked' && plan.mode === 'fast' && !plan.full) {
       const fingerprint = computeSourceFingerprint(context, plan.asarMode)
       const unpackedExecutable = join(plan.outputDir, 'win-unpacked', `${context.productName}.exe`)
       if (readStoredFingerprint(plan.outputDir) === fingerprint && existsSync(unpackedExecutable)) {
@@ -467,7 +478,9 @@ function runPlan(plan: DistWinPlan, context: DistWinContext): void {
         appDir: context.appDir,
         packagedResourcesDir: join(plan.outputDir, 'win-unpacked', 'resources'),
       })
-      writeStoredFingerprint(plan.outputDir, computeSourceFingerprint(context, plan.asarMode))
+      if (plan.mode === 'fast') {
+        writeStoredFingerprint(plan.outputDir, computeSourceFingerprint(context, plan.asarMode))
+      }
     }
     console.log(`[dist:win] ✓ ${step.name} (${formatDuration(Date.now() - started)})`)
   }
@@ -487,7 +500,7 @@ function runPlan(plan: DistWinPlan, context: DistWinContext): void {
 }
 
 function printHelp(): void {
-  console.log(`Windows 双通道打包\n\n用法:\n  bun run scripts/dist-win.ts --fast [--dry-run]\n  bun run scripts/dist-win.ts --release [--dry-run]\n\n通道:\n  --fast     本地无签名快速包，独立输出到 out/fast，使用 store 压缩\n  --release      正式发布包，使用 Electron Builder 标准编辑和签名流程（默认）\n\n选项:\n  --dry-run      只打印计划不执行\n  --full         强制全量重建（忽略 win-unpacked 复用指纹）\n  --no-parallel  构建阶段使用顺序构建（默认并行）\n  --no-asar      fast 通道关闭 asar 归档（加速打包但安装显著变慢，默认启用 asar）`)
+  console.log(`Windows 三通道打包\n\n用法:\n  bun run scripts/dist-win.ts --fast [--dry-run]\n  bun run scripts/dist-win.ts --unsigned [--dry-run]\n  bun run scripts/dist-win.ts --release [--dry-run]\n\n通道:\n  --fast      本地无签名快速包，独立输出到 out/fast，使用 store 压缩\n  --unsigned  未签名公开预发布包，输出到 out，使用正式压缩并手动注入图标/版本元数据\n  --release   正式签名发布包，使用 Electron Builder 标准编辑和签名流程（默认）\n\n选项:\n  --dry-run      只打印计划不执行\n  --full         强制全量重建（忽略 win-unpacked 复用指纹）\n  --no-parallel  构建阶段使用顺序构建（默认并行）\n  --no-asar      仅 fast 通道关闭 asar 归档（加速打包但安装显著变慢）`)
 }
 
 function main(): void {

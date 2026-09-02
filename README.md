@@ -2,7 +2,7 @@
 
 Domi 是一款本地优先的 Personal Coding Workbench。它把多模型 Chat、可执行的 Work 会话、项目文件、终端、内置浏览器、Skills、MCP、Automation、任务与日程放进同一个 Electron 桌面应用。
 
-> Domi 正在快速迭代，首个公开版本线从 **0.20.0** 开始。目前以源码构建为主要使用方式，不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
+> Domi 正在快速迭代，首个公开版本线从 **0.20.0** 开始。Windows 与 Linux 预发布安装包通过 GitHub Releases 提供；Domi 不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
 
 [English README](./README.en.md) · [使用教程](./tutorial/tutorial-v2.md) · [工程文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
@@ -31,7 +31,18 @@ Domi 是一款本地优先的 Personal Coding Workbench。它把多模型 Chat�
 - Git
 - 当前平台可用的 Electron 构建环境
 
-Windows 是当前必过平台；Linux 运行类型检查，macOS 提供手动兼容检查。
+Windows 是当前必过平台；Linux 发布包会在 GitHub Actions 中完成打包与启动检查，macOS 提供手动兼容检查。
+
+### 下载预发布安装包
+
+从 [GitHub Releases](https://github.com/restflux/domi/releases) 下载当前预发布版本：
+
+- **Windows x64**：下载 `Domi-<version>-windows-x64-setup.exe`。当前安装包未签名，Windows SmartScreen 可能显示“Windows 已保护你的电脑”；请先核对 Release 来源与 `SHA256SUMS.txt`，再决定是否继续运行。
+- **Linux x64 AppImage**：下载 `Domi-<version>-linux-x64.AppImage`，添加执行权限后运行：`chmod +x Domi-*.AppImage`。
+- **Linux x64 Debian/Ubuntu**：下载 `Domi-<version>-linux-x64.deb`，使用系统软件安装器或 `sudo apt install ./Domi-*.deb` 安装。
+- **macOS**：目前没有经过真实 Mac 验证的预构建包，请暂时从源码构建。
+
+Domi 不内置自动更新。升级时请重新访问 Releases，并使用随 Release 提供的 `SHA256SUMS.txt` 校验下载文件。
 
 ### 从源码运行
 
@@ -57,14 +68,16 @@ bun run typecheck
 bun run electron:build
 ```
 
-Windows 本地验证包：
+Windows 本地验证与发布候选包：
 
 ```bash
 cd apps/electron
-bun run dist:win:fast
+bun run dist:win:fast      # 本地快速验证
+bun run dist:win:unsigned  # 未签名 Pre-release，正式压缩
+bun run dist:win:release   # 配置代码签名后的正式发布
 ```
 
-`dist:win:fast` 生成无签名本地验证包；正式签名与公开发布必须显式使用 release 通道。详见[工程文档](./docs/README.md)。
+`dist:win:fast` 只用于本地验证；公开的未签名安装包必须使用 `dist:win:unsigned` 并明确标为 Pre-release。详见[发布文档](./docs/releasing.md)。
 
 ## 面向 coding 的 Work 流程
 

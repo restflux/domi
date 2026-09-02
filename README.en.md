@@ -2,7 +2,7 @@
 
 Domi is a local-first Personal Coding Workbench. It brings multi-model Chat, executable Work sessions, project files, terminals, an in-app browser, Skills, MCP, Automation, tasks, and calendars into one Electron desktop application.
 
-> Domi is under active development, with its first public version line starting at **0.20.0**. Source builds are currently the primary distribution path. The project does not provide automatic installation or updates and does not connect to another product's release channel.
+> Domi is under active development, with its first public version line starting at **0.20.0**. Windows and Linux prerelease installers are distributed through GitHub Releases. The project does not provide automatic installation or updates and does not connect to another product's release channel.
 
 [中文 README](./README.md) · [User Guide](./tutorial/tutorial-v2.md) · [Engineering Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
@@ -29,7 +29,18 @@ Domi is a local-first Personal Coding Workbench. It brings multi-model Chat, exe
 - Git
 - An Electron build environment for your platform
 
-Windows is the required CI platform. Linux runs type checks, while macOS is covered by a manual compatibility job.
+Windows is the required CI platform. Linux release packages are built and launch-tested in GitHub Actions, while macOS is covered by a manual compatibility job.
+
+### Download prerelease packages
+
+Download the current prerelease from [GitHub Releases](https://github.com/restflux/domi/releases):
+
+- **Windows x64:** download `Domi-<version>-windows-x64-setup.exe`. The installer is currently unsigned, so Windows SmartScreen may display a “Windows protected your PC” warning. Verify the Release source and `SHA256SUMS.txt` before deciding whether to run it.
+- **Linux x64 AppImage:** download `Domi-<version>-linux-x64.AppImage`, make it executable, then run it: `chmod +x Domi-*.AppImage`.
+- **Linux x64 Debian/Ubuntu:** download `Domi-<version>-linux-x64.deb` and install it with your system installer or `sudo apt install ./Domi-*.deb`.
+- **macOS:** no prebuilt package is published until it can be tested on real Mac hardware; build from source for now.
+
+Domi does not include automatic updates. Return to Releases for upgrades and verify downloaded assets against the included `SHA256SUMS.txt`.
 
 ### Run from source
 
@@ -55,14 +66,16 @@ bun run typecheck
 bun run electron:build
 ```
 
-Build a local Windows verification package:
+Build local Windows verification and release-candidate packages:
 
 ```bash
 cd apps/electron
-bun run dist:win:fast
+bun run dist:win:fast      # fast local verification
+bun run dist:win:unsigned  # unsigned prerelease with normal compression
+bun run dist:win:release   # signed release after code-signing setup
 ```
 
-`dist:win:fast` creates an unsigned local verification build. Signed or public distribution must explicitly use the release channel. See the [engineering documentation](./docs/README.md).
+`dist:win:fast` is for local verification only. Public unsigned installers must use `dist:win:unsigned` and be clearly marked as prereleases. See the [release documentation](./docs/releasing.md).
 
 ## Coding-focused Work workflow
 

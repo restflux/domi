@@ -41,6 +41,7 @@
     "dist:mac": "bun run build && bun run sync:runtime-deps && electron-builder --mac",
     "dist:win": "bun run dist:win:release",
     "dist:win:fast": "bun run scripts/dist-win.ts --fast",
+    "dist:win:unsigned": "bun run scripts/dist-win.ts --unsigned",
     "dist:win:release": "bun run scripts/dist-win.ts --release",
     "dist:linux": "bun run build && bun run sync:runtime-deps && electron-builder --linux",
     "dist:visual": "bun run scripts/dist.ts",

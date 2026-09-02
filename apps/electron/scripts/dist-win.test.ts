@@ -21,6 +21,7 @@ const context = {
 }
 
 const fastOptions = { mode: 'fast' as const, dryRun: false, full: false, parallel: true, noAsar: false }
+const unsignedOptions = { mode: 'unsigned' as const, dryRun: false, full: false, parallel: true, noAsar: false }
 const releaseOptions = { mode: 'release' as const, dryRun: false, full: false, parallel: true, noAsar: false }
 
 describe('parseDistWinArgs', () => {
@@ -44,6 +45,16 @@ describe('parseDistWinArgs', () => {
     })
   })
 
+  test('selects the unsigned public prerelease channel explicitly', () => {
+    expect(parseDistWinArgs(['--unsigned', '--dry-run'])).toEqual({
+      mode: 'unsigned',
+      dryRun: true,
+      full: false,
+      parallel: true,
+      noAsar: false,
+    })
+  })
+
   test('parses full / no-parallel / no-asar flags', () => {
     expect(parseDistWinArgs(['--fast', '--full', '--no-parallel', '--no-asar'])).toEqual({
       mode: 'fast',
@@ -55,7 +66,8 @@ describe('parseDistWinArgs', () => {
   })
 
   test('rejects conflicting channels', () => {
-    expect(() => parseDistWinArgs(['--fast', '--release'])).toThrow('不能同时指定')
+    expect(() => parseDistWinArgs(['--fast', '--release'])).toThrow('只能选择一个')
+    expect(() => parseDistWinArgs(['--unsigned', '--release'])).toThrow('只能选择一个')
   })
 })
 
@@ -111,6 +123,27 @@ describe('createDistWinPlan', () => {
     expect(plan.asarMode).toBe(false)
   })
 
+  test('unsigned channel keeps release compression while avoiding the signing toolchain', () => {
+    const plan = createDistWinPlan(unsignedOptions, context)
+
+    expect(plan.outputDir.replaceAll('\\', '/')).toEndWith('/out')
+    expect(plan.steps.map((step) => step.id)).toEqual([
+      'build',
+      'sync-runtime-deps',
+      'package-unpacked',
+      'edit-executable',
+      'package-nsis',
+    ])
+
+    const packageUnpacked = plan.steps.find((step) => step.id === 'package-unpacked')!
+    const packageNsis = plan.steps.find((step) => step.id === 'package-nsis')!
+    expect(packageUnpacked.args).toContain('--config.win.signAndEditExecutable=false')
+    expect(packageNsis.args).toContain('--config.win.signAndEditExecutable=false')
+    expect(packageNsis.args.some((arg) => arg.includes('compression=store'))).toBe(false)
+    expect(packageNsis.env?.CSC_IDENTITY_AUTO_DISCOVERY).toBe('false')
+    expect(plan.asarMode).toBe(true)
+  })
+
   test('release channel keeps Electron Builder standard edit and signing behavior', () => {
     const plan = createDistWinPlan(releaseOptions, { ...context, rceditPath: undefined })
 
@@ -132,8 +165,11 @@ describe('createDistWinPlan', () => {
     expect(plan.asarMode).toBe(true)
   })
 
-  test('fast channel fails early when no cached rcedit is available', () => {
+  test('channels that manually edit the executable fail early without rcedit', () => {
     expect(() => createDistWinPlan(fastOptions, { ...context, rceditPath: undefined })).toThrow(
+      '未找到 rcedit-x64.exe',
+    )
+    expect(() => createDistWinPlan(unsignedOptions, { ...context, rceditPath: undefined })).toThrow(
       '未找到 rcedit-x64.exe',
     )
   })

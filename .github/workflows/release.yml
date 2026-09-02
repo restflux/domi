@@ -1,0 +1,293 @@
+name: Domi Release Candidate
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: domi-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: 校验发布版本与代码
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: 安装依赖
+        run: bun install --frozen-lockfile
+
+      - name: 校验版本与发布提交
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            bun run scripts/verify-release-version.ts "${GITHUB_REF_NAME}"
+            git fetch origin main:refs/remotes/origin/main --no-tags
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "Release tag 必须指向 origin/main 已包含的提交" >&2
+              exit 1
+            fi
+          else
+            bun run scripts/verify-release-version.ts
+          fi
+
+      - name: 运行发布链路测试
+        run: >-
+          bun test
+          scripts/verify-release-version.test.ts
+          apps/electron/scripts/dist-win.test.ts
+
+      - name: 类型检查
+        run: bun run typecheck
+
+  windows:
+    name: 构建 Windows x64
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: 安装依赖
+        run: bun install --frozen-lockfile
+
+      - name: 准备 Electron 运行时
+        run: bunx install-electron
+
+      - name: 校验版本
+        shell: pwsh
+        run: |
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            bun run scripts/verify-release-version.ts '${{ github.ref_name }}'
+          } else {
+            bun run scripts/verify-release-version.ts
+          }
+
+      - name: 生成 Windows 发布构建
+        working-directory: apps/electron
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+        run: |
+          if (
+            [string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK) -or
+            [string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)
+          ) {
+            Write-Output '未配置 Windows 签名 Secrets，生成明确标注的 unsigned Pre-release 资产'
+            bun run dist:win:unsigned
+          } else {
+            Write-Output '已配置 Windows 签名 Secrets，使用正式签名发布通道'
+            $env:CSC_LINK = $env:WIN_CSC_LINK
+            $env:CSC_KEY_PASSWORD = $env:WIN_CSC_KEY_PASSWORD
+            bun run dist:win:release
+          }
+
+      - name: Windows 启动 smoke
+        shell: pwsh
+        run: |
+          $smokeRoot = Join-Path $PWD 'apps/electron/out/release-smoke'
+          $userData = Join-Path $smokeRoot 'user-data'
+          $profile = Join-Path $smokeRoot 'profile'
+          New-Item -ItemType Directory -Force -Path $userData, $profile | Out-Null
+          $env:HOME = $profile
+          $env:USERPROFILE = $profile
+          $env:APPDATA = Join-Path $profile 'AppData\Roaming'
+          $env:LOCALAPPDATA = Join-Path $profile 'AppData\Local'
+          New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-Null
+
+          $exe = Join-Path $PWD 'apps/electron/out/win-unpacked/Domi.exe'
+          if (-not (Test-Path $exe)) { throw "未找到打包产物: $exe" }
+
+          $process = Start-Process -FilePath $exe -ArgumentList "--user-data-dir=$userData", '--disable-gpu', '--launch-smoke' -PassThru
+          if (-not $process.WaitForExit(30000)) {
+            & "$env:SystemRoot\System32\taskkill.exe" /PID $process.Id /T /F | Out-Null
+            throw 'Domi renderer 在 30 秒内未进入 ready-to-show'
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Domi 启动 smoke 失败，退出码: $($process.ExitCode)"
+          }
+
+      - name: 整理 Windows 发布资产
+        shell: pwsh
+        run: |
+          $version = (Get-Content 'apps/electron/package.json' | ConvertFrom-Json).version
+          $source = "apps/electron/out/Domi Setup $version.exe"
+          if (-not (Test-Path $source)) { throw "未找到安装包: $source" }
+
+          $assetDir = 'release-assets'
+          New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
+          $asset = Join-Path $assetDir "Domi-$version-windows-x64-setup.exe"
+          Copy-Item $source $asset
+          $hash = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLower()
+          "$hash  $([IO.Path]::GetFileName($asset))" | Set-Content -Encoding utf8 (Join-Path $assetDir 'SHA256SUMS-windows.txt')
+
+      - name: 保存 Windows 发布资产
+        uses: actions/upload-artifact@v4
+        with:
+          name: domi-windows-x64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  linux:
+    name: 构建 Linux x64
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: 安装依赖
+        run: bun install --frozen-lockfile
+
+      - name: 安装 Linux smoke 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xvfb xauth
+
+      - name: 校验版本
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            bun run scripts/verify-release-version.ts "${GITHUB_REF_NAME}"
+          else
+            bun run scripts/verify-release-version.ts
+          fi
+
+      - name: 生成 Linux 正式构建
+        working-directory: apps/electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+        run: bun run dist:linux
+
+      - name: 校验打包后的 Pi runtime
+        working-directory: apps/electron
+        run: bun run verify:pi-runtime --packaged-resources=out/linux-unpacked/resources
+
+      - name: Linux 启动 smoke
+        shell: bash
+        run: |
+          smoke_root="$PWD/apps/electron/out/release-smoke"
+          mkdir -p "$smoke_root/home" "$smoke_root/user-data" "$smoke_root/config"
+          HOME="$smoke_root/home" \
+          XDG_CONFIG_HOME="$smoke_root/config" \
+          timeout 30s xvfb-run -a \
+            apps/electron/out/linux-unpacked/domi \
+            "--user-data-dir=$smoke_root/user-data" \
+            --disable-gpu \
+            --launch-smoke
+
+      - name: 整理 Linux 发布资产
+        shell: bash
+        run: |
+          version="$(bun -e "console.log(require('./apps/electron/package.json').version)")"
+          appimage="apps/electron/out/Domi-${version}-linux-x64.AppImage"
+          deb="apps/electron/out/Domi-${version}-linux-x64.deb"
+          test -f "$appimage"
+          test -f "$deb"
+          dpkg-deb --info "$deb" >/dev/null
+
+          mkdir -p release-assets
+          cp "$appimage" "$deb" release-assets/
+          (
+            cd release-assets
+            sha256sum "$(basename "$appimage")" "$(basename "$deb")" > SHA256SUMS-linux.txt
+          )
+
+      - name: 保存 Linux 发布资产
+        uses: actions/upload-artifact@v4
+        with:
+          name: domi-linux-x64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  draft-release:
+    name: 创建 Draft Pre-release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - windows
+      - linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: 下载所有发布资产
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: 校验并合并 SHA-256
+        shell: bash
+        run: |
+          cd release-assets
+          sha256sum --check SHA256SUMS-windows.txt
+          sha256sum --check SHA256SUMS-linux.txt
+          rm SHA256SUMS-windows.txt SHA256SUMS-linux.txt
+          sha256sum Domi-* > SHA256SUMS.txt
+
+      - name: 创建或更新 Draft Pre-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            is_prerelease="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+            if [[ "$is_draft" != "true" || "$is_prerelease" != "true" ]]; then
+              echo "拒绝覆盖非 Draft Pre-release: $TAG" >&2
+              exit 1
+            fi
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Domi $TAG" \
+              --generate-notes \
+              --draft \
+              --prerelease
+          fi
+
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0)
+          gh release upload "$TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

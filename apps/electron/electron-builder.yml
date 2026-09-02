@@ -176,3 +176,19 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+
+# ============================================
+# Linux 配置
+# ============================================
+linux:
+  category: Development
+  icon: resources/icon.png
+  executableName: domi
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
