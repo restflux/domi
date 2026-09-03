@@ -49,7 +49,7 @@ export function MainArea(): React.ReactElement {
       className={cn('bg-content-area', isClassic && 'rounded-2xl shadow-xl dark:shadow-sm')}
     >
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <div className="relative flex h-full min-w-0 flex-1 flex-col">
+        <div data-scroll-minimap-boundary className="relative flex h-full min-w-0 flex-1 flex-col">
           {activeView === 'planning' ? (
             automationFormOpen ? <AutomationFormView /> : <PlanningView />
           ) : activeView === 'work-activity' ? (

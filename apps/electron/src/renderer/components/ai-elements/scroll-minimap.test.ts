@@ -4,9 +4,11 @@ import {
   resolveMinimapDragRatio,
   resolveMinimapLogicalProgress,
   resolveMinimapLogicalTarget,
+  resolveMinimapNavigationViewportPosition,
   resolveMinimapScrollbarMetrics,
   resolveMinimapThumbRatio,
   resolveMinimapWheelScrollTop,
+  SCROLL_MINIMAP_LAYOUT_CLASSES,
   shouldPreserveMinimapSearchPanel,
 } from './scroll-minimap'
 
@@ -15,6 +17,28 @@ const items: MinimapItem[] = Array.from({ length: 100 }, (_, index) => ({
   role: index % 2 === 0 ? 'user' : 'assistant',
   preview: `消息 ${index}`,
 }))
+
+describe('ScrollMinimap placement', () => {
+  test('Given 消息容器因最大宽度居中而产生左侧留白 When 定位导航 Then 导航贴住 MainArea 左边缘并保持消息视口垂直居中', () => {
+    expect(resolveMinimapNavigationViewportPosition(
+      { left: 240, top: 80, height: 800 },
+      { left: 184 },
+    )).toEqual({ left: 188, top: 480 })
+  })
+
+  test('Given 未提供 MainArea 边界 When 定位导航 Then 回退到消息容器左边缘', () => {
+    expect(resolveMinimapNavigationViewportPosition({ left: 240, top: 80, height: 800 }))
+      .toEqual({ left: 244, top: 480 })
+  })
+
+  test('Given 消息区同时显示导航与滚动进度 When 渲染布局 Then 面板向右展开且进度条仍在右侧', () => {
+    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.navigation).toContain('fixed')
+    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.navigation).toContain('-translate-y-1/2')
+    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.panel).toContain('order-2')
+    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.panel).toContain('origin-left')
+    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.progress).toContain('right-1')
+  })
+})
 
 describe('ScrollMinimap search interaction', () => {
   test('Given 中文 IME 正在组合输入 When 原生候选窗触发 mouseleave Then 搜索面板保持打开', () => {

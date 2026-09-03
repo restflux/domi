@@ -1,9 +1,9 @@
 /**
  * ScrollMinimap — 消息导航迷你地图 + 滚动进度条
  *
- * 在消息区域右侧显示：
- * 1. 短横杠代表每条消息的位置（迷你地图），悬浮时弹出消息预览列表
- * 2. 可拖拽的滚动进度条，提供丝滑的滚动体验
+ * 在消息区域两侧显示：
+ * 1. 左侧中部的短横杠代表每条消息的位置（迷你地图），悬浮时向右弹出消息预览列表
+ * 2. 右侧保留可拖拽的滚动进度条，提供丝滑的滚动体验
  * 必须放在 StickToBottom（Conversation）内部使用。
  */
 
@@ -44,6 +44,37 @@ const MAX_BARS = 20
 const MINIMAP_BAR_SPACING = 8
 /** 右侧滚动位置条宽度（px） */
 const SCROLL_PROGRESS_WIDTH = 8
+/** 导航条与主内容区左边缘的间距（px） */
+const NAVIGATION_EDGE_INSET = 4
+
+/** 用于计算导航条视口定位的最小矩形信息。 */
+export interface MinimapViewportRect {
+  left: number
+  top: number
+  height: number
+}
+
+/**
+ * 导航条需要贴住完整 MainArea，而不是受居中消息容器的最大宽度约束。
+ * 未找到 MainArea 边界时回退到消息视口左边缘。
+ */
+export function resolveMinimapNavigationViewportPosition(
+  conversationRect: MinimapViewportRect,
+  boundaryRect?: Pick<MinimapViewportRect, 'left'>,
+): { left: number; top: number } {
+  return {
+    left: (boundaryRect?.left ?? conversationRect.left) + NAVIGATION_EDGE_INSET,
+    top: conversationRect.top + conversationRect.height / 2,
+  }
+}
+
+/** 导航与滚动进度条的布局契约，供组件与行为测试共享。 */
+export const SCROLL_MINIMAP_LAYOUT_CLASSES = {
+  root: 'absolute inset-0 z-30 pointer-events-none',
+  navigation: 'fixed flex -translate-y-1/2 items-center',
+  panel: 'order-2 ml-1 w-[280px] rounded-lg border bg-popover shadow-xl origin-left flex flex-col overflow-hidden pointer-events-auto',
+  progress: 'absolute inset-y-0 right-1 py-4 pointer-events-auto',
+} as const
 
 // ── Markdown 预览配置（轻量级，禁用重量级渲染） ──
 
@@ -181,7 +212,7 @@ export function resolveMinimapScrollbarMetrics(input: {
   }
 }
 
-/** 将覆盖在消息区右侧的迷你地图滚轮位移映射回真实消息滚动容器。 */
+/** 将覆盖在消息区导航控件上的滚轮位移映射回真实消息滚动容器。 */
 export function resolveMinimapWheelScrollTop(input: {
   scrollTop: number
   scrollHeight: number
@@ -231,6 +262,7 @@ export function ScrollMinimap({
   const openTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
   const searchInputRef = React.useRef<HTMLInputElement>(null)
   const panelRef = React.useRef<HTMLDivElement>(null)
+  const navigationRef = React.useRef<HTMLDivElement>(null)
   const trackRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const pointerInsideNavigationRef = React.useRef(false)
@@ -250,6 +282,34 @@ export function ScrollMinimap({
       if (dragFrameRef.current != null) cancelAnimationFrame(dragFrameRef.current)
     }
   }, [])
+
+  // 导航条使用 fixed 横向定位以越过居中消息容器，但纵向仍跟随消息视口中心。
+  React.useLayoutEffect(() => {
+    const conversationElement = scrollRef.current
+    const navigationElement = navigationRef.current
+    if (!conversationElement || !navigationElement) return
+
+    const boundaryElement = conversationElement.closest<HTMLElement>('[data-scroll-minimap-boundary]')
+    const updatePosition = (): void => {
+      const position = resolveMinimapNavigationViewportPosition(
+        conversationElement.getBoundingClientRect(),
+        boundaryElement?.getBoundingClientRect(),
+      )
+      navigationElement.style.left = `${position.left}px`
+      navigationElement.style.top = `${position.top}px`
+    }
+
+    updatePosition()
+    const resizeObserver = new ResizeObserver(updatePosition)
+    resizeObserver.observe(conversationElement)
+    if (boundaryElement) resizeObserver.observe(boundaryElement)
+    window.addEventListener('resize', updatePosition)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [canScroll, hasUnmountedItems, scrollRef])
 
   // ── 可见消息 + 滚动指标追踪 ──
 
@@ -701,20 +761,24 @@ export function ScrollMinimap({
   const thumbTopPct = effectiveProgressRatio * (100 - thumbHeightPct)
 
   return (
-    <div className="absolute right-1 top-0 bottom-0 z-30 flex pointer-events-none">
-      {/* ── 迷你地图悬停区域（面板 + 横杠） ── */}
-      <div className="flex items-start h-full">
+    <div data-scroll-minimap-root className={SCROLL_MINIMAP_LAYOUT_CLASSES.root}>
+      {/* ── 左侧中部的迷你地图悬停区域（横杠 + 面板） ── */}
+      <div
+        ref={navigationRef}
+        data-scroll-minimap-navigation
+        className={SCROLL_MINIMAP_LAYOUT_CLASSES.navigation}
+      >
         {/* 展开面板 */}
         {hovered && (
           <div
             ref={panelRef}
             className={cn(
-              'mr-1 w-[280px] rounded-lg border bg-popover shadow-xl origin-top-right flex flex-col overflow-hidden pointer-events-auto',
+              SCROLL_MINIMAP_LAYOUT_CLASSES.panel,
               isLeaving
                 ? 'animate-out fade-out-0 zoom-out-95 duration-75'
                 : 'animate-in fade-in-0 zoom-in-95 duration-150'
             )}
-            style={{ maxHeight: 'min(420px, 60vh)', marginTop: 12 }}
+            style={{ maxHeight: 'min(420px, 60vh)' }}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
@@ -775,7 +839,7 @@ export function ScrollMinimap({
 
         {/* ── 迷你地图横杠 —— 只有这里触发面板展开 ── */}
         <div
-          className="relative mt-3 flex-shrink-0 pointer-events-auto"
+          className="order-1 relative flex-shrink-0 pointer-events-auto"
           style={{ width: 24, height: barCount * MINIMAP_BAR_SPACING }}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
@@ -809,7 +873,8 @@ export function ScrollMinimap({
 
       {/* ── 滚动进度条 ── */}
       <div
-        className="relative ml-[4px] py-4 flex-shrink-0 pointer-events-auto"
+        data-scroll-minimap-progress
+        className={SCROLL_MINIMAP_LAYOUT_CLASSES.progress}
         style={{ width: SCROLL_PROGRESS_WIDTH }}
         onWheel={handleScrollSurfaceWheel}
       >
