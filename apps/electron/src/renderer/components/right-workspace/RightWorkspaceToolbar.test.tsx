@@ -27,6 +27,7 @@ function renderToolbar(
         onTabChange={noop}
         onCloseTab={noop}
         onAddBrowser={noop}
+        onOpenTerminal={noop}
         onShowScratch={noop}
         onToggleExpand={noop}
       />

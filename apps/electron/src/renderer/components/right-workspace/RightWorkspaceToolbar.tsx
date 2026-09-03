@@ -52,6 +52,7 @@ interface RightWorkspaceToolbarProps {
   onTabChange: (tabId: RightWorkspaceTabId) => void
   onCloseTab: (tabId: RightWorkspaceTabId) => void
   onAddBrowser: () => void
+  onOpenTerminal: () => void
   onShowScratch: () => void
   onToggleExpand: () => void
 }
@@ -131,6 +132,7 @@ export function RightWorkspaceToolbar({
   onTabChange,
   onCloseTab,
   onAddBrowser,
+  onOpenTerminal,
   onShowScratch,
   onToggleExpand,
 }: RightWorkspaceToolbarProps): React.ReactElement {
@@ -184,6 +186,10 @@ export function RightWorkspaceToolbar({
             <DropdownMenuItem onSelect={() => { setMenuOpen(false); onAddBrowser() }} className="gap-2">
               <Globe2 className="size-4" />
               <span>新建浏览器</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { setMenuOpen(false); onOpenTerminal() }} className="gap-2">
+              <SquareTerminal className="size-4" />
+              <span>打开终端</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { setMenuOpen(false); onShowScratch() }} className="gap-2">
               <NotebookPen className="size-4" />

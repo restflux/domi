@@ -30,7 +30,7 @@ import {
 } from '@/atoms/right-workspace-atoms'
 import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import { scratchPadSaveStateAtom } from '@/atoms/tab-atoms'
-import { terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
+import { terminalDockOpenMapAtom, terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
 import {
   browserSessionIdFromTab,
   browserTabId,
@@ -107,6 +107,7 @@ function ActiveRightSidePanel({
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
   const scratchSaveState = useAtomValue(scratchPadSaveStateAtom)
   const terminalStates = useAtomValue(terminalStateMapAtom)
+  const setTerminalDockOpenMap = useSetAtom(terminalDockOpenMapAtom)
   const [workspaceFocus, setWorkspaceFocus] = useAtom(rightWorkspaceFocusAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
 
@@ -293,6 +294,7 @@ function ActiveRightSidePanel({
           onTabChange={setActiveTab}
           onCloseTab={closeTab}
           onAddBrowser={addBrowser}
+          onOpenTerminal={() => setTerminalDockOpenMap((current) => new Map(current).set(currentSessionId, true))}
           onShowScratch={showScratch}
           onToggleExpand={() => setWorkspaceFocus((current) => toggleRightWorkspaceFocus(current, currentSessionId, activeTabId))}
         />

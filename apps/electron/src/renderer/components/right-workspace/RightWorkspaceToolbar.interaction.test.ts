@@ -15,6 +15,7 @@ interface ToolbarInteractionResult {
   initialExpanded: string | null
   openedExpanded: string | null
   browserVisible: boolean
+  terminalVisible: boolean
   scratchVisible: boolean
   menuZIndex: number
   menuIsTopmost: boolean
@@ -76,6 +77,7 @@ root.render(
         onTabChange={() => {}}
         onCloseTab={() => {}}
         onAddBrowser={() => { window.__selectedTool = 'browser' }}
+        onOpenTerminal={() => { window.__selectedTool = 'terminal' }}
         onShowScratch={() => { window.__selectedTool = 'scratch' }}
         onToggleExpand={() => {}}
       />
@@ -156,12 +158,14 @@ app.whenReady().then(async () => {
     if (!menu) return null
     const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'))
     const browserItem = menuItems.find((item) => item.textContent?.includes('浏览器') && item.getAttribute('aria-label') !== '关闭浏览器')
+    const terminalItem = menuItems.find((item) => item.textContent?.includes('终端'))
     const scratchItem = menuItems.find((item) => item.textContent?.includes('草稿'))
     const rect = menu.getBoundingClientRect()
     const hitTarget = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
     return {
       openedExpanded: trigger?.getAttribute('aria-expanded') ?? null,
       browserVisible: Boolean(browserItem),
+      terminalVisible: Boolean(terminalItem),
       scratchVisible: Boolean(scratchItem),
       menuZIndex: Number.parseInt(getComputedStyle(menu).zIndex, 10),
       menuIsTopmost: hitTarget !== null && menu.contains(hitTarget),
@@ -186,18 +190,18 @@ app.whenReady().then(async () => {
     "document.querySelector('button[aria-haspopup=menu]')?.getAttribute('aria-expanded') === 'true'",
     '第二次真实点击添加工具后菜单未打开',
   )
-  const browserPoint = await getCenter(window, ` + "`" + `(() => {
+  const terminalPoint = await getCenter(window, ` + "`" + `(() => {
     const item = Array.from(document.querySelectorAll('[role="menuitem"]'))
-      .find((candidate) => candidate.textContent?.includes('浏览器') && candidate.getAttribute('aria-label') !== '关闭浏览器')
+      .find((candidate) => candidate.textContent?.includes('终端'))
     if (!item) return null
     const rect = item.getBoundingClientRect()
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
-  })()` + "`" + `, '重新打开菜单后未找到浏览器菜单项')
-  await click(window, browserPoint)
+  })()` + "`" + `, '重新打开菜单后未找到终端菜单项')
+  await click(window, terminalPoint)
   await waitFor(
     window,
-    "window.__selectedTool === 'browser' && document.querySelector('button[aria-haspopup=menu]')?.getAttribute('aria-expanded') === 'false'",
-    '真实选择浏览器后工具未切换或菜单未关闭',
+    "window.__selectedTool === 'terminal' && document.querySelector('button[aria-haspopup=menu]')?.getAttribute('aria-expanded') === 'false'",
+    '真实选择终端后底部 Dock 未打开或菜单未关闭',
   )
 
   const result = {
@@ -275,11 +279,12 @@ test('完整 Right Workspace Shell 中真实点击添加工具后菜单位于最
     initialExpanded: 'false',
     openedExpanded: 'true',
     browserVisible: true,
+    terminalVisible: true,
     scratchVisible: true,
     menuZIndex: 100,
     menuIsTopmost: true,
     escapedExpanded: 'false',
-    selectedTool: 'browser',
+    selectedTool: 'terminal',
     selectedExpanded: 'false',
   })
 }, 20_000)
