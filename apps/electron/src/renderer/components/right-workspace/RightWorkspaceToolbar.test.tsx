@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { TooltipProvider } from '@/components/ui/tooltip.tsx'
-import { RightWorkspaceToolbar, type RightWorkspaceToolbarTab } from './RightWorkspaceToolbar.tsx'
+import {
+  getHorizontalTabWheelDelta,
+  RightWorkspaceToolbar,
+  type RightWorkspaceToolbarTab,
+} from './RightWorkspaceToolbar.tsx'
 
 const noop = (): void => undefined
 
@@ -36,6 +40,11 @@ function renderToolbar(
 }
 
 describe('RightWorkspaceToolbar 标签入口', () => {
+  test('普通滚轮和触控板横向手势都可驱动标签栏左右滚动', () => {
+    expect(getHorizontalTabWheelDelta(0, 120)).toBe(120)
+    expect(getHorizontalTabWheelDelta(-80, 10)).toBe(-80)
+  })
+
   test('文件与改动固定，草稿、Agent 终端和多个浏览器各自拥有标签级关闭入口', () => {
     const tabs: RightWorkspaceToolbarTab[] = [
       ...BASE_TABS,

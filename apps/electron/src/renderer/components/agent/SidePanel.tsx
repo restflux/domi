@@ -8,7 +8,9 @@
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { X, ExternalLink, ChevronRight, MoreHorizontal, FolderSearch, Pencil, FolderInput, MessageSquarePlus } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ImageLightbox } from '@/components/ui/image-lightbox'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
@@ -51,7 +53,7 @@ import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import { sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
 import { useOpenPreview } from '@/components/diff/preview-opener'
 import { detectIsWindows } from '@/lib/platform'
-import type { AgentPendingFile, FileEntry, GeneratedImageItem, GitWorkspaceFileChange, SessionProjectArtifact } from '@domi/shared'
+import type { AgentPendingFile, FileAccessOptions, FileEntry, GeneratedImageItem, GitWorkspaceFileChange, SessionProjectArtifact } from '@domi/shared'
 import { setFilePanelDragData, getMediaTypeFromFilename, dispatchInsertFileMention } from '@/lib/file-panel-drag'
 import { createSessionTargetFileRequest, getAgentFileSourceRoute, getAgentFileTreeRoot } from '@/lib/session-target-file-routing.ts'
 
@@ -102,22 +104,56 @@ export function SidePanel({
   const selectedFilePath = previewFileMap.get(sessionId)?.filePath
 
   const openPreview = useOpenPreview()
+  const [fileImageLightbox, setFileImageLightbox] = React.useState<{ src: string; alt: string } | null>(null)
 
   // 用 ref 存路径模式，避免文件回调持有过期的 Session Target 状态。
   const basePathsRef = React.useRef<string[]>([])
   const usesSessionTargetRef = React.useRef(false)
   const fileSourceFilterRef = React.useRef<AgentFileSourceFilter>('session')
-  const filePathSpaceRef = React.useRef<import('@domi/shared').FileAccessOptions['pathSpace']>()
+  const filePathSpaceRef = React.useRef<FileAccessOptions['pathSpace']>()
+  const imageOpenRequestRef = React.useRef(0)
 
   const handleFilePreview = React.useCallback((filePath: string) => {
+    const requestId = imageOpenRequestRef.current + 1
+    imageOpenRequestRef.current = requestId
     const usesTargetPath = usesSessionTargetRef.current
       && fileSourceFilterRef.current === 'project'
       && !isAbsoluteFilePath(filePath)
-    if (usesTargetPath) {
-      const request = createSessionTargetFileRequest(sessionId, filePath)
-      if (!request) return
+    const targetRequest = usesTargetPath
+      ? createSessionTargetFileRequest(sessionId, filePath)
+      : null
+    if (usesTargetPath && !targetRequest) return
+
+    const previewPath = targetRequest?.relativePath ?? filePath
+    if (getMediaTypeFromFilename(previewPath).startsWith('image/')) {
+      const basePaths = basePathsRef.current
+      const access: FileAccessOptions = targetRequest
+        ? { sessionId, pathSpace: 'session-target' }
+        : {
+            sessionId,
+            ...(filePathSpaceRef.current ? { pathSpace: filePathSpaceRef.current } : {}),
+            ...(basePaths.length > 0 ? { candidateBasePaths: basePaths } : {}),
+          }
+      void window.electronAPI.resolveFilePath(previewPath, access)
+        .then((resolved) => {
+          if (imageOpenRequestRef.current !== requestId) return
+          if (resolved?.kind !== 'file') {
+            toast.error('无法打开图片预览')
+            return
+          }
+          setFileImageLightbox({ src: resolved.url, alt: getPathBasename(previewPath) })
+        })
+        .catch((error: unknown) => {
+          if (imageOpenRequestRef.current !== requestId) return
+          console.error('[SidePanel] 打开图片预览失败:', error)
+          toast.error('无法打开图片预览')
+        })
+      return
+    }
+
+    if (targetRequest) {
       openPreview(sessionId, {
-        filePath: request.relativePath,
+        filePath: targetRequest.relativePath,
         dirPath: '.',
         previewOnly: true,
         sessionTarget: true,
@@ -577,6 +613,15 @@ export function SidePanel({
       )}
       style={!embedded && isOpen ? { width } : undefined}
     >
+      <ImageLightbox
+        src={fileImageLightbox?.src}
+        alt={fileImageLightbox?.alt}
+        open={fileImageLightbox !== null}
+        onOpenChange={(open) => {
+          if (!open) setFileImageLightbox(null)
+        }}
+      />
+
       {/* 面板内容 */}
       <div
         className={cn(

@@ -42,6 +42,10 @@ export interface RightWorkspaceToolbarTab {
   closeable: boolean
 }
 
+export function getHorizontalTabWheelDelta(deltaX: number, deltaY: number): number {
+  return Math.abs(deltaY) > Math.abs(deltaX) ? deltaY : deltaX
+}
+
 interface RightWorkspaceToolbarProps {
   tabs: RightWorkspaceToolbarTab[]
   activeTabId: RightWorkspaceTabId
@@ -138,6 +142,7 @@ export function RightWorkspaceToolbar({
 }: RightWorkspaceToolbarProps): React.ReactElement {
   const toolsAreaRef = React.useRef<HTMLDivElement>(null)
   const toolsRef = React.useRef<HTMLDivElement>(null)
+  const tabRefs = React.useRef(new Map<RightWorkspaceTabId, HTMLDivElement>())
   const [menuPinned, setMenuPinned] = React.useState(false)
   const [menuOpen, setMenuOpen] = React.useState(false)
 
@@ -153,19 +158,48 @@ export function RightWorkspaceToolbar({
     return () => observer.disconnect()
   }, [tabs])
 
+  useClientLayoutEffect(() => {
+    tabRefs.current.get(activeTabId)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest',
+    })
+  }, [activeTabId, tabs])
+
+  const handleToolsWheel = (event: React.WheelEvent<HTMLDivElement>): void => {
+    const tools = toolsRef.current
+    if (!tools || tools.scrollWidth <= tools.clientWidth) return
+    const delta = getHorizontalTabWheelDelta(event.deltaX, event.deltaY)
+    if (delta === 0) return
+    event.preventDefault()
+    tools.scrollLeft += delta
+  }
+
   return (
     <nav className="titlebar-no-drag flex h-10 shrink-0 items-center gap-1 border-b border-border/50 bg-muted/20 px-1.5" aria-label="工作区标签">
       <div ref={toolsAreaRef} className="flex min-w-0 flex-1 items-center gap-1">
-        <div ref={toolsRef} className={cn('flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', menuPinned && 'flex-1')}>
+        <div
+          ref={toolsRef}
+          className={cn('flex min-w-0 scroll-px-1 items-center gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', menuPinned && 'flex-1')}
+          onWheel={handleToolsWheel}
+        >
           {tabs.map((tab) => (
-            <TabButton
+            <div
               key={tab.id}
-              tab={tab}
-              active={activeTabId === tab.id}
-              hasUnseenChanges={hasUnseenChanges}
-              onTabChange={onTabChange}
-              onCloseTab={onCloseTab}
-            />
+              ref={(element) => {
+                if (element) tabRefs.current.set(tab.id, element)
+                else tabRefs.current.delete(tab.id)
+              }}
+              className="shrink-0"
+            >
+              <TabButton
+                tab={tab}
+                active={activeTabId === tab.id}
+                hasUnseenChanges={hasUnseenChanges}
+                onTabChange={onTabChange}
+                onCloseTab={onCloseTab}
+              />
+            </div>
           ))}
         </div>
 
