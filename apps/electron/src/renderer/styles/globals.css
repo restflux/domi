@@ -3426,14 +3426,15 @@
   content: ']';
 }
 
-/* 返回提问按钮 — 终端主题使用实色背景，避免毛玻璃破坏像素质感 */
+/* 返回提问展开卡片 — 终端主题使用实色背景，避免毛玻璃破坏像素质感 */
 .theme-terminal-dark .sticky-return-question-button {
   backdrop-filter: none !important;
   background: hsl(var(--background)) !important;
   box-shadow: none !important;
   border-color: hsl(var(--border)) !important;
 }
-.theme-terminal-dark .sticky-return-question-button:hover {
+.theme-terminal-dark .sticky-return-question-button:hover,
+.theme-terminal-dark .sticky-return-question-button:focus-visible {
   background: hsl(var(--muted)) !important;
   border-color: hsl(var(--primary) / 0.35) !important;
 }
@@ -3521,13 +3522,14 @@
 }
 
 /* ===== CRT 终端：全局直角化 =====
- * 匹配所有 Tailwind rounded- 类（rounded-xl、rounded-[Npx]、rounded-full 等），
- * 强制 border-radius: 0。Tailwind utility 的字面拼写决定了只能用 [class*="rounded"]
- * 才能覆盖任意值变体，这是有意为之的脆弱性，可接受。
+ * 匹配 Tailwind rounded- 类（rounded-xl、rounded-[Npx]、rounded-full 等），
+ * 强制 border-radius: 0。返回上一条提问卡片保留产品约定的胶囊圆角，故显式排除。
+ * Tailwind utility 的字面拼写决定了只能用 [class*="rounded"] 覆盖任意值变体，
+ * 这是有意为之的脆弱性，可接受。
  * 模式切换器指示灯需要保留 2px 圆角 —— 由 .mode-switcher-track .mode-slider
  * (特异性 0,3,0) 显式覆盖本规则 (特异性 0,2,0)，避免同特异性后置覆盖。
  */
-.theme-terminal-dark [class*="rounded"] {
+.theme-terminal-dark [class*="rounded"]:not(.sticky-return-question-button) {
   border-radius: 0 !important;
 }
 

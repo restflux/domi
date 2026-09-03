@@ -371,7 +371,7 @@ export function GeneralSettings(): React.ReactElement {
           </SettingsRow>
           <SettingsToggle
             label="返回上一条提问按钮"
-            description="向下浏览对话时，在顶部居中显示上一条提问的时间与返回按钮"
+            description="向下浏览对话时显示返回按钮；悬浮或聚焦会展开上一条提问摘要"
             checked={stickyUserMessageEnabled}
             onCheckedChange={(checked) => {
               setStickyUserMessageEnabled(checked)
