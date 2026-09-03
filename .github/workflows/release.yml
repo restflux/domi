@@ -50,6 +50,7 @@ jobs:
         run: >-
           bun test
           scripts/verify-release-version.test.ts
+          scripts/release-workflow.test.ts
           apps/electron/scripts/dist-win.test.ts
 
       - name: 类型检查
@@ -194,7 +195,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GITHUB_TOKEN: ''
           GH_TOKEN: ''
-        run: bun run dist:linux
+        run: bun run dist:linux -- --publish never
 
       - name: 校验打包后的 Pi runtime
         working-directory: apps/electron

@@ -160,6 +160,7 @@ describe('createDistWinPlan', () => {
     const release = plan.steps.at(-1)!
     expect(release.args).toContain('--win')
     expect(release.args).toContain('--x64')
+    expect(release.args.slice(-2)).toEqual(['--publish', 'never'])
     expect(release.args.some((arg) => arg.includes('signAndEditExecutable=false'))).toBe(false)
     expect(release.args.some((arg) => arg.includes('compression=store'))).toBe(false)
     expect(plan.asarMode).toBe(true)
