@@ -205,6 +205,10 @@ jobs:
         shell: bash
         run: |
           smoke_root="$PWD/apps/electron/out/release-smoke"
+          chrome_sandbox="$PWD/apps/electron/out/linux-unpacked/chrome-sandbox"
+          test -f "$chrome_sandbox"
+          sudo chown root:root "$chrome_sandbox"
+          sudo chmod 4755 "$chrome_sandbox"
           mkdir -p "$smoke_root/home" "$smoke_root/user-data" "$smoke_root/config"
           HOME="$smoke_root/home" \
           XDG_CONFIG_HOME="$smoke_root/config" \

@@ -12,6 +12,12 @@ describe('Domi Release Candidate workflow', () => {
     expect(workflow).toContain('run: bun run dist:linux -- --publish never')
   })
 
+  test('Linux smoke 使用正式 sandbox 路径启动临时解包产物', () => {
+    expect(workflow).toContain('sudo chown root:root "$chrome_sandbox"')
+    expect(workflow).toContain('sudo chmod 4755 "$chrome_sandbox"')
+    expect(workflow).not.toContain('--no-sandbox')
+  })
+
   test('发布校验会执行 workflow 自身的发布边界测试', () => {
     expect(workflow).toContain('scripts/release-workflow.test.ts')
   })
