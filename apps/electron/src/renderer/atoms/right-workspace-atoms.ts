@@ -6,6 +6,7 @@ import {
 import {
   activateRightWorkspaceTab,
   activateRightWorkspaceTool,
+  resolveRightWorkspaceAutoWidth,
   closeRightWorkspaceTool,
   toolFromRightWorkspaceTab,
   type RightWorkspaceAvailability,
@@ -13,12 +14,28 @@ import {
   type RightWorkspaceTabId,
   type RightWorkspaceTool,
 } from '@/lib/right-workspace-model'
+import { leftSidebarWidthAtom } from './sidebar-atoms'
+import { sidebarCollapsedAtom } from './tab-atoms'
 
 /** Right Workspace 的展开状态沿用原右侧面板偏好，避免升级后重置用户设置。 */
 export const rightWorkspaceOpenAtom = agentSidePanelOpenAtom
 
 /** Right Workspace 的宽度沿用原右侧面板偏好。 */
 export const rightWorkspaceWidthAtom = agentSidePanelWidthAtom
+
+/** 大空间工具激活时按当前窗口布局做一次向上扩展，之后仍允许用户自由拖拽。 */
+export const ensureRightWorkspaceToolWidthAtom = atom(
+  null,
+  (get, set, tool: RightWorkspaceTool) => {
+    set(rightWorkspaceWidthAtom, (currentWidth) => resolveRightWorkspaceAutoWidth({
+      tool,
+      currentWidth,
+      viewportWidth: typeof window === 'undefined' ? 1440 : window.innerWidth,
+      leftSidebarWidth: get(leftSidebarWidthAtom),
+      leftSidebarCollapsed: get(sidebarCollapsedAtom),
+    }))
+  },
+)
 
 export type RightWorkspaceFocusableTool = RightWorkspaceTool
 

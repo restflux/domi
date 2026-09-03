@@ -1,14 +1,33 @@
 import { describe, expect, test } from 'bun:test'
+import { createStore } from 'jotai'
 import {
   activateSessionRightWorkspaceTab,
   activateSessionRightWorkspaceTool,
+  ensureRightWorkspaceToolWidthAtom,
   closeSessionRightWorkspaceTool,
   resolveBrowserFocusEscape,
   resolveRightWorkspaceFocus,
   toggleRightWorkspaceFocus,
+  rightWorkspaceWidthAtom,
 } from './right-workspace-atoms'
+import { leftSidebarWidthAtom } from './sidebar-atoms'
+import { sidebarCollapsedAtom } from './tab-atoms'
 
 describe('Right Workspace 会话隔离', () => {
+  test('统一扩宽入口会更新右侧栏宽度，紧凑工具保持当前值', () => {
+    const store = createStore()
+    store.set(rightWorkspaceWidthAtom, 340)
+    store.set(leftSidebarWidthAtom, 300)
+    store.set(sidebarCollapsedAtom, false)
+
+    store.set(ensureRightWorkspaceToolWidthAtom, 'preview')
+    expect(store.get(rightWorkspaceWidthAtom)).toBe(720)
+
+    store.set(rightWorkspaceWidthAtom, 360)
+    store.set(ensureRightWorkspaceToolWidthAtom, 'files')
+    expect(store.get(rightWorkspaceWidthAtom)).toBe(360)
+  })
+
   test('激活工具只更新目标 Work Session', () => {
     const current = new Map([
       ['session-a', { activeTool: 'files' as const }],

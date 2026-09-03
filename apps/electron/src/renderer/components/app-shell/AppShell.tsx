@@ -26,15 +26,17 @@ import { SettingsPanel } from '@/components/settings/SettingsPanel'
 import { WorktreeManagerSheet } from '@/components/agent/worktree-manager/WorktreeManagerSheet.tsx'
 import { detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
 import { cn } from '@/lib/utils'
-import { shouldShowRightWorkspace } from '@/lib/right-workspace-model'
-import { rightWorkspaceFocusAtom } from '@/atoms/right-workspace-atoms'
-
-const MIN_RIGHT_PANEL_WIDTH = 340
-const MAX_RIGHT_PANEL_WIDTH = 720
-
-function clampRightPanelWidth(width: number): number {
-  return Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(MAX_RIGHT_PANEL_WIDTH, width))
-}
+import {
+  clampRightWorkspaceWidth,
+  resolveRightWorkspaceActivation,
+  resolveRightWorkspaceAutoWidthActivation,
+  shouldShowRightWorkspace,
+} from '@/lib/right-workspace-model'
+import {
+  ensureRightWorkspaceToolWidthAtom,
+  rightWorkspaceFocusAtom,
+  rightWorkspaceSessionStateMapAtom,
+} from '@/atoms/right-workspace-atoms'
 
 const MIN_LEFT_SIDEBAR_WIDTH = 300
 const MAX_LEFT_SIDEBAR_WIDTH = 420
@@ -67,8 +69,24 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     activeView,
   })
   const rightWorkspaceFocus = useAtomValue(rightWorkspaceFocusAtom)
+  const rightWorkspaceSessionStateMap = useAtomValue(rightWorkspaceSessionStateMapAtom)
+  const ensureRightWorkspaceToolWidth = useSetAtom(ensureRightWorkspaceToolWidthAtom)
   const workspaceFocusActive = showRightPanel && rightWorkspaceFocus?.sessionId === currentSessionId
+  const rightWorkspaceActivation = currentSessionId
+    ? resolveRightWorkspaceActivation(currentSessionId, rightWorkspaceSessionStateMap.get(currentSessionId))
+    : null
+  const lastAutoWidthActivationRef = React.useRef<string | null>(null)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
+
+  React.useEffect(() => {
+    const decision = resolveRightWorkspaceAutoWidthActivation(
+      lastAutoWidthActivationRef.current,
+      showRightPanel,
+      rightWorkspaceActivation,
+    )
+    lastAutoWidthActivationRef.current = decision.nextKey
+    if (decision.toolToEnsure) ensureRightWorkspaceToolWidth(decision.toolToEnsure)
+  }, [ensureRightWorkspaceToolWidth, rightWorkspaceActivation, showRightPanel])
 
   // 左侧边栏可拖拽宽度
   const [leftSidebarWidth, setLeftSidebarWidth] = useAtom(leftSidebarWidthAtom)
@@ -128,7 +146,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   // 右侧面板可拖拽宽度
   const [rightPanelWidth, setRightPanelWidth] = useAtom(agentSidePanelWidthAtom)
   const dragging = React.useRef(false)
-  const clampedRightPanelWidth = clampRightPanelWidth(rightPanelWidth)
+  const clampedRightPanelWidth = clampRightWorkspaceWidth(rightPanelWidth)
 
   React.useEffect(() => {
     if (clampedRightPanelWidth !== rightPanelWidth) {
@@ -147,7 +165,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
     const applyWidth = () => {
       const delta = startX - latestClientX
-      setRightPanelWidth(clampRightPanelWidth(startWidth + delta))
+      setRightPanelWidth(clampRightWorkspaceWidth(startWidth + delta))
     }
 
     const onMouseMove = (ev: MouseEvent) => {
@@ -229,7 +247,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
               <div
                 className={cn(
                   'relative z-[60] flex min-w-0 items-stretch crt-sidebar',
-                  workspaceFocusActive && 'flex-1',
+                  workspaceFocusActive ? 'flex-1' : 'shrink-0',
                   isClassic
                     ? 'transition-[padding] duration-300 ease-in-out'
                     : '',

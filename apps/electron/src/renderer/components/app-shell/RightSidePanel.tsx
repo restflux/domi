@@ -296,7 +296,7 @@ function ActiveRightSidePanel({
   const sidePanelTab: AgentSidePanelTab = activeTool === 'side-chat' ? 'chat' : activeTool === 'changes' ? 'changes' : 'files'
 
   return (
-    <div className="relative flex h-full min-w-0 overflow-hidden bg-content-area titlebar-no-drag" style={width ? { width } : undefined}>
+    <div className="relative flex h-full min-w-0 shrink-0 overflow-hidden bg-content-area titlebar-no-drag" style={width ? { width } : undefined}>
       <RightWorkspaceTitlebarDragRegion isWindows={isWindows} />
       <div className={isWindows ? 'flex h-full min-w-0 flex-1 flex-col pt-[34px]' : 'flex h-full min-w-0 flex-1 flex-col'}>
         <RightWorkspaceToolbar

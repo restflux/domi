@@ -6,6 +6,9 @@ import {
   getRightWorkspaceMenuTools,
   getRightWorkspaceToolbarTools,
   resolveClosedTabFallback,
+  resolveRightWorkspaceActivation,
+  resolveRightWorkspaceAutoWidth,
+  resolveRightWorkspaceAutoWidthActivation,
   resolveRightWorkspaceTool,
   shouldPinRightWorkspaceMenu,
   shouldShowRightWorkspace,
@@ -21,6 +24,83 @@ const allAvailable: RightWorkspaceAvailability = {
 }
 
 describe('Right Workspace 状态模型', () => {
+  test('活动身份同时包含会话和实例标签，未初始化时回退到文件', () => {
+    expect(resolveRightWorkspaceActivation('session-a', undefined)).toEqual({
+      key: 'session-a:files',
+      tool: 'files',
+    })
+    expect(resolveRightWorkspaceActivation('session-a', {
+      activeTool: 'browser',
+      activeTabId: 'browser:first',
+    })).toEqual({
+      key: 'session-a:browser:first',
+      tool: 'browser',
+    })
+    expect(resolveRightWorkspaceActivation('session-b', {
+      activeTool: 'terminal',
+      activeTabId: 'terminal:dev-server',
+    })).toEqual({
+      key: 'session-b:terminal:dev-server',
+      tool: 'terminal',
+    })
+  })
+
+  test('活动标签只在身份变化时请求一次扩宽，隐藏后清除记录', () => {
+    const preview = resolveRightWorkspaceActivation('session-a', { activeTool: 'preview' })
+    expect(resolveRightWorkspaceAutoWidthActivation(null, true, preview)).toEqual({
+      nextKey: 'session-a:preview',
+      toolToEnsure: 'preview',
+    })
+    expect(resolveRightWorkspaceAutoWidthActivation('session-a:preview', true, preview)).toEqual({
+      nextKey: 'session-a:preview',
+      toolToEnsure: null,
+    })
+    expect(resolveRightWorkspaceAutoWidthActivation('session-a:preview', false, preview)).toEqual({
+      nextKey: null,
+      toolToEnsure: null,
+    })
+  })
+
+  test('浏览器、终端和文档预览在空间允许时扩大到建议宽度', () => {
+    const base = {
+      currentWidth: 340,
+      viewportWidth: 1440,
+      leftSidebarWidth: 300,
+      leftSidebarCollapsed: false,
+    }
+
+    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'browser' })).toBe(720)
+    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'terminal' })).toBe(720)
+    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'preview' })).toBe(720)
+  })
+
+  test('紧凑工具和已经足够宽的工作区不改变宽度', () => {
+    const base = {
+      currentWidth: 720,
+      viewportWidth: 1440,
+      leftSidebarWidth: 300,
+      leftSidebarCollapsed: false,
+    }
+
+    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'files' })).toBe(720)
+    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'changes' })).toBe(720)
+    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'scratch' })).toBe(720)
+    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'browser' })).toBe(720)
+  })
+
+  test('窗口空间有限时只扩到安全上限，左栏折叠后可使用释放出的宽度', () => {
+    const base = {
+      tool: 'browser' as const,
+      currentWidth: 340,
+      leftSidebarWidth: 300,
+      leftSidebarCollapsed: false,
+    }
+
+    expect(resolveRightWorkspaceAutoWidth({ ...base, viewportWidth: 1024 })).toBe(340)
+    expect(resolveRightWorkspaceAutoWidth({ ...base, viewportWidth: 1200 })).toBe(480)
+    expect(resolveRightWorkspaceAutoWidth({ ...base, viewportWidth: 1024, leftSidebarCollapsed: true })).toBe(604)
+  })
+
   test('Agent 终端实例使用独立标签并映射到终端工具', () => {
     expect(terminalTabId('terminal-1')).toBe('terminal:terminal-1')
     expect(terminalIdFromTab('terminal:terminal-1')).toBe('terminal-1')
