@@ -13,6 +13,7 @@ const terminal = (overrides: Partial<TerminalSessionView>): TerminalSessionView 
   terminalId: 't1',
   ownerSessionId: 's1',
   kind: 'agent-run',
+  presentation: 'workspace',
   title: 'Dev',
   cwd: '/repo',
   profile: 'bash',

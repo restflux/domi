@@ -57,7 +57,9 @@ export function useGlobalTerminalListeners(): void {
         store.set(terminalActiveIdMapAtom, (current) => {
           if (current.get(change.ownerSessionId) !== change.terminalId) return current
           const nextTerminal = [...store.get(terminalStateMapAtom).values()]
-            .find((terminal) => terminal.ownerSessionId === change.ownerSessionId && terminal.kind === 'user-shell')
+            .find((terminal) => terminal.ownerSessionId === change.ownerSessionId
+              && terminal.kind === 'user-shell'
+              && terminal.presentation === 'dock')
           const next = new Map(current)
           if (nextTerminal) next.set(change.ownerSessionId, nextTerminal.terminalId)
           else next.delete(change.ownerSessionId)
@@ -67,8 +69,8 @@ export function useGlobalTerminalListeners(): void {
       }
 
       if (change.status === 'starting') {
-        if (change.kind === 'agent-run') {
-          clearServiceOutput(change.terminalId)
+        if (change.kind === 'agent-run') clearServiceOutput(change.terminalId)
+        if (change.presentation === 'workspace') {
           store.set(rightWorkspaceSessionStateMapAtom, (current) => (
             activateSessionRightWorkspaceTab(current, change.ownerSessionId, terminalTabId(change.terminalId))
           ))

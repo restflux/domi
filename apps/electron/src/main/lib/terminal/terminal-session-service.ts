@@ -5,6 +5,7 @@ import {
   type TerminalCreateInput,
   type TerminalExitEvent,
   type TerminalOutputEvent,
+  type TerminalPresentation,
   type TerminalProfile,
   type TerminalReadResult,
   type TerminalSessionView,
@@ -56,6 +57,7 @@ export interface TerminalSessionServiceDependencies {
 
 export interface UserTerminalCreateOptions {
   profile?: TerminalProfile
+  presentation?: TerminalPresentation
   title?: string
   cwd?: string
   cols: number
@@ -85,6 +87,7 @@ export class TerminalSessionService {
     return this.create({
       owner,
       kind: 'user-shell',
+      presentation: input.presentation ?? 'dock',
       title: sanitizeTitle(input.title, '终端'),
       cwd: resolveTerminalCwd(owner.allowedCwdRoots, input.cwd),
       profile,
@@ -109,6 +112,7 @@ export class TerminalSessionService {
       owner,
       ...(reusable ? { terminalId: reusable.state.terminalId } : {}),
       kind: 'agent-run',
+      presentation: 'workspace',
       title: sanitizeTitle(input.title, `Agent · ${command.replace(/\s+/g, ' ').slice(0, 48)}`),
       cwd,
       profile,
@@ -217,6 +221,7 @@ export class TerminalSessionService {
     owner: TerminalOwnerContext
     terminalId?: string
     kind: 'user-shell' | 'agent-run'
+    presentation: TerminalPresentation
     title: string
     cwd: string
     profile: TerminalProfile
@@ -232,6 +237,7 @@ export class TerminalSessionService {
       terminalId,
       ownerSessionId: input.owner.ownerSessionId,
       kind: input.kind,
+      presentation: input.presentation,
       title: input.title,
       cwd: input.cwd,
       profile: input.profile,
@@ -268,13 +274,22 @@ export class TerminalSessionService {
       return record.state
     }).catch((error) => {
       if (this.records.has(terminalId)) {
-        record.state = {
-          ...record.state,
-          status: 'failed',
-          finishedAt: this.now(),
-          error: error instanceof Error ? error.message : String(error),
+        if (input.kind === 'user-shell') {
+          this.records.delete(terminalId)
+          this.dependencies.onStateChanged?.({
+            terminalId,
+            ownerSessionId: input.owner.ownerSessionId,
+            closed: true,
+          })
+        } else {
+          record.state = {
+            ...record.state,
+            status: 'failed',
+            finishedAt: this.now(),
+            error: error instanceof Error ? error.message : String(error),
+          }
+          this.dependencies.onStateChanged?.(record.state)
         }
-        this.dependencies.onStateChanged?.(record.state)
       }
       throw error
     }).finally(() => this.pending.delete(terminalId))

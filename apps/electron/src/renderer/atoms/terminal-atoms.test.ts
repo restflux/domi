@@ -3,7 +3,7 @@ import type { TerminalSessionView } from '@domi/shared'
 import { applyTerminalStateChange } from './terminal-atoms.ts'
 
 const running: TerminalSessionView = {
-  terminalId: 't1', ownerSessionId: 's1', kind: 'agent-run', title: 'Dev', cwd: '/repo',
+  terminalId: 't1', ownerSessionId: 's1', kind: 'agent-run', presentation: 'workspace', title: 'Dev', cwd: '/repo',
   profile: 'bash', status: 'running', startedAt: 1,
 }
 

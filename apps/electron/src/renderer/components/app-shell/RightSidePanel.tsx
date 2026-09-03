@@ -2,7 +2,7 @@
  * RightSidePanel — Work 会话的统一右侧工作区。
  *
  * 顶部按实例渲染真实标签；Browser 原生页面仍由 Main 持有，Renderer 只切换活动实例。
- * Agent Run 终端也按实例进入这里，底部 Dock 只保留用户手动 Shell。
+ * Agent Run 与右侧菜单创建的手动 Shell 按实例进入这里；顶部入口创建的 Shell 留在底部 Dock。
  */
 
 import * as React from 'react'
@@ -30,7 +30,7 @@ import {
 } from '@/atoms/right-workspace-atoms'
 import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import { scratchPadSaveStateAtom } from '@/atoms/tab-atoms'
-import { terminalDockOpenMapAtom, terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
+import { terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
 import {
   browserSessionIdFromTab,
   browserTabId,
@@ -43,9 +43,11 @@ import {
   type RightWorkspaceTool,
 } from '@/lib/right-workspace-model'
 import { detectIsWindows } from '@/lib/platform'
+import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 import { SidePanel } from '@/components/agent/SidePanel'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { TerminalPane } from '@/components/terminal/TerminalPane.tsx'
+import { selectWorkspaceTerminals } from '@/components/terminal/terminal-dock-model.ts'
 import { PreviewTabContent } from '@/components/diff/PreviewTabContent'
 import { ScratchPadWorkspace } from '@/components/scratch-pad/ScratchPadView'
 import { RightWorkspaceHeader } from '@/components/right-workspace/RightWorkspaceHeader'
@@ -107,18 +109,16 @@ function ActiveRightSidePanel({
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
   const scratchSaveState = useAtomValue(scratchPadSaveStateAtom)
   const terminalStates = useAtomValue(terminalStateMapAtom)
-  const setTerminalDockOpenMap = useSetAtom(terminalDockOpenMapAtom)
   const [workspaceFocus, setWorkspaceFocus] = useAtom(rightWorkspaceFocusAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
+  const creatingTerminalRef = React.useRef<ManualTerminalCreationGuard>({ pending: false })
 
   const sessionPath = sessionPathMap.get(currentSessionId) ?? null
   const previewFile = previewFileMap.get(currentSessionId) ?? null
   const sideChatConversationId = sideChatMap.get(currentSessionId) ?? null
   const browserStates = getOwnerBrowserStates(browserStateMap, currentSessionId)
-  const agentTerminals = React.useMemo(
-    () => [...terminalStates.values()]
-      .filter((terminal) => terminal.ownerSessionId === currentSessionId && terminal.kind === 'agent-run')
-      .sort((left, right) => left.startedAt - right.startedAt),
+  const workspaceTerminals = React.useMemo(
+    () => selectWorkspaceTerminals(terminalStates.values(), currentSessionId),
     [currentSessionId, terminalStates],
   )
   const legacyTool = fromLegacyTab(legacyTabMap.get(currentSessionId) ?? 'files')
@@ -133,7 +133,7 @@ function ActiveRightSidePanel({
     { id: 'files', tool: 'files', label: '文件', closeable: false },
     { id: 'changes', tool: 'changes', label: '改动', closeable: false },
     ...(state.scratchVisible ? [{ id: 'scratch' as const, tool: 'scratch' as const, label: '草稿', closeable: true }] : []),
-    ...agentTerminals.map((terminal) => ({
+    ...workspaceTerminals.map((terminal) => ({
       id: terminalTabId(terminal.terminalId),
       tool: 'terminal' as const,
       label: terminal.title,
@@ -210,6 +210,21 @@ function ActiveRightSidePanel({
   const setFileSourceFilter = (filter: AgentFileSourceFilter): void => {
     setFileSourceFilterMap((current) => ({ ...current, [currentSessionId]: filter }))
   }
+
+  const createWorkspaceTerminal = React.useCallback(async (): Promise<void> => {
+    await createManualTerminal(creatingTerminalRef.current, {
+      create: (input) => window.electronAPI.terminal.create(input),
+      onError: (error) => {
+        console.error('[RightSidePanel] 创建终端失败:', error)
+        toast.error('创建终端失败')
+      },
+    }, {
+      ownerSessionId: currentSessionId,
+      presentation: 'workspace',
+      cols: 80,
+      rows: 28,
+    })
+  }, [currentSessionId])
 
   const addBrowser = (): void => {
     void window.electronAPI.browser.open({ ownerSessionId: currentSessionId, disposition: 'new-tab' })
@@ -294,7 +309,7 @@ function ActiveRightSidePanel({
           onTabChange={setActiveTab}
           onCloseTab={closeTab}
           onAddBrowser={addBrowser}
-          onOpenTerminal={() => setTerminalDockOpenMap((current) => new Map(current).set(currentSessionId, true))}
+          onOpenTerminal={() => void createWorkspaceTerminal()}
           onShowScratch={showScratch}
           onToggleExpand={() => setWorkspaceFocus((current) => toggleRightWorkspaceFocus(current, currentSessionId, activeTabId))}
         />

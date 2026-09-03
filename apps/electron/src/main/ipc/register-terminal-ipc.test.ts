@@ -28,18 +28,25 @@ describe('registerTerminalIpc', () => {
 
   test('accepts a bounded cwd while rejecting extra IPC keys and oversized terminal input', async () => {
     const ipc = new FakeIpc()
-    let receivedCwd: string | undefined
+    let received: { cwd?: string; presentation?: string } = {}
     registerTerminalIpc(ipc, {
-      createUserShell: async (_ownerSessionId, input) => { receivedCwd = input.cwd; return {} as never }, list: async () => [], inspect: async () => ({} as never),
+      createUserShell: async (_ownerSessionId, input) => {
+        received = { cwd: input.cwd, presentation: input.presentation }
+        return {} as never
+      }, list: async () => [], inspect: async () => ({} as never),
       snapshot: async () => ({} as never), input: async () => {}, resize: async () => {},
       interrupt: async () => true, close: async () => true,
     }, { assertSender: () => {} })
 
     await ipc.handlers.get(TERMINAL_IPC_CHANNELS.CREATE)?.(
       { sender: { id: 1 } },
-      { ownerSessionId: 's1', cols: 80, rows: 24, cwd: 'apps/electron' },
+      { ownerSessionId: 's1', cols: 80, rows: 24, cwd: 'apps/electron', presentation: 'workspace' },
     )
-    expect(receivedCwd).toBe('apps/electron')
+    expect(received).toEqual({ cwd: 'apps/electron', presentation: 'workspace' })
+    await expect(ipc.handlers.get(TERMINAL_IPC_CHANNELS.CREATE)?.(
+      { sender: { id: 1 } },
+      { ownerSessionId: 's1', cols: 80, rows: 24, presentation: 'floating' },
+    )).rejects.toThrow('终端 IPC 请求无效')
     await expect(ipc.handlers.get(TERMINAL_IPC_CHANNELS.CREATE)?.(
       { sender: { id: 1 } },
       { ownerSessionId: 's1', cols: 80, rows: 24, cwd: 'bad\0path' },

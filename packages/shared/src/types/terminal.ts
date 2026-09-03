@@ -1,4 +1,5 @@
 export type TerminalKind = 'user-shell' | 'agent-run'
+export type TerminalPresentation = 'dock' | 'workspace'
 export type TerminalStatus = 'starting' | 'running' | 'exited' | 'stopped' | 'failed'
 export type TerminalProfile = 'default' | 'zsh' | 'bash' | 'pwsh' | 'powershell' | 'cmd' | 'git-bash' | 'wsl'
 
@@ -44,6 +45,7 @@ export interface TerminalSessionView {
   terminalId: string
   ownerSessionId: string
   kind: TerminalKind
+  presentation: TerminalPresentation
   title: string
   cwd: string
   profile: TerminalProfile
@@ -68,6 +70,7 @@ export type TerminalStateChange = TerminalSessionView | TerminalSessionClosed
 export interface TerminalCreateInput {
   ownerSessionId: string
   profile?: TerminalProfile
+  presentation?: TerminalPresentation
   title?: string
   /** 绝对路径或相对 Session Target 根目录的目录；Main 会重新校验授权根。 */
   cwd?: string

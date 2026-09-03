@@ -39,12 +39,14 @@ export function registerTerminalIpc(
 }
 
 function parseCreate(input: unknown): TerminalCreateInput {
-  const value = requireRecord(input, ['ownerSessionId', 'profile', 'title', 'cwd', 'cols', 'rows'], ['ownerSessionId', 'cols', 'rows'])
+  const value = requireRecord(input, ['ownerSessionId', 'profile', 'presentation', 'title', 'cwd', 'cols', 'rows'], ['ownerSessionId', 'cols', 'rows'])
   if (value.profile !== undefined && !isTerminalProfile(value.profile)) invalid()
+  if (value.presentation !== undefined && value.presentation !== 'dock' && value.presentation !== 'workspace') invalid()
   if (value.title !== undefined && (typeof value.title !== 'string' || value.title.length > 80)) invalid()
   return {
     ownerSessionId: requireId(value.ownerSessionId),
     ...(value.profile === undefined ? {} : { profile: value.profile }),
+    ...(value.presentation === undefined ? {} : { presentation: value.presentation }),
     ...(value.title === undefined ? {} : { title: value.title as string }),
     ...(value.cwd === undefined ? {} : { cwd: requireCwd(value.cwd) }),
     cols: requireDimension(value.cols),

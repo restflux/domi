@@ -38,9 +38,11 @@ import { cn } from '@/lib/utils'
 import { shortcutGuideOpenAtom } from '@/atoms/shortcut-guide'
 import { rightWorkspaceOpenAtom } from '@/atoms/right-workspace-atoms'
 import { terminalDockOpenMapAtom, terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
+import { toast } from 'sonner'
 import { selectRunningAgentTerminals } from '@/components/terminal/running-terminals-model.ts'
 import { RunningTerminalsPopover } from '@/components/terminal/RunningTerminalsPopover.tsx'
 import { canCloseMainTab } from '@/lib/tab-close-policy.ts'
+import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 
 export function TabBar(): React.ReactElement {
   const tabs = useAtomValue(tabsAtom)
@@ -216,7 +218,7 @@ function TabBarInner({
   const activeTab = React.useMemo(() => tabs.find((t) => t.id === activeTabId), [tabs, activeTabId])
   const showPanelButton = activeTab?.type === 'agent'
   const activeAgentSessionId = activeTab?.type === 'agent' ? activeTab.sessionId : null
-  const [terminalOpenMap, setTerminalOpenMap] = useAtom(terminalDockOpenMapAtom)
+  const [terminalOpenMap] = useAtom(terminalDockOpenMapAtom)
   const terminalStates = useAtomValue(terminalStateMapAtom)
   const isTerminalOpen = activeAgentSessionId
     ? terminalOpenMap.get(activeAgentSessionId) ?? false
@@ -233,13 +235,22 @@ function TabBarInner({
     setSidePanelOpen((v) => !v)
   }, [setSidePanelOpen, activeTab])
 
-  const toggleTerminal = React.useCallback(() => {
+  const creatingTerminalRef = React.useRef<ManualTerminalCreationGuard>({ pending: false })
+  const createDockTerminal = React.useCallback(async (): Promise<void> => {
     if (!activeAgentSessionId) return
-    setTerminalOpenMap((current) => new Map(current).set(
-      activeAgentSessionId,
-      !(current.get(activeAgentSessionId) ?? false),
-    ))
-  }, [activeAgentSessionId, setTerminalOpenMap])
+    await createManualTerminal(creatingTerminalRef.current, {
+      create: (input) => window.electronAPI.terminal.create(input),
+      onError: (error) => {
+        console.error('[TabBar] 创建终端失败:', error)
+        toast.error('创建终端失败')
+      },
+    }, {
+      ownerSessionId: activeAgentSessionId,
+      presentation: 'dock',
+      cols: 100,
+      rows: 28,
+    })
+  }, [activeAgentSessionId])
 
   // 右上角终端按钮展开“运行中服务”浮层（Radix Popover 受控，外点收起由 Radix 处理）
   const [runningPopoverOpen, setRunningPopoverOpen] = React.useState(false)
@@ -381,7 +392,7 @@ function TabBarInner({
         runningPopoverOpen={runningPopoverOpen}
         hasRunningServiceTerminal={hasRunningServiceTerminal}
         onOpenShortcutGuide={openShortcutGuide}
-        onToggleTerminal={toggleTerminal}
+        onToggleTerminal={() => void createDockTerminal()}
         onTogglePanel={togglePanel}
         onSetRunningPopoverOpen={setRunningPopoverOpen}
       />

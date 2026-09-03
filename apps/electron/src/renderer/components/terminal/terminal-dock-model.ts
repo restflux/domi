@@ -1,12 +1,24 @@
 import type { TerminalSessionView } from '@domi/shared'
 
-/** 底部 Dock 只承载用户主动创建的 Shell；Agent Run 归右侧工作区展示。 */
-export function selectManualTerminals(
+/** 底部 Dock 只承载顶部入口或 Dock 内部创建的手动 Shell。 */
+export function selectDockTerminals(
   terminals: Iterable<TerminalSessionView>,
   ownerSessionId: string,
 ): TerminalSessionView[] {
   return [...terminals]
-    .filter((terminal) => terminal.ownerSessionId === ownerSessionId && terminal.kind === 'user-shell')
+    .filter((terminal) => terminal.ownerSessionId === ownerSessionId
+      && terminal.kind === 'user-shell'
+      && terminal.presentation === 'dock')
+    .sort((left, right) => left.startedAt - right.startedAt)
+}
+
+/** Right Workspace 同时承载 Agent Run 和从右侧菜单创建的手动 Shell。 */
+export function selectWorkspaceTerminals(
+  terminals: Iterable<TerminalSessionView>,
+  ownerSessionId: string,
+): TerminalSessionView[] {
+  return [...terminals]
+    .filter((terminal) => terminal.ownerSessionId === ownerSessionId && terminal.presentation === 'workspace')
     .sort((left, right) => left.startedAt - right.startedAt)
 }
 

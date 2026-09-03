@@ -8,6 +8,7 @@ class FakeRuntime implements TerminalRuntimePort {
   inputs: Array<{ terminalId: string; data: string }> = []
   killed: string[] = []
   interrupted: string[] = []
+  nextCreateError?: Error
   private outputListener?: (event: TerminalOutputEvent) => void
   private exitListener?: (event: TerminalExitEvent) => void
 
@@ -16,6 +17,11 @@ class FakeRuntime implements TerminalRuntimePort {
   onFailure(): () => void { return () => {} }
   async create(input: TerminalRuntimeCreateInput): Promise<TerminalRuntimeState> {
     this.creates.push(input)
+    if (this.nextCreateError) {
+      const error = this.nextCreateError
+      this.nextCreateError = undefined
+      throw error
+    }
     return { terminalId: input.terminalId, title: 'Bash', cwd: input.cwd, profile: input.profile, pid: 42 }
   }
   input(terminalId: string, data: string): void { this.inputs.push({ terminalId, data }) }
@@ -55,6 +61,7 @@ describe('TerminalSessionService', () => {
     const { runtime, service } = setup()
     const running = await service.runAgent('session-1', { command: 'bun run dev', title: 'Dev server' })
     expect(running.kind).toBe('agent-run')
+    expect(running.presentation).toBe('workspace')
     expect(running.status).toBe('running')
     expect(runtime.creates[0]).toMatchObject({
       mode: 'agent-command',
@@ -79,6 +86,33 @@ describe('TerminalSessionService', () => {
 
     expect(terminal.cwd.replace(/\\/g, '/')).toEndWith('/apps/electron')
     expect(runtime.creates[0]?.cwd.replace(/\\/g, '/')).toEndWith('/apps/electron')
+  })
+
+  test('user shell defaults to Dock and preserves an explicit workspace presentation', async () => {
+    const { service } = setup()
+    const dock = await service.createUserShell('session-1', { cols: 80, rows: 24 })
+    const workspace = await service.createUserShell('session-1', { cols: 80, rows: 24, presentation: 'workspace' })
+
+    expect(dock.presentation).toBe('dock')
+    expect(workspace.presentation).toBe('workspace')
+  })
+
+  test('removes a failed user shell so no empty terminal remains', async () => {
+    const { runtime, service, stateEvents } = setup()
+    runtime.nextCreateError = new Error('spawn failed')
+
+    await expect(service.createUserShell('session-1', {
+      cols: 80,
+      rows: 24,
+      presentation: 'workspace',
+    })).rejects.toThrow('spawn failed')
+
+    expect(await service.list('session-1')).toEqual([])
+    expect(stateEvents.at(-1)).toEqual({
+      terminalId: 'terminal-1',
+      ownerSessionId: 'session-1',
+      closed: true,
+    })
   })
 
   test('reuses one compatible exited Agent terminal tab without touching user terminals', async () => {
