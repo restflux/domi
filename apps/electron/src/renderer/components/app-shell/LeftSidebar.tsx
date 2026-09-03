@@ -473,6 +473,9 @@ interface AgentSessionDateGroupsProps {
   onToggleArchive: (id: string) => Promise<void>
 }
 
+const WORK_SIDEBAR_STICKY_CONTROLS_HEIGHT_CLASS = '[--work-sidebar-sticky-controls-height:2.5rem]'
+const WORK_SIDEBAR_NESTED_STICKY_TOP_CLASS = 'top-[var(--work-sidebar-sticky-controls-height)]'
+
 function AgentSessionDateGroups({
   groups,
   activeSessionId,
@@ -495,7 +498,7 @@ function AgentSessionDateGroups({
     <>
       {groups.map((group) => (
         <div key={group.label} className="mb-1">
-          <div className="sticky top-[27px] z-10 -mx-2 bg-[hsl(var(--sidebar-surface))] px-2">
+          <div className={cn('sticky z-10 -mx-2 bg-[hsl(var(--sidebar-surface))] px-2', WORK_SIDEBAR_NESTED_STICKY_TOP_CLASS)}>
             <div className="px-2 pb-1 pt-2 text-[11px] font-medium text-foreground/40 select-none">
               {group.label}
             </div>
@@ -3549,7 +3552,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
           </div>
         </div>
       ) : mode === 'agent' && viewMode === 'active' ? (
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin titlebar-no-drag">
+        <div className={cn('flex-1 min-h-0 overflow-y-auto scrollbar-thin titlebar-no-drag', WORK_SIDEBAR_STICKY_CONTROLS_HEIGHT_CLASS)}>
           {pinnedAgentSessions.length > 0 && (
             <div className="pt-2 pb-1 flex-shrink-0 titlebar-no-drag">
               <div className="pl-[18px] pr-3.5 pb-1 text-[13px] font-medium leading-[18px] text-foreground/40 select-none">
@@ -3625,7 +3628,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
           {/* 下区标题：项目历史。分隔导航与内容，强化信息层级。
               sticky 吸顶：滚动长列表时保持当前分区可见。 */}
-          <div className="sticky top-0 z-20 mx-2 mt-3 flex flex-shrink-0 items-center justify-between rounded-md bg-[hsl(var(--sidebar-surface))] px-1.5 pb-1 pt-1.5">
+          <div className="sticky top-0 z-20 mx-2 mt-3 flex h-[var(--work-sidebar-sticky-controls-height)] flex-shrink-0 items-center justify-between rounded-md bg-[hsl(var(--sidebar-surface))] px-1.5">
             <WorkSidebarControls
               preferences={workSidebarPreferences}
               allProjectsCollapsed={allProjectGroupsCollapsed}
@@ -5170,7 +5173,7 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
         <div className="absolute -top-0.5 left-3 right-3 h-0.5 translate-x-[2px] rounded-full bg-primary z-10" />
       )}
 
-      <div className="sticky top-[27px] z-10 -mx-2 bg-[hsl(var(--sidebar-surface))] px-2">
+      <div className={cn('sticky z-10 -mx-2 bg-[hsl(var(--sidebar-surface))] px-2', WORK_SIDEBAR_NESTED_STICKY_TOP_CLASS)}>
         <div className="group/project relative flex translate-x-[2px] items-center">
         <span
           draggable
