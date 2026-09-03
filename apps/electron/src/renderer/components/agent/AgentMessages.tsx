@@ -33,7 +33,8 @@ import { clearScrollPositionMemory, ScrollPositionManager } from '@/hooks/useScr
 import { cn } from '@/lib/utils'
 import { AGENT_RUNNING_ORB_STATES, RotatingAgentActivityOrb } from '@/components/ui/agent-activity-orb'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { groupIntoTurns, MessageGroupRenderer, getGroupId, getGroupPreview, extractUserText, parseAttachedFiles as sdkParseAttachedFiles, isImageFile as sdkIsImageFile, buildTaskProgressDataForTurn, type MessageGroup } from './SDKMessageRenderer'
+import { groupIntoTurns, MessageGroupRenderer, getGroupId, getGroupPreview, extractUserText, buildTaskProgressDataForTurn, type MessageGroup } from './SDKMessageRenderer'
+import { extractMeta } from '@domi/session-core'
 import { buildLiveGroupSet } from './live-group-set'
 import { AgentHistorySelectionLayer } from './AgentHistorySelectionLayer'
 import { TaskProgressOverlay, type ContextCompactionProgress } from './TaskProgressOverlay'
@@ -979,20 +980,19 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
     }
   }, [sessionId, minimapItems, setMinimapCache])
 
-  // 所有用户消息的数据 — 供 StickyUserMessage 使用
-  const allUserMessagesData = React.useMemo(() => {
-    return mountedGroups
-      .filter((g): g is MessageGroup & { type: 'user' } => g.type === 'user')
-      .map((g) => {
-        const rawText = extractUserText(g.message) ?? ''
-        const { files, text } = sdkParseAttachedFiles(rawText)
+  // 已挂载的用户消息定位信息 — 供返回上一条提问快捷入口使用
+  const userMessagesForStickyShortcut = React.useMemo(
+    () => mountedGroups
+      .filter((group) => group.type === 'user')
+      .map((group) => {
+        const createdAt = extractMeta(group.message).createdAt
         return {
-          id: getGroupId(g),
-          text,
-          attachments: files.map((f) => ({ filename: f.filename, isImage: sdkIsImageFile(f.filename) })),
+          id: getGroupId(group),
+          time: createdAt ? formatMessageTime(createdAt) : undefined,
         }
-      })
-  }, [mountedGroups])
+      }),
+    [mountedGroups],
+  )
 
   // 实时消息中是否已有可渲染的助手内容
   // 流式中：通过 liveGroupSet 精确判断（只有 streaming 时 liveGroupSet 才非空）
@@ -1128,8 +1128,8 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
           streaming={streaming}
           contextCompaction={contextCompaction}
         />
-        {allUserMessagesData.length > 0 && (
-          <StickyUserMessage userMessages={allUserMessagesData} />
+        {userMessagesForStickyShortcut.length > 0 && (
+          <StickyUserMessage userMessages={userMessagesForStickyShortcut} />
         )}
       </Conversation>
       <AgentHistorySelectionLayer sessionId={sessionId} rootRef={historySelectionRootRef} />

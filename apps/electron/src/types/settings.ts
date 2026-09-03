@@ -340,7 +340,7 @@ export interface AppSettings {
   agentFollowUpMode?: AgentQueueDeliveryMode
   /** 用户自定义快捷键覆盖 */
   shortcutOverrides?: ShortcutOverrides
-  /** 是否显示用户消息悬浮置顶条（默认 true） */
+  /** 是否显示返回上一条提问的快捷按钮（默认 true） */
   stickyUserMessageEnabled?: boolean
   /** 左侧会话列表悬浮预览迷你地图（默认 false，需手动开启） */
   sessionHoverPreviewEnabled?: boolean

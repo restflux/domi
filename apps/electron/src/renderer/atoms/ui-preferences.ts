@@ -10,7 +10,7 @@ import type { WorkSidebarPreferences } from '../../types'
 
 // ===== Jotai Atoms =====
 
-/** 是否显示用户消息悬浮置顶条 */
+/** 是否显示返回上一条提问的快捷按钮 */
 export const stickyUserMessageEnabledAtom = atom<boolean>(true)
 
 /** 粘贴长文本时是否自动转为附件 */

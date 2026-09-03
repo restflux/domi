@@ -370,8 +370,8 @@ export function GeneralSettings(): React.ReactElement {
             </Select>
           </SettingsRow>
           <SettingsToggle
-            label="消息悬浮置顶条"
-            description="滚动浏览对话时，在顶部显示最近的用户消息摘要"
+            label="返回上一条提问按钮"
+            description="向下浏览对话时，在顶部居中显示上一条提问的时间与返回按钮"
             checked={stickyUserMessageEnabled}
             onCheckedChange={(checked) => {
               setStickyUserMessageEnabled(checked)

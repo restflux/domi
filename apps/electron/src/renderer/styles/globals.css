@@ -3099,7 +3099,6 @@
  * agent-composer-surface 外观（border-border / bg-background/70 / backdrop-blur），
  * 聚焦时才显示主题渐变/辉光/边框，平时界面统一干净。
  * 选择器基准：输入框容器 [data-agent-composer-surface]（AgentView）、
- * 用户消息气泡 .sticky-user-banner（sticky-user-message）、
  * 侧栏 .crt-sidebar、Tab 选中 .tab-item-selected / .app-tab-active。
  * 动画仅 forest-dark（萤光呼吸）与 ember-dark（余烬闪烁），reduced-motion 下关闭。 */
 
@@ -3427,19 +3426,16 @@
   content: ']';
 }
 
-/* 置顶用户消息 banner — 去掉毛玻璃，实色背景匹配终端 */
-.theme-terminal-dark .sticky-user-banner {
+/* 返回提问按钮 — 终端主题使用实色背景，避免毛玻璃破坏像素质感 */
+.theme-terminal-dark .sticky-return-question-button {
   backdrop-filter: none !important;
   background: hsl(var(--background)) !important;
   box-shadow: none !important;
   border-color: hsl(var(--border)) !important;
 }
-.theme-terminal-dark .sticky-user-banner:hover {
+.theme-terminal-dark .sticky-return-question-button:hover {
   background: hsl(var(--muted)) !important;
   border-color: hsl(var(--primary) / 0.35) !important;
-}
-.theme-terminal-dark .sticky-user-glass-highlight {
-  display: none !important;
 }
 
 /* ===== CRT 终端：AskUserQuestion banner =====
