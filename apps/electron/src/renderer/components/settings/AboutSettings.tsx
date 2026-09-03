@@ -319,9 +319,16 @@ export function AboutSettings(): React.ReactElement {
         </SettingsRow>
         <SettingsRow
           label="更新方式"
-          description="Domi 不连接上游官方更新通道，也不会自动安装上游版本。"
+          description="Domi 暂不提供应用内自动更新。你可以从 GitHub Releases 下载安装包，或自行从源码构建。"
         >
-          <span className="text-sm text-muted-foreground">从源码或外部构建手动更新</span>
+          <a
+            href="https://github.com/restflux/domi/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-primary hover:underline"
+          >
+            前往 GitHub Releases
+          </a>
         </SettingsRow>
       </SettingsCard>
 
