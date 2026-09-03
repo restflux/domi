@@ -1,25 +1,27 @@
 # Domi
 
-Domi 是一款本地优先的 Personal Coding Workbench。它把多模型 Chat、可执行的 Work 会话、项目文件、终端、内置浏览器、Skills、MCP、Automation、任务与日程放进同一个 Electron 桌面应用。
+[![基于 Pi Agent Runtime](https://img.shields.io/badge/Agent_Runtime-Pi-7C3AED)](https://github.com/earendil-works/pi)
+
+Domi 是一个基于开源 [Pi](https://github.com/earendil-works/pi) 的桌面工作台。它把 AI 编程助手、项目文件、终端、Git、内置浏览器、任务与日程放进同一个应用，让你不用在多个工具之间来回切换。Pi 驱动 Work 会话中的智能助手，Domi 则提供桌面界面、项目管理、安全控制，以及从修改代码到确认保存的完整流程。
 
 > Domi 正在快速迭代，首个公开版本线从 **0.20.0** 开始。Windows 与 Linux 预发布安装包通过 GitHub Releases 提供；Domi 不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
 
 [English README](./README.en.md) · [使用教程](./tutorial/tutorial-v2.md) · [工程文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
-![Domi Work 会话在隔离 Worktree 中编辑代码，并在右侧实时展示 Diff](./docs/images/readme/work-session.webp)
+![Domi 在独立的任务副本中修改代码，并在右侧展示改动](./docs/images/readme/work-session.webp)
 
-<p align="center"><sub>Work 会话在隔离 Worktree 中持续执行，文件改动与 Diff 同步可见。</sub></p>
+<p align="center"><sub>助手可以持续处理任务，你也能随时查看它改了哪些文件。</sub></p>
 
 ## 核心能力
 
-- **面向 coding 的 Work 会话**：Pi Agent Runtime 可以调查代码、修改文件、运行测试、启动服务并持续完成多步骤任务。
-- **研究 / 执行两种工作方式**：研究模式保持项目只读，需要修改时可申请“本次执行”；执行模式直接修改并验证。
-- **Isolated Worktree 交付**：每个会话可使用 Local 或 Domi managed Isolated Checkout，并通过 Checkpoint、Preview、验收提交、可证明安全的撤回、恢复和交接完成闭环。
-- **轻量 Git 工作流**：在文件改动面板完成状态查看、Diff、暂存/取消暂存、提交、同步、分支选择和最近历史。
-- **完整 coding 工作区**：多实例 Right Workspace 标签统一承载文件 Preview、Scratch Pad、可见 PTY 终端、Agent Run、服务地址和内置浏览器。
-- **长任务连续性**：支持后台会话、实时 Steering、Follow-up 队列、Pi 原生上下文压缩、AI 生成的可复制交接内容、跨项目继任会话和 Collaboration 子会话。
-- **多模型 Chat**：支持 Anthropic、OpenAI、Google、DeepSeek、Kimi、智谱、MiniMax、豆包、通义千问和自定义兼容端点。
-- **本地优先与扩展**：会话、配置、Skills、MCP、审计、Automation 和 Planning 保存在本机，并支持 Chat HTTP 工具与飞书集成。
+- **基于 Pi 的编程助手**：[Pi](https://github.com/earendil-works/pi) 可以阅读项目、修改代码、运行测试、启动服务并完成多步骤任务。
+- **先研究，或直接执行**：研究模式只查看项目，需要修改时会先征求同意；执行模式可以直接修改并验证。
+- **隔离修改，不打扰当前工作**：可为任务创建独立的 Git Worktree 副本，完成后先查看和试用改动，再决定是否保存到原项目。
+- **常用 Git 操作内置**：直接查看改动、暂存、提交、同步、切换分支和浏览最近记录。
+- **一站式桌面工作区**：文件、草稿、终端、运行中的服务和浏览器都可以同时打开，并在标签间快速切换。
+- **持续处理长任务**：任务可以在后台运行；执行过程中还能继续补充要求，也可以把上下文交给新的会话接着做。
+- **支持多种模型**：可连接 Anthropic、OpenAI、Google、DeepSeek、Kimi、智谱、MiniMax、豆包、通义千问和兼容端点。
+- **数据保存在本机**：会话、配置、扩展、自动任务和日程默认存储在本地，也支持 MCP、Chat HTTP 工具与飞书集成。
 
 ## 快速开始
 
@@ -79,53 +81,52 @@ bun run dist:win:release   # 配置代码签名后的正式发布
 
 `dist:win:fast` 只用于本地验证；公开的未签名安装包必须使用 `dist:win:unsigned` 并明确标为 Pre-release。详见[发布文档](./docs/releasing.md)。
 
-## 面向 coding 的 Work 流程
+## 用 Domi 完成编程任务
 
-### 研究与执行
+### 先研究，或直接执行
 
-界面只提供两种持久工作方式，两者底层都使用当前 Windows 用户权限，Domi 不提供 OS 沙箱：
+Domi 提供两种工作方式。两者都使用当前系统用户的权限，并不等同于在系统沙箱中运行：
 
-- **研究**：以只读 Workflow 调查代码、文档和网页；需要写入时可申请仅对当前 run 生效的“本次执行”，结束后自动恢复研究。
-- **执行**：直接修改项目、运行命令和验证结果。Local 回写、破坏性 Git、外部发布、扩展信任等宿主事务仍保留独立确认。
+- **研究**：只查看代码、文档和网页，不修改项目。确实需要修改时，Domi 会先征求你的同意，并在本次任务结束后恢复只读状态。
+- **执行**：可以直接修改项目、运行命令和检查结果。写回原项目、危险的 Git 操作、对外发布和启用扩展等敏感操作仍会单独确认。
 
-### Isolated Worktree 交付
+### 隔离修改，不打扰本地代码
 
-Work 会话可以直接使用 Local Checkout，也可以由 Domi 创建隔离 Worktree：
+Work 会话既可以直接在当前项目中工作，也可以为任务创建一个独立副本（Git Worktree）：
 
-- Agent 在隔离 checkout 中修改、测试和启动服务，不与 Local 未完成工作互相覆盖；
-- Checkpoint 保存阶段成果，Ready for Review 固化验收上下文；
-- Preview 将任务层投影到 Local 供真实环境验收，通过后收敛为单个提交；
-- Preview 撤回会验证 Local、分支和历史仍与交付快照一致，无法证明安全时 fail closed；
-- 冲突预检、恢复状态、保留策略、批量清理和跨会话 handoff 都由宿主追踪；
-- owner / inherited 会话共享目标时，交付、清理和 Local 写入仍只允许 owner 执行。
+- 助手在独立副本中修改、测试和启动服务，不会覆盖你尚未完成的本地改动；
+- 任务进行中可以保存阶段进度，中断后仍可继续；
+- 完成后会集中展示改动，方便你逐项检查；
+- 你可以先把改动临时放回原项目试用，满意后再保存为一次提交，不满意则安全撤回；
+- 冲突检查、任务恢复和副本清理由 Domi 统一处理。
 
-![Domi 将隔离 Worktree 的任务改动预览到 Local，并提供确认保存或安全撤回](./docs/images/readme/worktree-preview.webp)
+![Domi 将独立任务副本中的改动放回原项目试用，并提供保存或撤回操作](./docs/images/readme/worktree-preview.webp)
 
-<p align="center"><sub>任务改动先 Preview 到 Local 验收，再确认保存或安全撤回。</sub></p>
+<p align="center"><sub>先在原项目中试用改动，确认无误后再正式保存。</sub></p>
 
 ### Git、终端与浏览器
 
-- 文件改动面板提供轻量 Git 闭环，不尝试成为完整 Git 客户端；
-- 内置终端支持多个 PTY、Shell profile、用户终端与 Agent Run 隔离，以及本地服务地址检测；
-- 内置浏览器提供用户可见页面和有界 Snapshot/ref、点击、普通文本输入、滚动与文本提取；
-- Right Workspace 可以同时保留多个文件、Browser、Terminal、Preview 和辅助工具标签。
+- 在改动面板中查看文件变化，并完成暂存、提交、同步和切换分支等常用 Git 操作；
+- 内置终端可以同时运行多个命令，并自动发现本地开发服务的访问地址；
+- 内置浏览器让助手在你可见的页面中点击、输入、滚动和读取内容，同时限制它可操作的范围；
+- 文件、浏览器、终端和其他工具可以在右侧工作区中同时保持打开。
 
-### 长任务连续性
+### 长任务也能接着做
 
-Agent 工作期间可以继续排入 Follow-up，不需要打断当前步骤；后台会话、Steering、上下文压缩和跨会话 handoff 让长任务保持连续。尚未执行的草稿可以迁移项目；已执行会话统一通过“交接到新会话”选择当前或其他项目，并可使用项目当前目录或新建独立工作区（Worktree）。交接内容由来源会话的当前模型根据持久化对话、代码状态和验证证据生成，可直接创建继任会话，也可仅复制；原会话绑定保持不变。
+助手工作时，你可以继续补充要求，新要求会排队等待处理，不会打断当前步骤。任务可以在后台运行；内容过长或需要切换项目时，Domi 也能整理已有上下文，并交给新的会话继续完成。
 
-![Domi 在隔离 Worktree 中执行任务，并将追加要求放入 Follow-up 队列](./docs/images/readme/follow-up-worktree.webp)
+![Domi 执行任务时继续接收新的要求](./docs/images/readme/follow-up-worktree.webp)
 
-<p align="center"><sub>执行中的 Worktree、实时进度与 Follow-up 队列保持在同一会话。</sub></p>
+<p align="center"><sub>任务持续执行，追加的要求会按顺序继续处理。</sub></p>
 
-### 安全边界
+### 安全说明
 
-- Shell 决策基于结构化分析，解析不确定时 fail closed；
-- Managed Web 与 Browser 限制私网、凭据、重定向和交互范围，但不等同于网络沙箱；
-- Session Target、Local Baseline、Worktree ownership 和外部影响确认不能被研究/执行模式绕过；
-- 用户 Shell 与 Agent 可见终端相互隔离。
+- Domi 会在运行命令前检查其结构，无法可靠判断时会阻止执行；
+- 网页访问会限制私有网络、凭据、跳转和可操作范围，但这不等同于完整的网络沙箱；
+- 写回原项目、危险的 Git 操作和对外发布等敏感动作不能绕过确认；
+- 你手动打开的终端与助手使用的终端相互隔离。
 
-架构与威胁边界见 [`docs/adr/`](./docs/adr/) 和 [`SECURITY.md`](./SECURITY.md)。
+更完整的架构与安全说明见 [`docs/adr/`](./docs/adr/) 和 [`SECURITY.md`](./SECURITY.md)。
 
 ## 本地数据
 
@@ -197,6 +198,8 @@ bun run electron:build
 安全问题请勿提交公开 Issue；请按 [`SECURITY.md`](./SECURITY.md) 使用 GitHub Private Vulnerability Reporting。
 
 ## 来源与许可证
+
+Domi 使用开源项目 [Pi](https://github.com/earendil-works/pi) 驱动 AI 编程助手，并在其基础上加入桌面界面、项目管理、安全控制和改动交付流程。
 
 Domi 演进自 [Proma](https://github.com/proma-ai/Proma)，并进行了大量产品、运行时和安全边界改造。上游及后续贡献者的版权分别保留；详细归属见 [`NOTICE`](./NOTICE) 与 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)。
 

@@ -1,25 +1,27 @@
 # Domi
 
-Domi is a local-first Personal Coding Workbench. It brings multi-model Chat, executable Work sessions, project files, terminals, an in-app browser, Skills, MCP, Automation, tasks, and calendars into one Electron desktop application.
+[![Built on Pi Agent Runtime](https://img.shields.io/badge/Agent_Runtime-Pi-7C3AED)](https://github.com/earendil-works/pi)
+
+Domi is a desktop workbench built on the open-source [Pi](https://github.com/earendil-works/pi) project. It brings an AI coding agent, project files, a terminal, Git, an in-app browser, tasks, and calendars into one application, so you do not have to keep switching between tools. Pi powers the agent in Work sessions, while Domi provides the desktop interface, project management, safety controls, and the complete flow from editing code to saving approved changes.
 
 > Domi is under active development, with its first public version line starting at **0.20.0**. Windows and Linux prerelease installers are distributed through GitHub Releases. The project does not provide automatic installation or updates and does not connect to another product's release channel.
 
 [中文 README](./README.md) · [User Guide](./tutorial/tutorial-v2.md) · [Engineering Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
-![A Domi Work session edits code in an isolated Worktree while showing the live Diff](./docs/images/readme/work-session.webp)
+![Domi edits code in a separate task copy and shows the changes on the right](./docs/images/readme/work-session.webp)
 
-<p align="center"><sub>A Work session keeps running in an isolated Worktree while file changes and Diffs remain visible.</sub></p>
+<p align="center"><sub>The agent can keep working while you review every file it changes.</sub></p>
 
 ## Core capabilities
 
-- **Coding-focused Work sessions**: the Pi Agent Runtime can investigate code, edit files, run tests, start services, and complete multi-step tasks.
-- **Research and Execute workflows**: Research keeps the project read-only and may request Execute Once; Execute modifies and validates directly.
-- **Isolated Worktree delivery**: each session can use Local or a Domi-managed Isolated Checkout, with Checkpoints, Preview, acceptance commits, provably safe withdrawal, recovery, and handoff.
-- **Lightweight Git workflow**: inspect status and diffs, stage or unstage, commit, sync, switch branches, and browse recent history from the changes panel.
-- **Integrated coding workspace**: multi-instance Right Workspace tabs host file previews, Scratch Pad, visible PTYs, Agent Runs, detected service URLs, and the in-app browser.
-- **Long-task continuity**: background sessions, live Steering, Follow-up queues, native Pi context compaction, session handoff, and Collaboration child sessions.
-- **Multi-model Chat**: Anthropic, OpenAI, Google, DeepSeek, Kimi, Zhipu, MiniMax, Doubao, Qwen, and custom compatible endpoints.
-- **Local-first extensibility**: conversations, configuration, Skills, MCP, audit, Automation, and Planning remain local, with custom Chat HTTP tools and Feishu integration.
+- **A coding agent powered by Pi**: [Pi](https://github.com/earendil-works/pi) can read a project, edit code, run tests, start services, and complete multi-step tasks.
+- **Research first or execute directly**: Research only inspects the project and asks before editing; Execute can make and validate changes immediately.
+- **Make changes without disturbing current work**: create a separate Git Worktree for a task, review and try the result, then decide whether to save it back to the original project.
+- **Common Git actions built in**: review changes, stage, commit, sync, switch branches, and browse recent history.
+- **One desktop workspace**: keep files, notes, terminals, running services, and the browser open together and switch between them quickly.
+- **Keep long tasks moving**: tasks can run in the background, accept additional requests while running, and pass their context to a new session when needed.
+- **Use your preferred model**: connect Anthropic, OpenAI, Google, DeepSeek, Kimi, Zhipu, MiniMax, Doubao, Qwen, or a compatible endpoint.
+- **Keep data on your machine**: sessions, settings, extensions, automations, tasks, and calendars are stored locally by default, with support for MCP, custom Chat HTTP tools, and Feishu.
 
 ## Quick start
 
@@ -77,53 +79,52 @@ bun run dist:win:release   # signed release after code-signing setup
 
 `dist:win:fast` is for local verification only. Public unsigned installers must use `dist:win:unsigned` and be clearly marked as prereleases. See the [release documentation](./docs/releasing.md).
 
-## Coding-focused Work workflow
+## Use Domi for coding tasks
 
-### Research and Execute
+### Research first or execute directly
 
-The UI exposes two persistent workflows. Both run with the current OS user permissions; Domi does not provide an OS sandbox:
+Domi offers two ways to work. Both use the permissions of your current OS user and are not the same as running inside an operating-system sandbox:
 
-- **Research**: investigates code, documentation, and webpages through a read-only Workflow. When writes are needed, it can request Execute Once for the current run and automatically returns to Research afterward.
-- **Execute**: edits the project, runs commands, and validates results directly. Writing back to Local, destructive Git, external publication, and Extension Trust remain separately confirmed host transactions.
+- **Research**: reads code, documentation, and webpages without changing the project. If an edit becomes necessary, Domi asks for approval and returns to read-only mode when the task ends.
+- **Execute**: edits the project, runs commands, and checks the result directly. Sensitive actions such as writing back to the original project, destructive Git operations, external publishing, or enabling extensions still require separate confirmation.
 
-### Isolated Worktree delivery
+### Make changes without disturbing local code
 
-A Work session may use the Local Checkout directly or a Domi-managed Isolated Worktree:
+A Work session can operate directly in the current project or create a separate task copy using Git Worktree:
 
-- the Agent edits, tests, and starts services without overwriting unfinished Local work;
-- Checkpoints retain intermediate results, while Ready for Review records the acceptance context;
-- Preview projects only the task layer into Local for real-environment acceptance, then finalizes it as one commit;
-- Preview withdrawal verifies that Local, the branch, and history still match the delivery snapshot and fails closed when safety cannot be proven;
-- conflict preflight, recovery state, retention, bulk cleanup, and cross-session handoff are host-tracked;
-- when owner and inherited sessions share a target, delivery, cleanup, and Local writes remain owner-only.
+- the agent can edit, test, and start services in the separate copy without overwriting unfinished local changes;
+- progress can be saved at important stages so interrupted work can continue;
+- when the task is ready, all changes are shown together for review;
+- you can temporarily try the changes in the original project, save them as one commit when satisfied, or safely withdraw them;
+- Domi handles conflict checks, task recovery, and cleanup of task copies.
 
-![Domi previews isolated Worktree changes into Local with options to confirm or safely withdraw](./docs/images/readme/worktree-preview.webp)
+![Domi lets you try changes from a separate task copy in the original project before saving or withdrawing them](./docs/images/readme/worktree-preview.webp)
 
-<p align="center"><sub>Task changes are Previewed into Local for acceptance before they are finalized or safely withdrawn.</sub></p>
+<p align="center"><sub>Try the changes in the original project first, then save them when everything looks right.</sub></p>
 
 ### Git, terminal, and browser
 
-- the changes panel provides a lightweight Git loop rather than a full Git client;
-- the terminal supports multiple PTYs, shell profiles, isolation between user terminals and Agent Runs, and local service URL detection;
-- the browser exposes a visible page with bounded Snapshot/ref, click, ordinary text input, scroll, and text extraction operations;
-- Right Workspace keeps multiple file, Browser, Terminal, Preview, and helper tabs alive together.
+- review file changes and perform common Git actions such as staging, committing, syncing, and switching branches;
+- run multiple commands in the built-in terminal and open detected local development services;
+- let the agent click, type, scroll, and read content in a browser page you can see, within a limited interaction scope;
+- keep files, browser pages, terminals, and other tools open together in the right workspace.
 
-### Long-task continuity
+### Continue long tasks
 
-Follow-up requests can be queued without interrupting the Agent's current step. Background sessions, Steering, context compaction, and cross-session handoff keep longer tasks moving.
+You can add more requests while the agent is working. New requests wait their turn instead of interrupting the current step. Tasks can run in the background, and when a task becomes too long or needs to move to another project, Domi can summarize the existing context for a new session to continue.
 
-![Domi runs a task in an isolated Worktree while an additional request waits in the Follow-up queue](./docs/images/readme/follow-up-worktree.webp)
+![Domi continues a task while accepting additional requests](./docs/images/readme/follow-up-worktree.webp)
 
-<p align="center"><sub>The active Worktree, live progress, and Follow-up queue remain together in one session.</sub></p>
+<p align="center"><sub>The task keeps running, and additional requests are handled in order.</sub></p>
 
-### Security boundaries
+### Safety notes
 
-- shell authorization uses structured analysis and fails closed when parsing is uncertain;
-- Managed Web and Browser restrict private networks, credentials, redirects, and interaction surfaces, but are not a network sandbox;
-- Session Target, Local Baseline, Worktree ownership, and external-impact confirmation cannot be bypassed by switching Research or Execute;
-- user shells and Agent-visible terminal runs remain isolated from one another.
+- Domi checks the structure of commands before running them and blocks execution when it cannot determine that they are safe;
+- web access limits private networks, credentials, redirects, and what the agent may interact with, but it is not a complete network sandbox;
+- sensitive actions such as writing back to the original project, destructive Git operations, and external publishing cannot bypass confirmation;
+- terminals opened by you remain separate from terminals used by the agent.
 
-See [`docs/adr/`](./docs/adr/) and [`SECURITY.md`](./SECURITY.md) for architecture and threat boundaries.
+See [`docs/adr/`](./docs/adr/) and [`SECURITY.md`](./SECURITY.md) for full architecture and security details.
 
 ## Local data
 
@@ -195,6 +196,8 @@ Issues and pull requests are welcome. Run the most relevant tests before submitt
 Do not report vulnerabilities in public issues. Follow [`SECURITY.md`](./SECURITY.md) and use GitHub Private Vulnerability Reporting.
 
 ## Origin and license
+
+Domi uses the open-source [Pi](https://github.com/earendil-works/pi) project to power its AI coding agent, then adds the desktop experience, project management, safety controls, and change-delivery workflow around it.
 
 Domi evolved from [Proma](https://github.com/proma-ai/Proma) and includes substantial product, runtime, and security-boundary changes. Copyright remains with the respective upstream and later contributors. See [`NOTICE`](./NOTICE) and [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) for attribution.
 
