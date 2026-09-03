@@ -448,7 +448,7 @@ function TabBarActions({
           open={runningPopoverOpen}
           onOpenChange={(nextOpen) => {
             if (nextOpen && !hasRunningServiceTerminal) {
-              // 无运行中服务：不弹浮层，直接打开底部普通终端面板
+              // 无运行中服务：不弹浮层，直接打开底部手动终端。
               onToggleTerminal()
               return
             }
@@ -456,7 +456,7 @@ function TabBarActions({
           }}
           onOpenTerminalPanel={onToggleTerminal}
           icon={<SquareTerminal className="size-3.5" />}
-          tooltipLabel={hasRunningServiceTerminal ? '查看运行中的服务' : '内置终端'}
+          tooltipLabel={hasRunningServiceTerminal ? '查看运行中的服务' : '手动终端'}
           active={isTerminalOpen || runningPopoverOpen}
           hasRunningDot={hasRunningServiceTerminal}
         />

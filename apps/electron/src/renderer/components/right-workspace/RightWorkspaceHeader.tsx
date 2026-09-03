@@ -19,8 +19,8 @@ export function RightWorkspaceHeader({
   scratchSaveState,
   onFileSourceFilterChange,
 }: RightWorkspaceHeaderProps): React.ReactElement | null {
-  // BrowserPanel 自己有地址栏；Changes 与问答没有额外上下文，均无需重复工具名称。
-  if (activeTool === 'browser' || activeTool === 'changes' || activeTool === 'side-chat') return null
+  // Browser 和 Terminal 自带内容上下文；Changes 与问答也无需重复工具名称。
+  if (activeTool === 'browser' || activeTool === 'terminal' || activeTool === 'changes' || activeTool === 'side-chat') return null
 
   const previewContextTitle = activeTool === 'preview'
     ? previewTitle ?? '预览'

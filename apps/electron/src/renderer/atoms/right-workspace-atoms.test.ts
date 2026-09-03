@@ -85,6 +85,14 @@ describe('Right Workspace 会话隔离', () => {
     })
   })
 
+  test('终端实例聚焦保留具体 terminalId', () => {
+    expect(toggleRightWorkspaceFocus(null, 'session-a', 'terminal:terminal-2')).toEqual({
+      sessionId: 'session-a',
+      tool: 'terminal',
+      tabId: 'terminal:terminal-2',
+    })
+  })
+
   test('Browser 实例聚焦只响应相同 browserSessionId 的原生 Escape', () => {
     const focus = toggleRightWorkspaceFocus(null, 'session-a', 'browser:browser-2')
 

@@ -2,6 +2,7 @@
  * RightSidePanel — Work 会话的统一右侧工作区。
  *
  * 顶部按实例渲染真实标签；Browser 原生页面仍由 Main 持有，Renderer 只切换活动实例。
+ * Agent Run 终端也按实例进入这里，底部 Dock 只保留用户手动 Shell。
  */
 
 import * as React from 'react'
@@ -29,10 +30,13 @@ import {
 } from '@/atoms/right-workspace-atoms'
 import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import { scratchPadSaveStateAtom } from '@/atoms/tab-atoms'
+import { terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
 import {
   browserSessionIdFromTab,
   browserTabId,
   resolveClosedTabFallback,
+  terminalIdFromTab,
+  terminalTabId,
   toolFromRightWorkspaceTab,
   type RightWorkspaceSessionState,
   type RightWorkspaceTabId,
@@ -41,6 +45,7 @@ import {
 import { detectIsWindows } from '@/lib/platform'
 import { SidePanel } from '@/components/agent/SidePanel'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
+import { TerminalPane } from '@/components/terminal/TerminalPane.tsx'
 import { PreviewTabContent } from '@/components/diff/PreviewTabContent'
 import { ScratchPadWorkspace } from '@/components/scratch-pad/ScratchPadView'
 import { RightWorkspaceHeader } from '@/components/right-workspace/RightWorkspaceHeader'
@@ -101,6 +106,7 @@ function ActiveRightSidePanel({
   const fileSourceFilterMap = useAtomValue(agentFileSourceFilterMapAtom)
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
   const scratchSaveState = useAtomValue(scratchPadSaveStateAtom)
+  const terminalStates = useAtomValue(terminalStateMapAtom)
   const [workspaceFocus, setWorkspaceFocus] = useAtom(rightWorkspaceFocusAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
 
@@ -108,6 +114,12 @@ function ActiveRightSidePanel({
   const previewFile = previewFileMap.get(currentSessionId) ?? null
   const sideChatConversationId = sideChatMap.get(currentSessionId) ?? null
   const browserStates = getOwnerBrowserStates(browserStateMap, currentSessionId)
+  const agentTerminals = React.useMemo(
+    () => [...terminalStates.values()]
+      .filter((terminal) => terminal.ownerSessionId === currentSessionId && terminal.kind === 'agent-run')
+      .sort((left, right) => left.startedAt - right.startedAt),
+    [currentSessionId, terminalStates],
+  )
   const legacyTool = fromLegacyTab(legacyTabMap.get(currentSessionId) ?? 'files')
   const storedState = workspaceStateMap.get(currentSessionId)
   const state: RightWorkspaceSessionState = storedState ?? {
@@ -120,6 +132,12 @@ function ActiveRightSidePanel({
     { id: 'files', tool: 'files', label: '文件', closeable: false },
     { id: 'changes', tool: 'changes', label: '改动', closeable: false },
     ...(state.scratchVisible ? [{ id: 'scratch' as const, tool: 'scratch' as const, label: '草稿', closeable: true }] : []),
+    ...agentTerminals.map((terminal) => ({
+      id: terminalTabId(terminal.terminalId),
+      tool: 'terminal' as const,
+      label: terminal.title,
+      closeable: true,
+    })),
     ...browserStates.map((browser, index) => ({
       id: browserTabId(browser.browserSessionId),
       tool: 'browser' as const,
@@ -132,6 +150,8 @@ function ActiveRightSidePanel({
   const activeTabId = resolveAvailableTabId(state, tabs)
   const activeTool = toolFromRightWorkspaceTab(activeTabId)
   const activeBrowserSessionId = browserSessionIdFromTab(activeTabId)
+  const activeTerminalId = terminalIdFromTab(activeTabId)
+  const activeTerminal = activeTerminalId ? terminalStates.get(activeTerminalId) : undefined
   const activeTabExpanded = resolveRightWorkspaceFocus(workspaceFocus, currentSessionId, activeTabId)
   const fileSourceFilter = fileSourceFilterMap[currentSessionId] ?? 'session'
 
@@ -214,6 +234,17 @@ function ActiveRightSidePanel({
   const closeTab = (tabId: RightWorkspaceTabId): void => {
     if (workspaceFocus?.sessionId === currentSessionId && (workspaceFocus.tabId ?? workspaceFocus.tool) === tabId) setWorkspaceFocus(null)
     const fallbackTabId = resolveClosedTabFallback(tabs.map((tab) => tab.id), tabId, state.previousTabId)
+    const terminalId = terminalIdFromTab(tabId)
+    if (terminalId) {
+      if (activeTabId === tabId) setActiveTab(fallbackTabId)
+      void window.electronAPI.terminal.close({ ownerSessionId: currentSessionId, terminalId })
+        .catch((error: unknown) => {
+          console.error('[RightSidePanel] 关闭 Agent 终端失败:', error)
+          toast.error('关闭 Agent 终端失败')
+        })
+      return
+    }
+
     const browserSessionId = browserSessionIdFromTab(tabId)
     if (browserSessionId) {
       if (activeTabId === tabId) setActiveTab(fallbackTabId)
@@ -269,6 +300,8 @@ function ActiveRightSidePanel({
         <div className="min-h-0 flex-1 overflow-hidden titlebar-no-drag">
           {activeTool === 'browser' && activeBrowserSessionId ? (
             <BrowserPanel ownerSessionId={currentSessionId} browserSessionId={activeBrowserSessionId} />
+          ) : activeTool === 'terminal' && activeTerminal ? (
+            <TerminalPane terminal={activeTerminal} />
           ) : activeTool === 'preview' ? (
             <PreviewTabContent sessionId={currentSessionId} mode="workspace" />
           ) : activeTool === 'scratch' ? (

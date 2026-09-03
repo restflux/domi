@@ -1,5 +1,15 @@
 import type { TerminalSessionView } from '@domi/shared'
 
+/** 底部 Dock 只承载用户主动创建的 Shell；Agent Run 归右侧工作区展示。 */
+export function selectManualTerminals(
+  terminals: Iterable<TerminalSessionView>,
+  ownerSessionId: string,
+): TerminalSessionView[] {
+  return [...terminals]
+    .filter((terminal) => terminal.ownerSessionId === ownerSessionId && terminal.kind === 'user-shell')
+    .sort((left, right) => left.startedAt - right.startedAt)
+}
+
 export function terminalStatusLabel(terminal: TerminalSessionView): string {
   if (terminal.sourceTarget?.stale) return '上一轮'
   if (terminal.status === 'starting') return '启动中'

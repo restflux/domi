@@ -8,10 +8,17 @@ import {
   terminalServiceUrlsMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
+import { currentAgentSessionIdAtom } from '@/atoms/agent-atoms.ts'
 import {
   accumulateTerminalServiceOutput,
   type TerminalServiceOutputState,
 } from '@/components/terminal/running-terminals-model.ts'
+import {
+  activateSessionRightWorkspaceTab,
+  rightWorkspaceOpenAtom,
+  rightWorkspaceSessionStateMapAtom,
+} from '@/atoms/right-workspace-atoms.ts'
+import { terminalTabId } from '@/lib/right-workspace-model.ts'
 
 export function useGlobalTerminalListeners(): void {
   const store = useStore()
@@ -50,7 +57,7 @@ export function useGlobalTerminalListeners(): void {
         store.set(terminalActiveIdMapAtom, (current) => {
           if (current.get(change.ownerSessionId) !== change.terminalId) return current
           const nextTerminal = [...store.get(terminalStateMapAtom).values()]
-            .find((terminal) => terminal.ownerSessionId === change.ownerSessionId)
+            .find((terminal) => terminal.ownerSessionId === change.ownerSessionId && terminal.kind === 'user-shell')
           const next = new Map(current)
           if (nextTerminal) next.set(change.ownerSessionId, nextTerminal.terminalId)
           else next.delete(change.ownerSessionId)
@@ -60,14 +67,19 @@ export function useGlobalTerminalListeners(): void {
       }
 
       if (change.status === 'starting') {
-        if (change.kind === 'agent-run') clearServiceOutput(change.terminalId)
+        if (change.kind === 'agent-run') {
+          clearServiceOutput(change.terminalId)
+          store.set(rightWorkspaceSessionStateMapAtom, (current) => (
+            activateSessionRightWorkspaceTab(current, change.ownerSessionId, terminalTabId(change.terminalId))
+          ))
+          if (store.get(currentAgentSessionIdAtom) === change.ownerSessionId) {
+            store.set(rightWorkspaceOpenAtom, true)
+          }
+          return
+        }
+
         store.set(terminalDockOpenMapAtom, (current) => new Map(current).set(change.ownerSessionId, true))
-        store.set(terminalActiveIdMapAtom, (current) => {
-          const activeId = current.get(change.ownerSessionId)
-          const active = activeId ? store.get(terminalStateMapAtom).get(activeId) : undefined
-          if (change.kind === 'agent-run' && active?.kind === 'user-shell' && active.status === 'running') return current
-          return new Map(current).set(change.ownerSessionId, change.terminalId)
-        })
+        store.set(terminalActiveIdMapAtom, (current) => new Map(current).set(change.ownerSessionId, change.terminalId))
       }
     })
 

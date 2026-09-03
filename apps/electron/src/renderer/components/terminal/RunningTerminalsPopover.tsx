@@ -19,7 +19,7 @@ import {
   rightWorkspaceOpenAtom,
   rightWorkspaceSessionStateMapAtom,
 } from '@/atoms/right-workspace-atoms.ts'
-import { browserTabId } from '@/lib/right-workspace-model.ts'
+import { browserTabId, terminalTabId } from '@/lib/right-workspace-model.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.tsx'
@@ -74,6 +74,12 @@ export function RunningTerminalsPopover({
       // 状态事件会同步最终结果；终端面板仍可继续处理失败场景。
     }
   }, [ownerSessionId])
+
+  const openTerminal = React.useCallback((terminalId: string): void => {
+    setWorkspaceStates((current) => activateSessionRightWorkspaceTab(current, ownerSessionId, terminalTabId(terminalId)))
+    setWorkspaceOpen(true)
+    onOpenChange(false)
+  }, [onOpenChange, ownerSessionId, setWorkspaceOpen, setWorkspaceStates])
 
   const openService = React.useCallback(async (url: string): Promise<void> => {
     try {
@@ -151,7 +157,13 @@ export function RunningTerminalsPopover({
                 >
                   <span className="mt-1.5 size-1.5 flex-none rounded-full bg-emerald-500" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium">{terminal.title}</p>
+                    <button
+                      type="button"
+                      className="block max-w-full truncate text-left text-xs font-medium hover:text-primary"
+                      onClick={() => openTerminal(terminal.terminalId)}
+                    >
+                      {terminal.title}
+                    </button>
                     {urls.length > 0 ? (
                       <div className="mt-0.5 space-y-0.5">
                         {urls.slice(0, 3).map((url) => (
@@ -209,7 +221,7 @@ export function RunningTerminalsPopover({
               }}
             >
               <PanelBottom className="size-3" />
-              打开终端面板
+              打开手动终端
             </button>
           </div>
         )}

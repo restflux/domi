@@ -35,10 +35,11 @@ function renderToolbar(
 }
 
 describe('RightWorkspaceToolbar 标签入口', () => {
-  test('文件与改动固定，草稿和多个浏览器各自拥有标签级关闭入口', () => {
+  test('文件与改动固定，草稿、Agent 终端和多个浏览器各自拥有标签级关闭入口', () => {
     const tabs: RightWorkspaceToolbarTab[] = [
       ...BASE_TABS,
       { id: 'scratch', tool: 'scratch', label: '草稿', closeable: true },
+      { id: 'terminal:agent-run', tool: 'terminal', label: '运行开发服务', closeable: true },
       { id: 'browser:first', tool: 'browser', label: '浏览器 1', closeable: true },
       { id: 'browser:second', tool: 'browser', label: '浏览器 2', closeable: true },
     ]
@@ -49,6 +50,8 @@ describe('RightWorkspaceToolbar 标签入口', () => {
     expect(html).not.toContain('aria-label="关闭文件"')
     expect(html).not.toContain('aria-label="关闭改动"')
     expect(html).toContain('aria-label="关闭草稿"')
+    expect(html).toContain('aria-label="关闭运行开发服务"')
+    expect(html).toContain('aria-label="浏览器 1"')
     expect(html).toContain('aria-label="关闭浏览器 1"')
     expect(html).toContain('aria-label="关闭浏览器 2"')
     expect(html).toContain('aria-label="添加工具"')

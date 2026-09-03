@@ -9,6 +9,9 @@ import {
   resolveRightWorkspaceTool,
   shouldPinRightWorkspaceMenu,
   shouldShowRightWorkspace,
+  terminalIdFromTab,
+  terminalTabId,
+  toolFromRightWorkspaceTab,
   type RightWorkspaceAvailability,
 } from './right-workspace-model'
 
@@ -18,6 +21,13 @@ const allAvailable: RightWorkspaceAvailability = {
 }
 
 describe('Right Workspace 状态模型', () => {
+  test('Agent 终端实例使用独立标签并映射到终端工具', () => {
+    expect(terminalTabId('terminal-1')).toBe('terminal:terminal-1')
+    expect(terminalIdFromTab('terminal:terminal-1')).toBe('terminal-1')
+    expect(terminalIdFromTab('files')).toBeNull()
+    expect(toolFromRightWorkspaceTab('terminal:terminal-1')).toBe('terminal')
+  })
+
   test('浏览器和草稿均为始终可用的工作区工具', () => {
     const availability = { hasPreview: false, hasSideChat: false }
 

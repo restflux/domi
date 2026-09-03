@@ -7,6 +7,7 @@ import {
   activateRightWorkspaceTab,
   activateRightWorkspaceTool,
   closeRightWorkspaceTool,
+  toolFromRightWorkspaceTab,
   type RightWorkspaceAvailability,
   type RightWorkspaceSessionState,
   type RightWorkspaceTabId,
@@ -43,9 +44,9 @@ export function toggleRightWorkspaceFocus(
   sessionId: string,
   tabId: RightWorkspaceTabId,
 ): RightWorkspaceFocus | null {
-  const tool: RightWorkspaceTool = tabId.startsWith('browser:') ? 'browser' : tabId as RightWorkspaceTool
+  const tool = toolFromRightWorkspaceTab(tabId)
   if (resolveRightWorkspaceFocus(focus, sessionId, tabId)) return null
-  return tabId.startsWith('browser:') ? { sessionId, tool, tabId } : { sessionId, tool }
+  return tabId.includes(':') ? { sessionId, tool, tabId } : { sessionId, tool }
 }
 
 /** 只响应当前 owner Session 的对应 Browser 原生页面 Escape，不干扰其他标签或 Session。 */

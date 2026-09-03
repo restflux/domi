@@ -1,11 +1,11 @@
-export type RightWorkspaceTool = 'files' | 'changes' | 'browser' | 'scratch' | 'preview' | 'side-chat'
+export type RightWorkspaceTool = 'files' | 'changes' | 'browser' | 'terminal' | 'scratch' | 'preview' | 'side-chat'
 
 export interface RightWorkspaceAvailability {
   hasPreview: boolean
   hasSideChat: boolean
 }
 
-export type RightWorkspaceTabId = RightWorkspaceTool | `browser:${string}`
+export type RightWorkspaceTabId = RightWorkspaceTool | `browser:${string}` | `terminal:${string}`
 
 export interface RightWorkspaceSessionState {
   activeTool: RightWorkspaceTool
@@ -23,8 +23,18 @@ export function browserSessionIdFromTab(tabId: RightWorkspaceTabId): string | nu
   return tabId.startsWith('browser:') ? tabId.slice('browser:'.length) : null
 }
 
+export function terminalTabId(terminalId: string): `terminal:${string}` {
+  return `terminal:${terminalId}`
+}
+
+export function terminalIdFromTab(tabId: RightWorkspaceTabId): string | null {
+  return tabId.startsWith('terminal:') ? tabId.slice('terminal:'.length) : null
+}
+
 export function toolFromRightWorkspaceTab(tabId: RightWorkspaceTabId): RightWorkspaceTool {
-  return tabId.startsWith('browser:') ? 'browser' : tabId as RightWorkspaceTool
+  if (tabId.startsWith('browser:')) return 'browser'
+  if (tabId.startsWith('terminal:')) return 'terminal'
+  return tabId as RightWorkspaceTool
 }
 
 export function resolveClosedTabFallback(

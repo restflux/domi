@@ -9,6 +9,7 @@ import {
   Minimize2,
   NotebookPen,
   Plus,
+  SquareTerminal,
   X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -28,6 +29,7 @@ const TOOL_ICONS: Record<RightWorkspaceTool, LucideIcon> = {
   files: Files,
   changes: GitCompareArrows,
   browser: Globe2,
+  terminal: SquareTerminal,
   scratch: NotebookPen,
   preview: Eye,
   'side-chat': MessagesSquare,

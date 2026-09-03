@@ -8,7 +8,7 @@ import {
   terminalDockOpenMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
-import { countRunningTerminals, terminalStatusLabel } from './terminal-dock-model.ts'
+import { countRunningTerminals, selectManualTerminals, terminalStatusLabel } from './terminal-dock-model.ts'
 import { TerminalPane } from './TerminalPane.tsx'
 import { cn } from '@/lib/utils.ts'
 
@@ -18,9 +18,7 @@ const MAX_HEIGHT = 560
 export function TerminalDock({ ownerSessionId }: { ownerSessionId: string }): React.ReactElement | null {
   const terminalStates = useAtomValue(terminalStateMapAtom)
   const terminals = React.useMemo(
-    () => [...terminalStates.values()]
-      .filter((terminal) => terminal.ownerSessionId === ownerSessionId)
-      .sort((left, right) => left.startedAt - right.startedAt),
+    () => selectManualTerminals(terminalStates.values(), ownerSessionId),
     [ownerSessionId, terminalStates],
   )
   const setStates = useSetAtom(terminalStateMapAtom)
@@ -50,9 +48,10 @@ export function TerminalDock({ ownerSessionId }: { ownerSessionId: string }): Re
         })
         setActiveMap((current) => {
           const currentId = current.get(ownerSessionId)
-          if (currentId && listed.some((terminal) => terminal.terminalId === currentId)) return current
+          const manualTerminals = listed.filter((terminal) => terminal.kind === 'user-shell')
+          if (currentId && manualTerminals.some((terminal) => terminal.terminalId === currentId)) return current
           const next = new Map(current)
-          if (listed[0]) next.set(ownerSessionId, listed[0].terminalId)
+          if (manualTerminals[0]) next.set(ownerSessionId, manualTerminals[0].terminalId)
           else next.delete(ownerSessionId)
           return next
         })
