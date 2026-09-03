@@ -21,7 +21,10 @@ function createRepo(rootVersion: string, electronVersion: string): string {
   writeFileSync(join(root, 'package.json'), JSON.stringify({ version: rootVersion }))
   writeFileSync(
     join(root, 'apps', 'electron', 'package.json'),
-    JSON.stringify({ version: electronVersion }),
+    JSON.stringify({
+      version: electronVersion,
+      homepage: 'https://github.com/restflux/domi',
+    }),
   )
   return root
 }
@@ -58,6 +61,16 @@ describe('verifyReleaseVersion', () => {
     const repoRoot = createRepo('0.20.2', '0.20.2')
 
     expect(() => verifyReleaseVersion(repoRoot, 'v0.20.1')).toThrow('Release tag v0.20.1 与应用版本 0.20.2 不一致')
+  })
+
+  test('rejects Electron metadata that cannot produce a Linux deb package', () => {
+    const repoRoot = createRepo('0.20.2', '0.20.2')
+    writeFileSync(
+      join(repoRoot, 'apps', 'electron', 'package.json'),
+      JSON.stringify({ version: '0.20.2' }),
+    )
+
+    expect(() => verifyReleaseVersion(repoRoot)).toThrow('Electron package.json 缺少有效 homepage')
   })
 
   test('can validate package manifests before a tag exists', () => {

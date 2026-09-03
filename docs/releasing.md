@@ -13,7 +13,7 @@ Domi 的首个二进制发布范围是 Windows x64 与 Linux x64。macOS 配置�
 | Debian/Ubuntu x64 | `Domi-<version>-linux-x64.deb` | `dpkg-deb --info` 包结构检查 |
 | 所有平台 | `SHA256SUMS.txt` | 合并 Windows 与 Linux 资产的 SHA-256 |
 
-Windows 工作流支持 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD` Repository Secrets。两者都已配置时使用 `dist:win:release` 标准签名通道；未配置时使用 `dist:win:unsigned`，通过已有 rcedit 注入图标和版本元数据、保留正式压缩，但不生成 Authenticode 签名。未签名发布说明必须保留 SmartScreen 提示。
+Windows 工作流支持 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD` Repository Secrets。CI 始终使用 `dist:win:release` 的标准 executable edit 与正式压缩；两项 Secrets 都已配置时继续完成 Authenticode 签名，未配置时 electron-builder 跳过签名。`dist:win:unsigned` 保留给本机缺少 Windows symlink 权限时生成等价的未签名 Pre-release。未签名发布说明必须保留 SmartScreen 提示。
 
 ## 发布前提
 

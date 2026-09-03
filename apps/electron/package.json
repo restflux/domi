@@ -2,6 +2,11 @@
   "name": "@domi/electron",
   "version": "0.20.2",
   "description": "Domi personal coding workbench - Electron App",
+  "homepage": "https://github.com/restflux/domi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/restflux/domi.git"
+  },
   "license": "AGPL-3.0-only",
   "main": "dist/main.cjs",
   "author": {

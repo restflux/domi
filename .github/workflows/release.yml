@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -100,14 +100,13 @@ jobs:
             [string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK) -or
             [string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)
           ) {
-            Write-Output '未配置 Windows 签名 Secrets，生成明确标注的 unsigned Pre-release 资产'
-            bun run dist:win:unsigned
+            Write-Output '未配置 Windows 签名 Secrets；标准 release 通道会完成 executable edit，并跳过 Authenticode 签名'
           } else {
             Write-Output '已配置 Windows 签名 Secrets，使用正式签名发布通道'
             $env:CSC_LINK = $env:WIN_CSC_LINK
             $env:CSC_KEY_PASSWORD = $env:WIN_CSC_KEY_PASSWORD
-            bun run dist:win:release
           }
+          bun run dist:win:release
 
       - name: Windows 启动 smoke
         shell: pwsh
@@ -163,7 +162,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -218,17 +217,20 @@ jobs:
         shell: bash
         run: |
           version="$(bun -e "console.log(require('./apps/electron/package.json').version)")"
-          appimage="apps/electron/out/Domi-${version}-linux-x64.AppImage"
-          deb="apps/electron/out/Domi-${version}-linux-x64.deb"
-          test -f "$appimage"
-          test -f "$deb"
+          appimage="$(find apps/electron/out -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          deb="$(find apps/electron/out -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$appimage" && test -f "$appimage"
+          test -n "$deb" && test -f "$deb"
           dpkg-deb --info "$deb" >/dev/null
 
           mkdir -p release-assets
-          cp "$appimage" "$deb" release-assets/
+          appimage_asset="release-assets/Domi-${version}-linux-x64.AppImage"
+          deb_asset="release-assets/Domi-${version}-linux-x64.deb"
+          cp "$appimage" "$appimage_asset"
+          cp "$deb" "$deb_asset"
           (
             cd release-assets
-            sha256sum "$(basename "$appimage")" "$(basename "$deb")" > SHA256SUMS-linux.txt
+            sha256sum "$(basename "$appimage_asset")" "$(basename "$deb_asset")" > SHA256SUMS-linux.txt
           )
 
       - name: 保存 Linux 发布资产

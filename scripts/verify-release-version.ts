@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 
 interface PackageManifest {
   version?: string
+  homepage?: string
 }
 
 export interface ReleaseVersions {
@@ -18,13 +19,27 @@ export interface VerifiedReleaseVersion extends ReleaseVersions {
 
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u
 
-function readPackageVersion(path: string, label: string): string {
-  const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
+function readPackageManifest(path: string): PackageManifest {
+  return JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
+}
+
+function readPackageVersion(manifest: PackageManifest, label: string): string {
   const version = manifest.version?.trim()
   if (!version || !SEMVER_PATTERN.test(version)) {
     throw new Error(`${label} package.json 缺少有效 semver 版本`)
   }
   return version
+}
+
+function assertElectronHomepage(manifest: PackageManifest): void {
+  const homepage = manifest.homepage?.trim()
+  if (!homepage) throw new Error('Electron package.json 缺少有效 homepage')
+  try {
+    const url = new URL(homepage)
+    if (url.protocol !== 'https:') throw new Error('invalid protocol')
+  } catch {
+    throw new Error('Electron package.json 缺少有效 homepage')
+  }
 }
 
 export function normalizeReleaseTag(tag: string): string {
@@ -40,12 +55,12 @@ export function normalizeReleaseTag(tag: string): string {
 }
 
 export function readReleaseVersions(repoRoot: string): ReleaseVersions {
+  const rootManifest = readPackageManifest(resolve(repoRoot, 'package.json'))
+  const electronManifest = readPackageManifest(resolve(repoRoot, 'apps/electron/package.json'))
+  assertElectronHomepage(electronManifest)
   return {
-    rootVersion: readPackageVersion(resolve(repoRoot, 'package.json'), '根项目'),
-    electronVersion: readPackageVersion(
-      resolve(repoRoot, 'apps/electron/package.json'),
-      'Electron',
-    ),
+    rootVersion: readPackageVersion(rootManifest, '根项目'),
+    electronVersion: readPackageVersion(electronManifest, 'Electron'),
   }
 }
 
