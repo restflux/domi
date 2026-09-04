@@ -84,7 +84,7 @@ export function TerminalPane({ terminal }: { terminal: TerminalSessionView }): R
       }
       pendingOutput.length = 0
       requestAnimationFrame(fit)
-      xterm.focus()
+      // 会话恢复时保留用户当前焦点；点击终端区域后 xterm 会自行接管键盘输入。
     }).catch((error: unknown) => {
       snapshotLoaded = true
       for (const event of pendingOutput) xterm.write(event.data)
