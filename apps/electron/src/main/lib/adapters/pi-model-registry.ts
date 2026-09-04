@@ -778,7 +778,7 @@ export async function buildModel(sdk: PiSdk, input: PiAgentQueryOptions) {
   const supportsFinishReason = resolvePiSupportsFinishReason(input.finishReasonMode, api)
   const compat = {
     ...modelDefaults.compat,
-    ...(supportsPiDeveloperRole(input.provider) ? {} : { supportsDeveloperRole: false }),
+    ...(supportsPiDeveloperRole(input.provider, baseUrl) ? {} : { supportsDeveloperRole: false }),
     ...(supportsFinishReason == null ? {} : { supportsFinishReason }),
   }
   modelRuntime.registerProvider(providerName, {

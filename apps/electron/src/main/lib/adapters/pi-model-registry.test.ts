@@ -32,8 +32,29 @@ async function buildFinishReasonModel(finishReasonMode?: 'auto' | 'required' | '
   })
 }
 
+async function buildOpenAICompletionsModel(baseUrl: string) {
+  const sdk = await sdkPromise
+  return buildModel(sdk, {
+    sessionId: `openai-completions-${baseUrl}`,
+    prompt: 'hi',
+    apiKey: 'test-key',
+    provider: 'openai',
+    baseUrl,
+    model: 'private-router-model',
+    permissionMode: 'plan',
+    authorizeToolCall: async (_toolName, input) => ({ behavior: 'allow', updatedInput: input }),
+    systemPrompt: 'system',
+    piAgentDir: '/tmp/pi-agent',
+    piSessionDir: '/tmp/pi-session',
+  })
+}
+
 function getSupportsFinishReason(model: { compat?: unknown }): boolean | undefined {
   return (model.compat as { supportsFinishReason?: boolean } | undefined)?.supportsFinishReason
+}
+
+function getSupportsDeveloperRole(model: { compat?: unknown }): boolean | undefined {
+  return (model.compat as { supportsDeveloperRole?: boolean } | undefined)?.supportsDeveloperRole
 }
 
 async function buildOpenAIResponsesModel(model: string) {
@@ -262,6 +283,20 @@ describe('DeepSeek V4 reasoning 能力', () => {
     await expect(resolvePiReasoningCapability('qwen-token-plan-individual', 'deepseek-v4-pro')).resolves.toMatchObject({
       source: 'pi-catalog',
     })
+  })
+})
+
+describe('OpenAI Chat Completions developer role 兼容模式', () => {
+  test('Given OpenAI 官方地址 When 构建模型 Then 保留 developer role 支持', async () => {
+    const { model } = await buildOpenAICompletionsModel('https://api.openai.com/v1')
+
+    expect(getSupportsDeveloperRole(model)).toBeUndefined()
+  })
+
+  test('Given 第三方 OpenAI 中转地址 When 构建模型 Then 降级为 system role', async () => {
+    const { model } = await buildOpenAICompletionsModel('http://175.178.153.250/v1')
+
+    expect(getSupportsDeveloperRole(model)).toBe(false)
   })
 })
 
