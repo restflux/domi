@@ -88,7 +88,7 @@ export function StickyReturnToQuestionShortcut({
         {hasPreview && (
           <span
             id={previewId}
-            className="grid w-0 grid-rows-[0fr] opacity-0 transition-[width,grid-template-rows,opacity] duration-300 delay-150 group-hover/shortcut:w-full group-hover/shortcut:grid-rows-[1fr] group-hover/shortcut:opacity-100 group-hover/shortcut:delay-0 group-focus-visible/shortcut:w-full group-focus-visible/shortcut:grid-rows-[1fr] group-focus-visible/shortcut:opacity-100 group-focus-visible/shortcut:delay-0"
+            className="grid w-0 max-w-[calc(100vw-3rem)] justify-self-center grid-rows-[0fr] opacity-0 transition-[width,grid-template-rows,opacity] duration-300 delay-150 group-hover/shortcut:w-[380px] group-hover/shortcut:grid-rows-[1fr] group-hover/shortcut:opacity-100 group-hover/shortcut:delay-0 group-focus-visible/shortcut:w-[380px] group-focus-visible/shortcut:grid-rows-[1fr] group-focus-visible/shortcut:opacity-100 group-focus-visible/shortcut:delay-0"
           >
             <span className="min-h-0 overflow-hidden">
               <span className="flex items-start gap-2 px-3 pb-2.5 pt-1 text-left">
