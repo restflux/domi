@@ -22,7 +22,15 @@ describe('Domi Release Candidate workflow', () => {
     expect(workflow).toContain('scripts/release-workflow.test.ts')
   })
 
-  test('只有 Draft Pre-release job 获取 GitHub 发布 token', () => {
+  test('tag 构建创建 Draft Release，默认不标记为 Pre-release', () => {
+    expect(workflow).toContain('name: 创建 Draft Release')
+    expect(workflow).toContain('if [[ "$is_draft" != "true" || "$is_prerelease" != "false" ]]')
+    expect(workflow).toContain('拒绝覆盖非 Draft Release')
+    expect(workflow).toContain('--draft')
+    expect(workflow).not.toContain('--prerelease')
+  })
+
+  test('只有 Draft Release job 获取 GitHub 发布 token', () => {
     expect(workflow.match(/GH_TOKEN: \$\{\{ github\.token \}\}/g)).toHaveLength(1)
   })
 })

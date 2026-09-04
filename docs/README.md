@@ -9,7 +9,7 @@
 - [Domi 使用教程](../tutorial/tutorial-v2.md)：从配置渠道到 Chat、Work、Skills、自动任务和远程机器人的使用流程。
 - [贡献指南](../CONTRIBUTING.md)：开发、测试、版本和第三方内容要求。
 - [安全策略](../SECURITY.md)：支持范围与私下漏洞报告方式。
-- [桌面安装包发布](./releasing.md)：Windows/Linux 资产、Release Candidate、tag、校验和与 Draft Pre-release 流程。
+- [桌面安装包发布](./releasing.md)：Windows/Linux 资产、Release Candidate、tag、校验和与 Draft Release 人工审核流程。
 - [第三方声明](../THIRD_PARTY_NOTICES.md)：上游来源、bundled Skills、字体、图标和原生依赖许可。
 
 ## 工程文档

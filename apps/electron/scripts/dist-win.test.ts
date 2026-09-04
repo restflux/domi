@@ -45,7 +45,7 @@ describe('parseDistWinArgs', () => {
     })
   })
 
-  test('selects the unsigned public prerelease channel explicitly', () => {
+  test('selects the unsigned public release channel explicitly', () => {
     expect(parseDistWinArgs(['--unsigned', '--dry-run'])).toEqual({
       mode: 'unsigned',
       dryRun: true,

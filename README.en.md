@@ -4,7 +4,7 @@
 
 Domi is a desktop workbench built on the open-source [Pi](https://github.com/earendil-works/pi) project. It brings an AI coding agent, project files, a terminal, Git, an in-app browser, tasks, and calendars into one application, so you do not have to keep switching between tools. Pi powers the agent in Work sessions, while Domi provides the desktop interface, project management, safety controls, and the complete flow from editing code to saving approved changes.
 
-> Domi is under active development, with its first public version line starting at **0.20.0**. Windows and Linux prerelease installers are distributed through GitHub Releases. The project does not provide automatic installation or updates and does not connect to another product's release channel.
+> Domi is under active development, with its first public version line starting at **0.20.0**. Windows and Linux installers are distributed through GitHub Releases. The project does not provide automatic installation or updates and does not connect to another product's release channel.
 
 [中文 README](./README.md) · [User Guide](./tutorial/tutorial-v2.md) · [Engineering Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
@@ -33,9 +33,9 @@ Domi is a desktop workbench built on the open-source [Pi](https://github.com/ear
 
 Windows is the required CI platform. Linux release packages are built and launch-tested in GitHub Actions, while macOS is covered by a manual compatibility job.
 
-### Download prerelease packages
+### Download installers
 
-Download the current prerelease from [GitHub Releases](https://github.com/restflux/domi/releases):
+Download the current stable release from [GitHub Releases](https://github.com/restflux/domi/releases):
 
 - **Windows x64:** download `Domi-<version>-windows-x64-setup.exe`. The installer is currently unsigned, so Windows SmartScreen may display a “Windows protected your PC” warning. Verify the Release source and `SHA256SUMS.txt` before deciding whether to run it.
 - **Linux x64 AppImage:** download `Domi-<version>-linux-x64.AppImage`, make it executable, then run it: `chmod +x Domi-*.AppImage`.
@@ -73,11 +73,11 @@ Build local Windows verification and release-candidate packages:
 ```bash
 cd apps/electron
 bun run dist:win:fast      # fast local verification
-bun run dist:win:unsigned  # unsigned prerelease with normal compression
+bun run dist:win:unsigned  # unsigned public release with normal compression
 bun run dist:win:release   # signed release after code-signing setup
 ```
 
-`dist:win:fast` is for local verification only. Public unsigned installers must use `dist:win:unsigned` and be clearly marked as prereleases. See the [release documentation](./docs/releasing.md).
+`dist:win:fast` is for local verification only. Public unsigned installers must use `dist:win:unsigned`, and the Release Notes must clearly disclose the unsigned status and SmartScreen risk. See the [release documentation](./docs/releasing.md).
 
 ## Use Domi for coding tasks
 

@@ -2,7 +2,7 @@
 
 Domi 的首个二进制发布范围是 Windows x64 与 Linux x64。macOS 配置继续保留，但在具备真实 Mac 构建、签名和安装验证环境前不发布预构建包。
 
-发布流程只生成 GitHub Draft Pre-release，不接入 Electron 自动更新，也不配置 electron-builder publish provider。维护者核对 Draft 中的安装包、校验和与发布说明后，才在 GitHub 页面手动公开。
+发布流程只生成 GitHub Draft Release，不接入 Electron 自动更新，也不配置 electron-builder publish provider。维护者核对 Draft 中的安装包、校验和与发布说明后，才在 GitHub 页面手动公开为正式 Release。只有 alpha、beta、rc 或明确用于测试的版本才标记为 Pre-release。
 
 ## 发布资产
 
@@ -13,7 +13,7 @@ Domi 的首个二进制发布范围是 Windows x64 与 Linux x64。macOS 配置�
 | Debian/Ubuntu x64 | `Domi-<version>-linux-x64.deb` | `dpkg-deb --info` 包结构检查 |
 | 所有平台 | `SHA256SUMS.txt` | 合并 Windows 与 Linux 资产的 SHA-256 |
 
-Windows 工作流支持 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD` Repository Secrets。CI 始终使用 `dist:win:release` 的标准 executable edit 与正式压缩；两项 Secrets 都已配置时继续完成 Authenticode 签名，未配置时 electron-builder 跳过签名。`dist:win:unsigned` 保留给本机缺少 Windows symlink 权限时生成等价的未签名 Pre-release。未签名发布说明必须保留 SmartScreen 提示。
+Windows 工作流支持 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD` Repository Secrets。CI 始终使用 `dist:win:release` 的标准 executable edit 与正式压缩；两项 Secrets 都已配置时继续完成 Authenticode 签名，未配置时 electron-builder 跳过签名。`dist:win:unsigned` 保留给本机缺少 Windows symlink 权限时生成等价的未签名公开发布包。签名状态与 GitHub 的 Pre-release 标记相互独立；未签名 Release Notes 必须保留 SmartScreen 提示。
 
 ## 发布前提
 
@@ -53,11 +53,11 @@ git push origin v0.20.2
 
 推送 `v*` tag 会再次运行完整构建。workflow 会校验 tag 版本与两个 package 版本一致；任何不一致都会在生成资产前失败。
 
-## 检查 Draft Pre-release
+## 检查 Draft Release
 
 tag 构建全部通过后，workflow 使用 GitHub CLI：
 
-1. 创建对应 tag 的 Draft Pre-release；
+1. 创建对应 tag 的 Draft Release；
 2. 使用 GitHub 自动生成的 Release Notes 作为初稿；
 3. 上传 Windows、Linux 和统一 SHA-256 文件；
 4. 重跑时覆盖同名资产，不重复创建 Release。
@@ -83,7 +83,7 @@ Windows PowerShell 可逐个比较：
 Get-FileHash -Algorithm SHA256 .\Domi-<version>-windows-x64-setup.exe
 ```
 
-确认无误后，在 GitHub Release 页面点击 **Publish release**。这是公开发布动作，不由 workflow 自动执行。
+确认无误后，在 GitHub Release 页面点击 **Publish release**，公开为正式 Release。只有版本号或发布目的明确属于 alpha、beta、rc 或测试版本时才勾选 **Set as a pre-release**。公开发布动作不由 workflow 自动执行。
 
 ## Windows 签名升级
 

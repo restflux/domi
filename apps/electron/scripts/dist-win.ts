@@ -4,8 +4,8 @@
  *
  * fast：本地快速验证。跳过 Electron Builder 的 executable edit/sign，使用
  * Electron Builder 缓存中的原生 rcedit 注入图标与版本元数据，并使用 store 压缩生成 NSIS。
- * unsigned：公开预发布。沿用手动 rcedit，但保留正式压缩。
- * release：签名正式发布。保留 Electron Builder 标准 executable edit 与代码签名流程。
+ * unsigned：未签名公开发布。沿用手动 rcedit，但保留正式压缩。
+ * release：标准公开发布。保留 Electron Builder 标准 executable edit，并在凭据可用时完成代码签名。
  */
 
 import { spawnSync } from 'node:child_process'
@@ -385,7 +385,7 @@ function printPlan(plan: DistWinPlan): void {
     console.log('[dist:win] 注意: fast 产物未签名且使用 store 压缩，文件会更大，仅用于本地验证。')
     console.log(`[dist:win] 提示: ${plan.asarMode ? 'asar 已启用' : 'asar 已关闭（--no-asar 已指定，安装会显著变慢）'}；源未变化时复用上次 win-unpacked（--full 可强制全量重建）。`)
   } else if (plan.mode === 'unsigned') {
-    console.log('[dist:win] 注意: unsigned 产物使用正式压缩，但没有 Authenticode 签名，只能作为明确标注风险的 Pre-release。')
+    console.log('[dist:win] 注意: unsigned 产物使用正式压缩，但没有 Authenticode 签名；公开时必须明确说明 SmartScreen 风险。')
   }
 }
 
@@ -500,7 +500,7 @@ function runPlan(plan: DistWinPlan, context: DistWinContext): void {
 }
 
 function printHelp(): void {
-  console.log(`Windows 三通道打包\n\n用法:\n  bun run scripts/dist-win.ts --fast [--dry-run]\n  bun run scripts/dist-win.ts --unsigned [--dry-run]\n  bun run scripts/dist-win.ts --release [--dry-run]\n\n通道:\n  --fast      本地无签名快速包，独立输出到 out/fast，使用 store 压缩\n  --unsigned  未签名公开预发布包，输出到 out，使用正式压缩并手动注入图标/版本元数据\n  --release   正式签名发布包，使用 Electron Builder 标准编辑和签名流程（默认）\n\n选项:\n  --dry-run      只打印计划不执行\n  --full         强制全量重建（忽略 win-unpacked 复用指纹）\n  --no-parallel  构建阶段使用顺序构建（默认并行）\n  --no-asar      仅 fast 通道关闭 asar 归档（加速打包但安装显著变慢）`)
+  console.log(`Windows 三通道打包\n\n用法:\n  bun run scripts/dist-win.ts --fast [--dry-run]\n  bun run scripts/dist-win.ts --unsigned [--dry-run]\n  bun run scripts/dist-win.ts --release [--dry-run]\n\n通道:\n  --fast      本地无签名快速包，独立输出到 out/fast，使用 store 压缩\n  --unsigned  未签名公开发布包，输出到 out，使用正式压缩并手动注入图标/版本元数据\n  --release   标准公开发布包，使用 Electron Builder 标准编辑，并在凭据可用时签名（默认）\n\n选项:\n  --dry-run      只打印计划不执行\n  --full         强制全量重建（忽略 win-unpacked 复用指纹）\n  --no-parallel  构建阶段使用顺序构建（默认并行）\n  --no-asar      仅 fast 通道关闭 asar 归档（加速打包但安装显著变慢）`)
 }
 
 function main(): void {

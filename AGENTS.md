@@ -104,13 +104,13 @@ cd apps/electron
 bun run dist:mac          # macOS
 bun run dist:win          # Windows 正式发布（等同 dist:win:release）
 bun run dist:win:fast     # Windows 本地快速包：无签名、store 压缩，输出到 out/fast；上一份安装包保留在 out/fast-history/
-bun run dist:win:unsigned # Windows 未签名 Pre-release：手动 executable edit、正式压缩，输出到 out
+bun run dist:win:unsigned # Windows 未签名公开发布包：手动 executable edit、正式压缩，输出到 out
 bun run dist:win:release  # Windows 签名正式包：标准 executable edit + 代码签名流程
 bun run dist:linux        # Linux x64 AppImage + deb
 bun run dist:fast         # 当前架构快速打包（macOS 可视化脚本）
 ```
 
-`.github/workflows/release.yml` 在手动触发时只构建并保存 Windows/Linux artifacts；推送与 package 版本一致的 `v*` tag 后才创建 Draft Pre-release，仍需维护者人工公开。发布版本契约由 `scripts/verify-release-version.ts` 校验，完整流程见 `docs/releasing.md`。
+`.github/workflows/release.yml` 在手动触发时只构建并保存 Windows/Linux artifacts；推送与 package 版本一致的 `v*` tag 后才创建 Draft Release，仍需维护者核验并人工公开为正式 Release。只有 alpha、beta、rc 或明确测试版本才标记为 Pre-release。发布版本契约由 `scripts/verify-release-version.ts` 校验，完整流程见 `docs/releasing.md`。
 
 ### Electron 构建脚本（`apps/electron/` 目录下）
 
@@ -343,7 +343,7 @@ Domi 没有 `UpdaterInitializer`，主进程也不初始化 Proma updater。
 - `electron-builder.yml` 通过 `node_modules/**/*` 收集同步后的运行时闭包，再排除 Electron、builder、esbuild、文档、示例和 sourcemap 等构建期内容；内部 `@domi/*` 已被 bundle，不随 node_modules 重复打包。
 - Domi CLI 由 `build:cli` 编译到 `resources/bin/`，默认 Skills 从 `default-skills/` 作为 `extraResources` 打包。修改这些路径时必须同时验证打包后的资源定位。
 - Domi 不配置 Proma 官方 `publish` provider。Windows 必过 CI 需要完成 build、runtime dependency sync、未签名打包，并实际启动 `out/win-unpacked/Domi.exe` 做 smoke。
-- 首个二进制发布范围为 Windows x64 NSIS、Linux x64 AppImage/deb；macOS 在具备真实 Mac 构建、签名、notarization 和安装验证环境前不上传预构建包。Release workflow 只能创建 Draft Pre-release，不得自动公开 Release。
+- 首个二进制发布范围为 Windows x64 NSIS、Linux x64 AppImage/deb；macOS 在具备真实 Mac 构建、签名、notarization 和安装验证环境前不上传预构建包。Release workflow 只能创建 Draft Release，不得自动公开；稳定版本核验后公开为正式 Release，只有 alpha、beta、rc 或明确测试版本才标记为 Pre-release。
 
 **修改打包配置时的检查清单：**
 

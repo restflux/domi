@@ -247,7 +247,7 @@ jobs:
           retention-days: 14
 
   draft-release:
-    name: 创建 Draft Pre-release
+    name: 创建 Draft Release
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs:
       - windows
@@ -272,7 +272,7 @@ jobs:
           rm SHA256SUMS-windows.txt SHA256SUMS-linux.txt
           sha256sum Domi-* > SHA256SUMS.txt
 
-      - name: 创建或更新 Draft Pre-release
+      - name: 创建或更新 Draft Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -281,8 +281,8 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
             is_prerelease="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
-            if [[ "$is_draft" != "true" || "$is_prerelease" != "true" ]]; then
-              echo "拒绝覆盖非 Draft Pre-release: $TAG" >&2
+            if [[ "$is_draft" != "true" || "$is_prerelease" != "false" ]]; then
+              echo "拒绝覆盖非 Draft Release: $TAG" >&2
               exit 1
             fi
           else
@@ -290,8 +290,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --title "Domi $TAG" \
               --generate-notes \
-              --draft \
-              --prerelease
+              --draft
           fi
 
           mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0)

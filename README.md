@@ -4,7 +4,7 @@
 
 Domi 是一个基于开源 [Pi](https://github.com/earendil-works/pi) 的桌面工作台。它把 AI 编程助手、项目文件、终端、Git、内置浏览器、任务与日程放进同一个应用，让你不用在多个工具之间来回切换。Pi 驱动 Work 会话中的智能助手，Domi 则提供桌面界面、项目管理、安全控制，以及从修改代码到确认保存的完整流程。
 
-> Domi 正在快速迭代，首个公开版本线从 **0.20.0** 开始。Windows 与 Linux 预发布安装包通过 GitHub Releases 提供；Domi 不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
+> Domi 正在快速迭代，首个公开版本线从 **0.20.0** 开始。Windows 与 Linux 安装包通过 GitHub Releases 提供；Domi 不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
 
 [English README](./README.en.md) · [使用教程](./tutorial/tutorial-v2.md) · [工程文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
@@ -35,9 +35,9 @@ Domi 是一个基于开源 [Pi](https://github.com/earendil-works/pi) 的桌面�
 
 Windows 是当前必过平台；Linux 发布包会在 GitHub Actions 中完成打包与启动检查，macOS 提供手动兼容检查。
 
-### 下载预发布安装包
+### 下载安装包
 
-从 [GitHub Releases](https://github.com/restflux/domi/releases) 下载当前预发布版本：
+从 [GitHub Releases](https://github.com/restflux/domi/releases) 下载当前正式版本：
 
 - **Windows x64**：下载 `Domi-<version>-windows-x64-setup.exe`。当前安装包未签名，Windows SmartScreen 可能显示“Windows 已保护你的电脑”；请先核对 Release 来源与 `SHA256SUMS.txt`，再决定是否继续运行。
 - **Linux x64 AppImage**：下载 `Domi-<version>-linux-x64.AppImage`，添加执行权限后运行：`chmod +x Domi-*.AppImage`。
@@ -75,11 +75,11 @@ Windows 本地验证与发布候选包：
 ```bash
 cd apps/electron
 bun run dist:win:fast      # 本地快速验证
-bun run dist:win:unsigned  # 未签名 Pre-release，正式压缩
+bun run dist:win:unsigned  # 未签名公开发布包，正式压缩
 bun run dist:win:release   # 配置代码签名后的正式发布
 ```
 
-`dist:win:fast` 只用于本地验证；公开的未签名安装包必须使用 `dist:win:unsigned` 并明确标为 Pre-release。详见[发布文档](./docs/releasing.md)。
+`dist:win:fast` 只用于本地验证；公开的未签名安装包必须使用 `dist:win:unsigned`，并在 Release Notes 中明确说明未签名状态与 SmartScreen 风险。详见[发布文档](./docs/releasing.md)。
 
 ## 用 Domi 完成编程任务
 
