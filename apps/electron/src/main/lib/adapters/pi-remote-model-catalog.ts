@@ -9,13 +9,8 @@ interface CatalogRuntime {
   refresh(options: ModelsRefreshOptions): Promise<ModelsRefreshResult>
 }
 
-/** 目录查询不需要渠道凭据，也不应触发 OAuth 刷新或读取全局认证配置。 */
-export const catalogCredentials = {
-  async read() { return undefined },
-  async list() { return [] },
-  async modify() { return undefined },
-  async delete() {},
-}
+export { catalogCredentials } from './pi-catalog-runtime'
+import { createPiCatalogRuntime } from './pi-catalog-runtime'
 
 /** Pi 负责目录协议与 JSON 缓存；这里只协调同进程查询及外部缓存更新。 */
 export class PiRemoteModelCatalog {
@@ -80,18 +75,7 @@ export class PiRemoteModelCatalog {
 }
 
 export const piRemoteModelCatalog = new PiRemoteModelCatalog(
-  async () => {
-    const { ModelRuntime } = await import('@earendil-works/pi-coding-agent')
-    const agentDir = getSdkConfigDir()
-    return ModelRuntime.create({
-      credentials: catalogCredentials,
-      // Pi modelsPath=null 会改用内存 store，即使给了 modelsStorePath 也不会落盘。
-      modelsPath: join(agentDir, 'models.json'),
-      modelsStorePath: join(agentDir, 'models-store.json'),
-      refreshOnCreate: false,
-      allowModelNetwork: false,
-    })
-  },
+  () => createPiCatalogRuntime(getSdkConfigDir()),
   async () => {
     try {
       const info = await stat(join(getSdkConfigDir(), 'models-store.json'))

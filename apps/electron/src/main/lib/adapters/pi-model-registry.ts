@@ -36,6 +36,7 @@ import { getEffectiveProxyUrl } from '../proxy-settings-service'
 import type { PiAgentQueryOptions } from './pi-agent-adapter'
 import { runWithPiRequestProxyScope } from './pi-request-proxy'
 import { supportsPiDeveloperRole } from './pi-provider-compat'
+import { createPiCatalogRuntime } from './pi-catalog-runtime'
 import { catalogCredentials, piRemoteModelCatalog } from './pi-remote-model-catalog'
 
 type PiSdk = typeof import('@earendil-works/pi-coding-agent')
@@ -854,18 +855,11 @@ export interface ListCodexModelsOptions {
 
 /** 从 Pi 官方远端目录刷新 ChatGPT (Codex) 模型，结果缓存于 Domi SDK 配置目录。 */
 export async function listCodexModels(options: ListCodexModelsOptions): Promise<{ id: string; name: string }[]> {
-  const sdk = await import('@earendil-works/pi-coding-agent')
   return runWithPiRequestProxyScope({ proxyUrl: options.proxyUrl }, async () => {
     const abortController = new AbortController()
     const timeout = setTimeout(() => abortController.abort(), CODEX_MODEL_REFRESH_TIMEOUT_MS)
     try {
-      const runtime = await sdk.ModelRuntime.create({
-        credentials: catalogCredentials,
-        modelsPath: join(options.agentDir, 'models.json'),
-        modelsStorePath: join(options.agentDir, 'models-store.json'),
-        allowModelNetwork: false,
-        refreshOnCreate: false,
-      })
+      const runtime = await createPiCatalogRuntime(options.agentDir)
       const models = await refreshCodexModelCatalog(runtime, abortController.signal)
       return models.map((model) => ({ id: model.id, name: model.name }))
     } finally {

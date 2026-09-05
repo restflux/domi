@@ -1725,7 +1725,7 @@ async function fetchProviderModels(input: FetchModelsInput): Promise<FetchModels
           })
           return {
             success: true,
-            message: `已从 Pi 远端目录加载 ${codexModels.length} 个 ChatGPT (Codex) 模型`,
+            message: `已检查 Pi 模型目录，当前可用 ${codexModels.length} 个 ChatGPT (Codex) 模型`,
             models: codexModels.map((m) => ({ id: m.id, name: m.name, enabled: true, source: 'fetched' as const })),
           }
         }
