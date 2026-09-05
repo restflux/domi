@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { getChannelsPath } from './config-paths'
+import { getChannelsPath, getSdkConfigDir } from './config-paths'
 import type {
   Channel,
   ChannelCreateInput,
@@ -1699,11 +1699,18 @@ export async function fetchModels(input: FetchModelsInput): Promise<FetchModelsR
       case 'qwen-token-plan':
       case 'openai-codex':
         if (provider === 'openai-codex') {
-          // ChatGPT (Codex) 走 Pi SDK 内置模型目录，不依赖 baseUrl/apiKey。
-          const codexModels = await listCodexModels()
+          const credentials = parseCodexCredentials(input.apiKey)
+          if (!credentials) {
+            return { success: false, message: 'ChatGPT 登录凭据无效，请重新登录', models: [] }
+          }
+          const codexModels = await listCodexModels({
+            credentials,
+            agentDir: getSdkConfigDir(),
+            proxyUrl,
+          })
           return {
             success: true,
-            message: `已加载 ${codexModels.length} 个 ChatGPT (Codex) 模型`,
+            message: `已从 Pi 远端目录加载 ${codexModels.length} 个 ChatGPT (Codex) 模型`,
             models: codexModels.map((m) => ({ id: m.id, name: m.name, enabled: true, source: 'fetched' as const })),
           }
         }

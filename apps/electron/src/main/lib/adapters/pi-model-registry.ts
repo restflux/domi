@@ -5,6 +5,7 @@
  * ProviderType 到 Pi API 协议、baseUrl、认证头和模型 catalog 默认值的映射。
  */
 
+import { join } from 'node:path'
 import {
   CODEX_GPT_54_55_CONTEXT_WINDOW,
   CODEX_GPT_54_MINI_CONTEXT_WINDOW,
@@ -30,7 +31,9 @@ import {
   resolveAnthropicMessagesUrl,
 } from '@domi/core'
 import type { Api, KnownProvider, Model } from '@earendil-works/pi-ai/compat'
+import { getSdkConfigDir } from '../config-paths'
 import type { PiAgentQueryOptions } from './pi-agent-adapter'
+import { runWithPiRequestProxyScope } from './pi-request-proxy'
 import { supportsPiDeveloperRole } from './pi-provider-compat'
 
 type PiSdk = typeof import('@earendil-works/pi-coding-agent')
@@ -59,6 +62,7 @@ const DEFAULT_MAX_TOKENS = 64_000
 const VOLCENGINE_GLM_52_MAX_TOKENS = 128_000
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api'
 const CODEX_MAX_TOKENS = 128_000
+const CODEX_MODEL_REFRESH_TIMEOUT_MS = 15_000
 
 function toReasoningTransport(api: Api): ReasoningTransport {
   switch (api) {
@@ -122,6 +126,7 @@ type CodexRuntimeCredential = CodexOAuthCredentials & {
 /** Pi 内置 Codex provider 所需的最小模型与 OAuth 输入。 */
 export interface CodexModelInput {
   model?: string
+  piAgentDir?: string
   codexOAuthCredentials?: CodexOAuthCredentials
   onCodexOAuthCredentialsRefreshed?: (credentials: CodexOAuthCredentials) => void | Promise<void>
 }
@@ -739,24 +744,80 @@ export async function buildCodexModel(sdk: PiSdk, input: CodexModelInput) {
       input.codexOAuthCredentials,
       input.onCodexOAuthCredentialsRefreshed,
     ),
+    modelsPath: join(input.piAgentDir ?? getSdkConfigDir(), 'models.json'),
+    modelsStorePath: join(input.piAgentDir ?? getSdkConfigDir(), 'models-store.json'),
     allowModelNetwork: false,
   })
 
   const resolvedModelId = stripAgentSdkContextSuffix(input.model)
-  const codexModels = await getCodexCatalogModels()
+  const codexModels = mergeCodexModels(modelRuntime.getModels('openai-codex'))
   const model = (resolvedModelId ? modelRuntime.getModel('openai-codex', resolvedModelId) : undefined)
     ?? (resolvedModelId ? findCatalogModelById(codexModels, resolvedModelId) : undefined)
-    // 指定模型缺失时回退到首个内置 codex 模型，避免因模型 ID 漂移直接失败。
-    ?? modelRuntime.getModels('openai-codex')[0]
+    // 指定模型缺失时回退到首个已缓存或内置 codex 模型，避免因模型 ID 漂移直接失败。
+    ?? codexModels[0]
   if (!model) {
     throw new Error('未找到可用的 ChatGPT (Codex) 模型，请确认已登录并升级 Pi 运行时')
   }
   return { modelRuntime, model, contextWindowSource: 'provider_catalog' as const }
 }
 
-/** 列出 Pi SDK 内置的 ChatGPT (Codex) 模型 ID，供渲染层"模型拉取"使用。 */
-export async function listCodexModels(): Promise<{ id: string; name: string }[]> {
-  return (await getCodexCatalogModels()).map((m) => ({ id: m.id, name: m.name }))
+interface CodexCatalogRuntime {
+  refresh(options: {
+    allowNetwork: true
+    force: true
+    providers: readonly ['openai-codex']
+    signal: AbortSignal
+  }): Promise<{ aborted: boolean; errors: ReadonlyMap<string, Error> }>
+  getModels(providerId: 'openai-codex'): readonly PiCatalogModel[]
+}
+
+/** 强制刷新 Pi 官方远端 Codex 目录，并合并 Domi 仍需保留的兼容 patch。 */
+export async function refreshCodexModelCatalog(
+  runtime: CodexCatalogRuntime,
+  signal: AbortSignal,
+): Promise<PiCatalogModel[]> {
+  const result = await runtime.refresh({
+    allowNetwork: true,
+    force: true,
+    providers: ['openai-codex'],
+    signal,
+  })
+  if (result.aborted || signal.aborted) {
+    throw new Error('刷新 ChatGPT (Codex) 模型目录超时')
+  }
+  const refreshError = result.errors.get('openai-codex')
+  if (refreshError) {
+    throw new Error(`刷新 ChatGPT (Codex) 模型目录失败: ${refreshError.message}`, { cause: refreshError })
+  }
+  return mergeCodexModels(runtime.getModels('openai-codex'))
+}
+
+export interface ListCodexModelsOptions {
+  credentials: CodexOAuthCredentials
+  agentDir: string
+  proxyUrl?: string
+}
+
+/** 从 Pi 官方远端目录刷新 ChatGPT (Codex) 模型，结果缓存于 Domi SDK 配置目录。 */
+export async function listCodexModels(options: ListCodexModelsOptions): Promise<{ id: string; name: string }[]> {
+  const sdk = await import('@earendil-works/pi-coding-agent')
+  return runWithPiRequestProxyScope({ proxyUrl: options.proxyUrl }, async () => {
+    const abortController = new AbortController()
+    const timeout = setTimeout(() => abortController.abort(), CODEX_MODEL_REFRESH_TIMEOUT_MS)
+    try {
+      const runtime = await sdk.ModelRuntime.create({
+        credentials: createCodexRuntimeCredentialStore(options.credentials),
+        modelsPath: join(options.agentDir, 'models.json'),
+        modelsStorePath: join(options.agentDir, 'models-store.json'),
+        allowModelNetwork: false,
+        refreshOnCreate: false,
+      })
+      const models = await refreshCodexModelCatalog(runtime, abortController.signal)
+      return models.map((model) => ({ id: model.id, name: model.name }))
+    } finally {
+      clearTimeout(timeout)
+    }
+  })
 }
 
 export async function buildModel(sdk: PiSdk, input: PiAgentQueryOptions) {

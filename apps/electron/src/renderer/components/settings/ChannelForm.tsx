@@ -622,7 +622,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       // 凭据 JSON 已含 accountId，写入 apiKey 后由 codexCredentials 派生展示，无需单独 state。
       setApiKey(credentials)
 
-      // codex 模型是 Pi SDK 内置目录、不依赖凭据/baseUrl。登录后自动拉取并全部启用。
+      // Codex 模型由 Pi 远端目录提供，不依赖 baseUrl。登录后自动刷新并全部启用。
       // 不复用 handleFetchModels：其 gate 读派生自 apiKey state 的 hasRequiredSecret，
       // 而 setApiKey 是异步的，同一 tick 内仍是旧值，这里直接内联拉取。
       let codexModels: ChannelModel[] = []
@@ -665,7 +665,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
 
   /** 从供应商 API 拉取可用模型列表。 */
   const fetchAvailableModels = async (): Promise<void> => {
-    // ChatGPT (Codex) 走 SDK 内置目录，不依赖 baseUrl；其余 provider 仍要求 baseUrl。
+    // ChatGPT (Codex) 走 Pi 远端目录，不依赖 baseUrl；其余 provider 仍要求 baseUrl。
     if (!hasRequiredSecret || (!isCodexProvider && !baseUrl.trim())) return
 
     setFetchingModels(true)
@@ -692,7 +692,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
         previous,
         fetched: fetchedModels,
         provider,
-        // ChatGPT (Codex) 是 SDK 内置的少量精选模型，拉取即全部启用，避免新模型
+        // ChatGPT (Codex) 目录由 Pi 远端维护，拉取即全部启用，避免新模型
         // 默认未启用而沉到「可用模型」折叠区，被误认为“拉不到”。
         enableAll: isCodexProvider,
       }))

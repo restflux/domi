@@ -3,6 +3,7 @@ import { DEEPSEEK_PRESET_MODELS, type ChannelModel } from '@domi/shared'
 import {
   buildModel,
   getCodexCatalogModels,
+  refreshCodexModelCatalog,
   resolveImageCapabilityConsensus,
   resolvePiImageInputCapability,
   resolvePiModelCatalogStatus,
@@ -410,6 +411,46 @@ describe('Pi 模型上下文窗口目录优先级', () => {
     const models = await getCodexCatalogModels()
     expect(models.find((model) => model.id === 'gpt-5.6-sol')?.contextWindow).toBe(272_000)
     expect(models.find((model) => model.id === 'gpt-5.4-mini')?.contextWindow).toBe(272_000)
+  })
+
+  test('Given Pi 远端目录出现新 Codex 模型 When 强制刷新 Then 返回新模型且限定刷新范围', async () => {
+    const [baseModel] = await getCodexCatalogModels()
+    expect(baseModel).toBeDefined()
+    const astraModel = { ...baseModel!, id: 'gpt-6-astra', name: 'GPT-6 Astra' }
+    let refreshOptions: Parameters<Parameters<typeof refreshCodexModelCatalog>[0]['refresh']>[0] | undefined
+    const runtime: Parameters<typeof refreshCodexModelCatalog>[0] = {
+      async refresh(options) {
+        refreshOptions = options
+        return { aborted: false, errors: new Map() }
+      },
+      getModels: () => [astraModel],
+    }
+
+    const signal = new AbortController().signal
+    const models = await refreshCodexModelCatalog(runtime, signal)
+
+    expect(models.find((model) => model.id === 'gpt-6-astra')?.name).toBe('GPT-6 Astra')
+    expect(refreshOptions).toMatchObject({
+      allowNetwork: true,
+      force: true,
+      providers: ['openai-codex'],
+      signal,
+    })
+  })
+
+  test('Given Pi 远端目录刷新失败 When 拉取 Codex 模型 Then 暴露原始失败原因', async () => {
+    const runtime: Parameters<typeof refreshCodexModelCatalog>[0] = {
+      async refresh() {
+        return {
+          aborted: false,
+          errors: new Map([['openai-codex', new Error('catalog unavailable')]]),
+        }
+      },
+      getModels: () => [],
+    }
+
+    await expect(refreshCodexModelCatalog(runtime, new AbortController().signal))
+      .rejects.toThrow('刷新 ChatGPT (Codex) 模型目录失败: catalog unavailable')
   })
 
   test('Given Codex OAuth runtime When 构建 GPT-5.6 Then 最终会话模型仍使用 272K', async () => {
