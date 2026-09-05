@@ -389,8 +389,23 @@ function printPlan(plan: DistWinPlan): void {
   }
 }
 
+function pruneFastArtifactHistory(historyRoot: string, retainedArchiveDir?: string): void {
+  if (!existsSync(historyRoot)) return
+  const archiveDirs = readdirSync(historyRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(historyRoot, entry.name))
+    .sort((left, right) => basename(right).localeCompare(basename(left)))
+  const retainedDir = retainedArchiveDir ?? archiveDirs[0]
+
+  // fast 包只保留上一份归档，避免本地验证产物持续占用磁盘空间。
+  for (const archiveDir of archiveDirs) {
+    if (archiveDir !== retainedDir) rmSync(archiveDir, { recursive: true, force: true })
+  }
+}
+
 export function preservePreviousFastArtifacts(outputDir: string, artifactPath: string): string | undefined {
   if (!existsSync(outputDir)) return undefined
+  const historyRoot = join(dirname(outputDir), 'fast-history')
   const setupPrefix = basename(artifactPath).split(' Setup ')[0] + ' Setup '
   const previousArtifacts = readdirSync(outputDir)
     .filter((name) => (
@@ -399,9 +414,11 @@ export function preservePreviousFastArtifacts(outputDir: string, artifactPath: s
     ))
     .map((name) => join(outputDir, name))
     .filter((path) => existsSync(path))
-  if (previousArtifacts.length === 0) return undefined
+  if (previousArtifacts.length === 0) {
+    pruneFastArtifactHistory(historyRoot)
+    return undefined
+  }
 
-  const historyRoot = join(dirname(outputDir), 'fast-history')
   mkdirSync(historyRoot, { recursive: true })
   const stamp = new Date().toISOString().replace(/[.:]/gu, '-')
   let archiveDir = join(historyRoot, stamp)
@@ -415,6 +432,7 @@ export function preservePreviousFastArtifacts(outputDir: string, artifactPath: s
   for (const sourcePath of previousArtifacts) {
     renameSync(sourcePath, join(archiveDir, basename(sourcePath)))
   }
+  pruneFastArtifactHistory(historyRoot, archiveDir)
   return archiveDir
 }
 

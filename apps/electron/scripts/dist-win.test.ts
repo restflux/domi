@@ -175,11 +175,15 @@ describe('createDistWinPlan', () => {
     )
   })
 
-  test('preserves all previous installers and blockmaps before fast cleanup', () => {
+  test('keeps only the immediately previous fast installer archive', () => {
     const root = mkdtempSync(join(tmpdir(), 'dist-win-'))
     tempRoots.push(root)
     const outputDir = join(root, 'out', 'fast')
+    const historyRoot = join(root, 'out', 'fast-history')
+    const olderArchiveDir = join(historyRoot, '2026-09-01T00-00-00-000Z')
     mkdirSync(outputDir, { recursive: true })
+    mkdirSync(olderArchiveDir, { recursive: true })
+    writeFileSync(join(olderArchiveDir, 'Domi Setup 1.2.2.exe'), 'older installer')
     const previousArtifactPath = join(outputDir, 'Domi Setup 1.2.3.exe')
     const previousBlockmapPath = `${previousArtifactPath}.blockmap`
     const currentArtifactPath = join(outputDir, 'Domi Setup 1.2.4.exe')
@@ -191,7 +195,26 @@ describe('createDistWinPlan', () => {
     expect(archiveDir).toBeDefined()
     expect(existsSync(previousArtifactPath)).toBe(false)
     expect(existsSync(previousBlockmapPath)).toBe(false)
+    expect(existsSync(olderArchiveDir)).toBe(false)
     expect(readFileSync(join(archiveDir!, 'Domi Setup 1.2.3.exe'), 'utf8')).toBe('previous installer')
     expect(readFileSync(join(archiveDir!, 'Domi Setup 1.2.3.exe.blockmap'), 'utf8')).toBe('previous blockmap')
+  })
+
+  test('prunes old fast archives even when there is no installer to archive', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dist-win-'))
+    tempRoots.push(root)
+    const outputDir = join(root, 'out', 'fast')
+    const historyRoot = join(root, 'out', 'fast-history')
+    const olderArchiveDir = join(historyRoot, '2026-09-01T00-00-00-000Z')
+    const latestArchiveDir = join(historyRoot, '2026-09-02T00-00-00-000Z')
+    mkdirSync(outputDir, { recursive: true })
+    mkdirSync(olderArchiveDir, { recursive: true })
+    mkdirSync(latestArchiveDir, { recursive: true })
+
+    const archiveDir = preservePreviousFastArtifacts(outputDir, join(outputDir, 'Domi Setup 1.2.4.exe'))
+
+    expect(archiveDir).toBeUndefined()
+    expect(existsSync(olderArchiveDir)).toBe(false)
+    expect(existsSync(latestArchiveDir)).toBe(true)
   })
 })
