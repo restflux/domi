@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * AgentMessages — Agent 消息列表
  *
@@ -258,7 +259,7 @@ function AssistantLogo({ model }: { model?: string }): React.ReactElement {
   const channels = useAtomValue(channelsAtom)
   if (model) {
     return (
-      <img
+      <BrandLogo
         src={getModelLogo(model, resolveModelProvider(model, channels))}
         alt={model}
         className="size-[35px] rounded-[25%] object-cover"

@@ -35,6 +35,20 @@ Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 - Bundled third-party component: winpty, MIT, © Ryan Prichard and contributors
 - License copy: `third-party-licenses/MIT-node-pty.txt`
 
+## Model and provider brand icons
+
+### LobeHub Icons
+
+- Package: `@lobehub/icons-static-svg@1.94.0` (build-time dependency; only imported SVGs are bundled)
+- Source: https://github.com/lobehub/lobe-icons
+- Package source revision: `fbd2d56e3f734e889f1373e71c8368cc4e60e0d7`
+- License: MIT, as declared by the package manifest and bundled README
+- Copyright: © 2023 LobeHub, as stated in the bundled README
+- License text: `third-party-licenses/MIT-LobeHub-icons.txt`
+- Usage: model and channel brand SVGs in `apps/electron/src/renderer/lib/model-logo.ts`; SVG artwork is unmodified, monochrome icons are inverted in dark mode.
+- Brand names and logos remain trademarks of their respective owners; the MIT code license does not grant trademark rights or imply endorsement.
+- The default Domi mark and existing composite Gemini / generic embedding icons retain their existing provenance; they are not LobeHub assets.
+
 ## Bundled default Skills
 
 ### Guizang PPT Skill

@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * SDKMessageRenderer — 渲染 SDKMessage 对象
  *
@@ -306,7 +307,7 @@ function AssistantLogo({ model }: { model?: string }): React.ReactElement {
   const channels = useAtomValue(channelsAtom)
   if (model) {
     return (
-      <img
+      <BrandLogo
         src={getModelLogo(model, resolveModelProvider(model, channels))}
         alt={model}
         className="size-[35px] rounded-[25%] object-cover"

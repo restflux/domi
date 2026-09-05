@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * ParallelChatMessages - 并排消息展示
  *
@@ -192,7 +193,7 @@ function MessageColumn({
               model={streamingModel ?? undefined}
               time={formatMessageTime(Date.now())}
               logo={
-                <img
+                <BrandLogo
                   src={getModelLogo(streamingModel ?? '', resolveModelProvider(streamingModel ?? '', channels))}
                   alt="AI"
                   className="size-[35px] rounded-[25%] object-cover"

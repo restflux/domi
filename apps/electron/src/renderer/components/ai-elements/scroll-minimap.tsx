@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * ScrollMinimap — 消息导航迷你地图 + 滚动进度条
  *
@@ -911,7 +912,7 @@ function ItemIcon({ item }: { item: MinimapItem }): React.ReactElement {
   }
   if ((item.role === 'assistant') && item.model) {
     return (
-      <img
+      <BrandLogo
         src={getModelLogo(item.model, resolveModelProvider(item.model, channels))}
         alt=""
         className="size-4 shrink-0 mt-0.5 rounded-[20%] object-cover"

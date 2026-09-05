@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * ChatMessages - 消息区域
  *
@@ -288,7 +289,7 @@ export function ChatMessages({
   )
   const streamingLogo = React.useMemo(
     () => (
-      <img
+      <BrandLogo
         src={getModelLogo(streamingModel ?? '', resolveModelProvider(streamingModel ?? '', channels))}
         alt="AI"
         className="size-[35px] rounded-[25%] object-cover"

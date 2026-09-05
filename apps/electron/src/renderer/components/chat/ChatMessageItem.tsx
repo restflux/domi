@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * ChatMessageItem - 单条消息渲染
  *
@@ -189,7 +190,7 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
             model={message.model ? resolveModelDisplayName(message.model, channels) : undefined}
             time={formatMessageTime(message.createdAt)}
             logo={
-              <img
+              <BrandLogo
                 src={getModelLogo(message.model ?? '', resolveModelProvider(message.model ?? '', channels))}
                 alt={message.model ?? 'AI'}
                 className="size-[35px] rounded-[25%] object-cover"

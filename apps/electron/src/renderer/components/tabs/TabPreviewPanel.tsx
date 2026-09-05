@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * TabPreviewPanel — Tab 悬浮预览面板
  *
@@ -46,7 +47,7 @@ function ItemIcon({ item }: { item: TabMinimapItem }): React.ReactElement {
   }
   if (item.role === 'assistant' && item.model) {
     return (
-      <img
+      <BrandLogo
         src={getModelLogo(item.model, resolveModelProvider(item.model, channels))}
         alt=""
         className="size-4 shrink-0 mt-0.5 rounded-[20%] object-cover"

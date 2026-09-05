@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * SettingsSelect - 设置下拉选择控件
  *
@@ -65,7 +66,7 @@ export function SettingsSelect({
           <SelectValue placeholder={placeholder}>
             {selected ? (
               <span className="flex items-center gap-2">
-                {selected.icon && <img src={selected.icon} alt="" className="w-4 h-4 rounded-sm object-contain" />}
+                {selected.icon && <BrandLogo src={selected.icon} alt="" className="w-4 h-4 rounded-sm object-contain" />}
                 <span>{selected.label}</span>
               </span>
             ) : placeholder}
@@ -75,7 +76,7 @@ export function SettingsSelect({
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               <span className="flex items-center gap-2">
-                {option.icon && <img src={option.icon} alt="" className="w-4 h-4 rounded-sm object-contain" />}
+                {option.icon && <BrandLogo src={option.icon} alt="" className="w-4 h-4 rounded-sm object-contain" />}
                 <span>{option.label}</span>
               </span>
             </SelectItem>

@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * ChannelSettings - 渠道配置页
  *
@@ -209,7 +210,7 @@ function ChannelRow({ channel, onEdit, onDelete, onToggle }: ChannelRowProps): R
   return (
     <SettingsRow
       label={channel.name}
-      icon={<img src={getChannelLogo(channel)} alt="" className="w-8 h-8 rounded" />}
+      icon={<BrandLogo src={getChannelLogo(channel)} alt="" className="w-8 h-8 rounded" />}
       description={
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>{description}</span>

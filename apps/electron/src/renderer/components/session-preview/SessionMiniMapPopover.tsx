@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * SessionMiniMapPopover — 左侧会话悬浮迷你地图
  *
@@ -338,7 +339,7 @@ function ItemIcon({ item, type }: { item: TabMinimapItem; type: SessionMiniMapTy
   }
   if (item.role === 'assistant' && item.model) {
     return (
-      <img
+      <BrandLogo
         src={getModelLogo(item.model, resolveModelProvider(item.model, channels))}
         alt=""
         className="size-4 shrink-0 mt-0.5 rounded-[20%] object-cover"

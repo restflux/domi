@@ -1,6 +1,6 @@
 {
   "name": "domi",
-  "version": "0.20.14",
+  "version": "0.20.15",
   "description": "Domi — local-first Personal Coding Workbench with multi-model Chat and general Agent workflows",
   "license": "AGPL-3.0-only",
   "type": "module",

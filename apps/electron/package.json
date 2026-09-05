@@ -1,6 +1,6 @@
 {
   "name": "@domi/electron",
-  "version": "0.20.14",
+  "version": "0.20.15",
   "description": "Domi personal coding workbench - Electron App",
   "homepage": "https://github.com/restflux/domi",
   "repository": {
@@ -80,6 +80,7 @@
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@larksuiteoapi/node-sdk": "^1.65.0",
+    "@lobehub/icons-static-svg": "1.94.0",
     "@domi/core": "workspace:*",
     "@domi/session-core": "workspace:*",
     "@domi/shared": "workspace:*",

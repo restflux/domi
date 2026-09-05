@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * AgentView — Agent 模式主视图容器
  *
@@ -483,7 +484,7 @@ function AgentThinkingPopover({
               )}
             >
               {modelLogo ? (
-                <img src={modelLogo} alt="" className="size-4 shrink-0 rounded object-cover" />
+                <BrandLogo src={modelLogo} alt="" className="size-4 shrink-0 rounded object-cover" />
               ) : (
                 <Cpu className="size-3.5 shrink-0" />
               )}

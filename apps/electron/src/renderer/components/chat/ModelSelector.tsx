@@ -1,3 +1,4 @@
+import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * ModelSelector - 模型选择器（Dialog + Command 搜索）
  *
@@ -302,7 +303,7 @@ export function ModelSelector({
               className="model-selector-trigger flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
               {displayModelInfo ? (
-                <img
+                <BrandLogo
                   src={getModelLogo(displayModelInfo.modelId, displayModelInfo.provider)}
                   alt={displayModelInfo.modelName}
                   className="size-4 rounded object-cover"
@@ -365,7 +366,7 @@ export function ModelSelector({
                   <div key={channelId}>
                     {/* 供应商标题行 - 灰色背景 */}
                     <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 border-b border-border/30">
-                      <img
+                      <BrandLogo
                         src={channel ? getChannelLogo(channel) : DefaultLogo}
                         alt={first.channelName}
                         className="size-5 rounded object-cover"
@@ -401,7 +402,7 @@ export function ModelSelector({
                             isSelected && 'bg-foreground/10 border-l-3 border-l-primary'
                           )}
                         >
-                          <img
+                          <BrandLogo
                             src={getModelLogo(option.modelId, option.provider)}
                             alt={option.modelName}
                             className="size-5 rounded object-cover flex-shrink-0"
