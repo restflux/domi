@@ -99,3 +99,10 @@ describe('Pi thinking level resolver', () => {
     },
   )
 })
+
+test('Given 精确目录与旧 GPT 名称规则冲突 When 选择思考档位 Then 目录档位优先', () => {
+  expect(resolvePiThinkingLevel(
+    {}, { reasoningLevel: 'max' }, 'openai-responses', 'gpt-5.5',
+    { source: 'pi-catalog', levels: ['low', 'high', 'max'], defaultLevel: 'high' },
+  )).toBe('max')
+})

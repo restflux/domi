@@ -20,15 +20,15 @@ export function resolvePiThinkingLevel(
     ? 'off'
     : settings.agentEffort ?? 'medium'
   const persistedLevel = sessionMeta?.reasoningLevel ?? sessionMeta?.openAIThinkingLevel
-  if (reasoningProfile) {
-    return normalizeReasoningLevel(reasoningProfile, persistedLevel ?? configuredLevel)!
-  }
   if (capability) {
     const requestedLevel = persistedLevel
       ?? (capability.source === 'temporary-adaptation' || capability.source === 'provider-metadata'
         ? capability.defaultLevel
         : configuredLevel)
     return normalizeReasoningCapabilityLevel(capability, requestedLevel)!
+  }
+  if (reasoningProfile) {
+    return normalizeReasoningLevel(reasoningProfile, persistedLevel ?? configuredLevel)!
   }
   if (configuredLevel === 'max') return 'xhigh'
   return configuredLevel

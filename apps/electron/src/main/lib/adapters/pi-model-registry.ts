@@ -32,9 +32,11 @@ import {
 } from '@domi/core'
 import type { Api, KnownProvider, Model } from '@earendil-works/pi-ai/compat'
 import { getSdkConfigDir } from '../config-paths'
+import { getEffectiveProxyUrl } from '../proxy-settings-service'
 import type { PiAgentQueryOptions } from './pi-agent-adapter'
 import { runWithPiRequestProxyScope } from './pi-request-proxy'
 import { supportsPiDeveloperRole } from './pi-provider-compat'
+import { catalogCredentials, piRemoteModelCatalog } from './pi-remote-model-catalog'
 
 type PiSdk = typeof import('@earendil-works/pi-coding-agent')
 type PiAiCompat = typeof import('@earendil-works/pi-ai/compat')
@@ -258,6 +260,7 @@ function candidatePiProviders(provider: ProviderType): KnownProvider[] {
       return ['anthropic']
     case 'openai':
     case 'openai-responses':
+    case 'custom':
       return ['openai']
     case 'opencode-go-openai':
       return ['opencode-go']
@@ -324,11 +327,42 @@ function findClaudeCatalogModel(models: readonly PiCatalogModel[], modelId: stri
 
 async function getCatalogModels(provider: KnownProvider): Promise<readonly PiCatalogModel[]> {
   try {
+    return await piRemoteModelCatalog.getModels(provider)
+  } catch {
     const { getModels } = await loadPiAiCompat()
     return getModels(provider as Parameters<typeof getModels>[0])
-  } catch {
-    return []
   }
+}
+
+/** 中转只刷新能力目录，实际可用模型清单仍以中转自己的接口为准。 */
+export async function refreshPiChannelModelCatalog(provider: ProviderType, proxyUrl?: string, force = true): Promise<void> {
+  const providers = provider === 'custom' || provider === 'openai' || provider === 'openai-responses'
+    ? ['openai', 'anthropic']
+    : provider === 'anthropic-compatible'
+      ? ['anthropic']
+      : candidatePiProviders(provider)
+  await piRemoteModelCatalog.refresh(providers, proxyUrl, force)
+}
+
+async function ensurePiChannelCatalog(provider: ProviderType): Promise<void> {
+  if (provider === 'openai-codex') return
+  try {
+    await refreshPiChannelModelCatalog(provider, await getEffectiveProxyUrl(), false)
+  } catch {
+    // 自动补全失败沿用缓存或内置目录；主动刷新时再展示失败反馈。
+  }
+}
+
+function isGptModel(modelId: string): boolean {
+  return /^gpt[-_\s]?\d/i.test(modelId)
+}
+
+/** GPT 能力不从 Codex 或其他供应商的同名目录借用；别名不做模糊匹配。 */
+async function findGptCatalogModel(provider: ProviderType, modelId: string): Promise<PiCatalogModel | undefined> {
+  const api = normalizePiApi(provider)
+  if (api !== 'openai-completions' && api !== 'openai-responses') return undefined
+  return (await getCatalogModels('openai')).find((model) => model.id.toLowerCase() === modelId.toLowerCase()
+    && (model.api === 'openai-completions' || model.api === 'openai-responses'))
 }
 
 type PiImageInputCapability = 'supported' | 'unsupported' | 'unknown'
@@ -355,8 +389,6 @@ const GLOBAL_CATALOG_CAPABILITY_FALLBACK_PROVIDERS = new Set<ProviderType>([
   'qwen-token-plan-individual',
 ])
 
-let globalExactImageCapabilitiesPromise: Promise<Map<string, PiImageInputCapability>> | undefined
-
 async function buildGlobalExactImageCapabilities(): Promise<Map<string, PiImageInputCapability>> {
   const { getProviders } = await loadPiAiCompat()
   const declarations = new Map<string, Array<Exclude<PiImageInputCapability, 'unknown'>>>()
@@ -382,14 +414,16 @@ async function buildGlobalExactImageCapabilities(): Promise<Map<string, PiImageI
 }
 
 async function resolveGlobalExactImageCapability(modelId: string): Promise<PiImageInputCapability> {
-  globalExactImageCapabilitiesPromise ??= buildGlobalExactImageCapabilities()
-  return (await globalExactImageCapabilitiesPromise).get(modelId.trim().toLowerCase()) ?? 'unknown'
+  return (await buildGlobalExactImageCapabilities()).get(modelId.trim().toLowerCase()) ?? 'unknown'
 }
 
 async function findPiCatalogModel(provider: ProviderType, modelId: string): Promise<PiCatalogModel | undefined> {
+  await ensurePiChannelCatalog(provider)
   if (provider === 'openai-codex') {
     return findCatalogModelById(await getCodexCatalogModels(), modelId)
   }
+
+  if (isGptModel(modelId)) return findGptCatalogModel(provider, modelId)
 
   const preferredProviders = candidatePiProviders(provider)
   const { getProviders } = await loadPiAiCompat()
@@ -442,6 +476,8 @@ async function findProviderScopedCatalogModel(
   if (provider === 'openai-codex') {
     return findCatalogModelById(await getCodexCatalogModels(), modelId)
   }
+  await ensurePiChannelCatalog(provider)
+  if (isGptModel(modelId)) return findGptCatalogModel(provider, modelId)
   const providers = candidatePiProviders(provider)
   if (providers.length === 0) return undefined
   for (const candidate of providers) {
@@ -474,7 +510,7 @@ export async function resolvePiImageInputCapability(
   }
   const catalogModel = await findProviderScopedCatalogModel(provider, resolvedModelId)
   if (catalogModel) return catalogModel.input.includes('image') ? 'supported' : 'unsupported'
-  if (GLOBAL_CATALOG_CAPABILITY_FALLBACK_PROVIDERS.has(provider)) {
+  if (!isGptModel(resolvedModelId) && GLOBAL_CATALOG_CAPABILITY_FALLBACK_PROVIDERS.has(provider)) {
     const globalCapability = await resolveGlobalExactImageCapability(resolvedModelId)
     if (globalCapability !== 'unknown') return globalCapability
   }
@@ -501,7 +537,8 @@ function configuredReasoningCapability(
 ): ReasoningCapability | undefined {
   if (metadata.reasoning === false) return undefined
   const configuredLevels = metadata.reasoningLevels
-    ?? Object.keys(metadata.thinkingLevelMap ?? {}) as AgentThinkingLevel[]
+    ?? Object.keys(metadata.thinkingLevelMap ?? {}).filter((level) =>
+      metadata.thinkingLevelMap?.[level as AgentThinkingLevel] !== null) as AgentThinkingLevel[]
   const levels = VALID_THINKING_LEVELS.filter((level) => configuredLevels.includes(level))
   if (levels.length === 0 || levels.every((level) => level === 'off')) return undefined
   const defaultLevel = metadata.defaultReasoningLevel && levels.includes(metadata.defaultReasoningLevel)
@@ -523,21 +560,30 @@ export async function resolvePiReasoningCapability(
 ): Promise<ReasoningCapability | undefined> {
   const resolvedModelId = stripAgentSdkContextSuffix(modelId)
   if (configured?.providerMetadata?.reasoning === false) return undefined
-  if (hasReasoningMetadata(configured?.providerMetadata)) {
-    const providerCapability = configuredReasoningCapability(configured!.providerMetadata!, 'provider-metadata')
-    if (providerCapability) return providerCapability
-  }
-  const profile = resolveReasoningProfile({
-    modelId: resolvedModelId,
-    transport: provider === 'openai-codex'
-      ? 'openai-responses'
-      : toReasoningTransport(normalizePiApi(provider)),
-  })
-  if (profile) return resolveReasoningCapability({ profile })
-
   const catalogModel = resolvedModelId
     ? await findPiCatalogModel(provider, resolvedModelId)
     : undefined
+  if (hasReasoningMetadata(configured?.providerMetadata)) {
+    return configuredReasoningCapability({
+      reasoning: catalogModel?.reasoning,
+      thinkingLevelMap: catalogModel?.thinkingLevelMap,
+      ...configured!.providerMetadata,
+      // 显式档位集合优先；只声明 reasoning=true 时继续补全目录中的 max 等档位。
+      ...(configured?.providerMetadata?.reasoningLevels
+        ? { thinkingLevelMap: configured.providerMetadata.thinkingLevelMap }
+        : {}),
+    }, 'provider-metadata')
+  }
+  // 中转 GPT 仅接受精确目录或显式适配，不根据未知别名猜测思考档位。
+  const profile = provider !== 'openai-codex' && resolvedModelId && isGptModel(resolvedModelId)
+    ? undefined
+    : resolveReasoningProfile({
+      modelId: resolvedModelId,
+      transport: provider === 'openai-codex'
+        ? 'openai-responses'
+        : toReasoningTransport(normalizePiApi(provider)),
+    })
+  if (profile) return resolveReasoningCapability({ profile })
   if (catalogModel) {
     return resolveReasoningCapability({
       catalog: {
@@ -556,22 +602,31 @@ function positiveInteger(value: number | undefined): number | undefined {
   return Number.isSafeInteger(value) && value! > 0 ? value : undefined
 }
 
+function metadataThinkingLevelMap(metadata: ChannelModelCapabilities | undefined): PiCatalogModel['thinkingLevelMap'] {
+  return metadata?.thinkingLevelMap
+    ?? (metadata?.reasoningLevels ? Object.fromEntries(metadata.reasoningLevels.map((level) => [
+      level, level === 'off' ? null : level,
+    ])) : undefined)
+}
+
 async function resolvePiModelDefaults(input: PiAgentQueryOptions): Promise<PiModelDefaults> {
   const catalogModel = input.model ? await findPiCatalogModel(input.provider, input.model) : undefined
   const providerMetadata = input.channelModel?.providerMetadata
   const temporaryAdaptation = input.channelModel?.temporaryAdaptation
   const api = normalizePiApi(input.provider)
-  const providerSpecificCapabilities = compilePiReasoningCapabilities(api, input.model)
+  const providerSpecificCapabilities = input.model && isGptModel(input.model)
+    ? undefined
+    : compilePiReasoningCapabilities(api, input.model)
   const isVolcengineGlm52 = (input.provider === 'doubao' || input.provider === 'ark-coding-plan')
     && input.model?.toLowerCase() === 'glm-5.2'
   const inferredContextWindow = inferAgentSdkContextWindow(input.model, input.provider) ?? DEFAULT_CONTEXT_WINDOW
   const catalogCompat = input.provider === 'qwen-token-plan-individual'
     ? catalogModel?.compat
     : undefined
-  const configuredThinkingLevelMap = providerMetadata?.thinkingLevelMap
+  const configuredThinkingLevelMap = metadataThinkingLevelMap(providerMetadata)
     ?? providerSpecificCapabilities?.thinkingLevelMap
     ?? catalogModel?.thinkingLevelMap
-    ?? temporaryAdaptation?.thinkingLevelMap
+    ?? metadataThinkingLevelMap(temporaryAdaptation)
   const configuredReasoningEffort = (api === 'openai-completions' || api === 'openai-responses')
     && configuredThinkingLevelMap != null
   const providerContextWindow = positiveInteger(providerMetadata?.contextWindow)
@@ -721,8 +776,7 @@ function isCompleteCatalogModel(model: PiCatalogModelPatch): model is PiCatalogM
 }
 
 export async function getCodexCatalogModels(): Promise<PiCatalogModel[]> {
-  const { getModels } = await loadPiAiCompat()
-  return mergeCodexModels(getModels('openai-codex'))
+  return mergeCodexModels(await getCatalogModels('openai-codex'))
 }
 
 /**
@@ -806,7 +860,7 @@ export async function listCodexModels(options: ListCodexModelsOptions): Promise<
     const timeout = setTimeout(() => abortController.abort(), CODEX_MODEL_REFRESH_TIMEOUT_MS)
     try {
       const runtime = await sdk.ModelRuntime.create({
-        credentials: createCodexRuntimeCredentialStore(options.credentials),
+        credentials: catalogCredentials,
         modelsPath: join(options.agentDir, 'models.json'),
         modelsStorePath: join(options.agentDir, 'models-store.json'),
         allowModelNetwork: false,
@@ -828,7 +882,12 @@ export async function buildModel(sdk: PiSdk, input: PiAgentQueryOptions) {
   const resolvedApiKey = resolvePiApiKey(input.provider, input.apiKey)
   // pi runtime 统一剥离 `[1m]` 后缀：无论上游从哪条路径传入，注册与查找都用干净 ID。
   const resolvedModelId = stripAgentSdkContextSuffix(input.model)
-  const modelRuntime = await sdk.ModelRuntime.create({ allowModelNetwork: false })
+  const modelRuntime = await sdk.ModelRuntime.create({
+    credentials: catalogCredentials,
+    modelsPath: join(input.piAgentDir, 'models.json'),
+    modelsStorePath: join(input.piAgentDir, 'models-store.json'),
+    allowModelNetwork: false,
+  })
   const api = normalizePiApi(input.provider)
   const modelDefaults = await resolvePiModelDefaults({ ...input, model: resolvedModelId })
   const baseUrl = normalizePiBaseUrl(input.baseUrl, input.provider)

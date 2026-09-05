@@ -196,7 +196,7 @@ import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
 import { useOpenPreview } from '@/components/diff/preview-opener'
 import { getModelLogo } from '@/lib/model-logo'
 import type { AgentSendInput, AgentPendingFile, AgentThinkingLevel, AgentNextTurnAside, AgentQueueMessageKind, AgentQueueReplayMessageInput, AgentWorkflow, ComposerAttachmentKind, FileDialogLargeFile, FileDialogResult, ForkSessionTargetChoice, ModelOption, ModelPresentationPreset, ReasoningCapability, RewindSessionPreview, RewindUndoState, SDKMessage, SDKUserMessage, SessionTreeResult } from '@domi/shared'
-import { inferReasoningTransport, isCodexFastModeSupportedModel, MAX_ATTACHMENT_SIZE, normalizeReasoningCapabilityLevel, normalizeReasoningLevel, resolveReasoningCapability, resolveReasoningProfile } from '@domi/shared'
+import { inferReasoningTransport, isCodexFastModeSupportedModel, MAX_ATTACHMENT_SIZE, normalizeReasoningCapabilityLevel, resolveReasoningCapability, resolveReasoningProfile } from '@domi/shared'
 import { fileToBase64, formatFileNames, getFileParentPath } from '@/lib/file-utils'
 import { openDialogAfterDropdownMenu } from '@/lib/open-dialog-after-dropdown-menu'
 import { resolveAttachmentMenuTooltipOpen } from './attachment-menu-state'
@@ -985,10 +985,10 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         }
       })
     return () => { cancelled = true }
-  }, [agentChannelId, agentModelId, hasSessionMeta, reasoningCapabilityKey])
+  }, [agentChannelId, agentModelId, hasSessionMeta, reasoningCapabilityKey, globalChannels])
 
   const effectiveReasoningCapability = piReasoningCapability.key === reasoningCapabilityKey
-    ? piReasoningCapability.capability ?? resolveReasoningCapability({ profile: reasoningProfile })
+    ? piReasoningCapability.capability
     : resolveReasoningCapability({ profile: reasoningProfile })
   const isSessionThinkingAvailable = Boolean(effectiveReasoningCapability)
   const openAIThinkingLevels = effectiveReasoningCapability?.levels ?? OPENAI_STANDARD_THINKING_LEVELS
@@ -1001,9 +1001,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       || effectiveReasoningCapability.source === 'provider-metadata')
     ? effectiveReasoningCapability.defaultLevel
     : fallbackOpenAIThinkingLevel
-  const normalizedReasoningLevel = reasoningProfile
-    ? normalizeReasoningLevel(reasoningProfile, persistedReasoningLevel ?? fallbackOpenAIThinkingLevel)
-    : normalizeReasoningCapabilityLevel(effectiveReasoningCapability, persistedReasoningLevel ?? capabilityDefaultLevel)
+  const normalizedReasoningLevel = normalizeReasoningCapabilityLevel(
+    effectiveReasoningCapability, persistedReasoningLevel ?? capabilityDefaultLevel,
+  )
   const openAIThinkingLevel = normalizedReasoningLevel ?? (persistedReasoningLevel ?? fallbackOpenAIThinkingLevel)
 
   // 检查 Agent 渠道列表中是否存在可用的模型（渠道 enabled + 模型 enabled）

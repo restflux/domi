@@ -11,6 +11,7 @@ type ProviderPayload = Record<string, unknown>
 export interface OpenAIReasoningRequestSettings {
   profile?: ReasoningProfile
   thinkingLevel?: AgentThinkingLevel
+  thinkingLevelMap?: Partial<Record<AgentThinkingLevel, string | null>>
 }
 
 function isProviderPayload(payload: unknown): payload is ProviderPayload {
@@ -40,12 +41,21 @@ export function injectOpenAIReasoningLevel(
     transport: 'openai-responses',
   })
   const encoding = profile?.encodings['openai-responses']
-  if (encoding?.kind !== 'openai-reasoning-effort' || !settings.thinkingLevel) return payload
+  if (!settings.thinkingLevel) return payload
+  const catalogMapped = settings.thinkingLevelMap?.[settings.thinkingLevel]
+  if (settings.thinkingLevelMap && settings.thinkingLevel === 'off' && catalogMapped == null) return payload
+  if (!settings.thinkingLevelMap && encoding?.kind !== 'openai-reasoning-effort') return payload
 
-  const normalizedLevel = normalizeReasoningLevel(profile, settings.thinkingLevel)
-  if (!normalizedLevel) return payload
-  const effort = encoding.effortMap[normalizedLevel] ?? normalizedLevel
-  if (effort === null) return payload
+  const normalizedLevel = settings.thinkingLevelMap
+    ? settings.thinkingLevel
+    : normalizeReasoningLevel(profile, settings.thinkingLevel)
+  if (!normalizedLevel || catalogMapped === null) return payload
+  const effort = settings.thinkingLevelMap
+    ? catalogMapped ?? normalizedLevel
+    : encoding?.kind === 'openai-reasoning-effort'
+      ? encoding.effortMap[normalizedLevel] ?? normalizedLevel
+      : undefined
+  if (effort == null) return payload
 
   const existingReasoning = isReasoningPayload(payload.reasoning) ? payload.reasoning : {}
   // ChatGPT Codex OAuth does not accept reasoning.mode. Responses channels likewise

@@ -1,4 +1,9 @@
-import { describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test'
+import { getModels } from '@earendil-works/pi-ai/compat'
+import { catalogCredentials, PiRemoteModelCatalog, piRemoteModelCatalog } from './pi-remote-model-catalog'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { DEEPSEEK_PRESET_MODELS, type ChannelModel } from '@domi/shared'
 import {
   buildModel,
@@ -14,6 +19,17 @@ import {
 setDefaultTimeout(60_000)
 
 const sdkPromise = import('@earendil-works/pi-coding-agent')
+let catalogRead: ReturnType<typeof spyOn<typeof piRemoteModelCatalog, 'getModels'>>
+let catalogRefresh: ReturnType<typeof spyOn<typeof piRemoteModelCatalog, 'refresh'>>
+beforeEach(() => {
+  catalogRead = spyOn(piRemoteModelCatalog, 'getModels').mockImplementation(async (provider) =>
+    getModels(provider as Parameters<typeof getModels>[0]))
+  catalogRefresh = spyOn(piRemoteModelCatalog, 'refresh').mockResolvedValue(undefined)
+})
+afterEach(() => {
+  catalogRead.mockRestore()
+  catalogRefresh.mockRestore()
+})
 
 async function buildFinishReasonModel(finishReasonMode?: 'auto' | 'required' | 'not-supported') {
   const sdk = await sdkPromise
@@ -475,5 +491,128 @@ describe('Pi 模型上下文窗口目录优先级', () => {
 
     expect(model.contextWindow).toBe(272_000)
     expect(contextWindowSource).toBe('provider_catalog')
+  })
+})
+
+describe('中转 GPT 自动能力适配', () => {
+  function remoteGpt() {
+    const base = getModels('openai')[0]!
+    return {
+      ...base, id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-responses' as const,
+      provider: 'openai', contextWindow: 1_048_576, maxTokens: 131_072,
+      reasoning: true, input: ['text', 'image'] as ('text' | 'image')[],
+      thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: null, max: 'max' },
+    }
+  }
+
+  function publish() {
+    const model = remoteGpt()
+    catalogRead.mockImplementation(async (provider) => provider === 'openai' ? [model] : [])
+    return model
+  }
+
+  async function build(provider: 'custom' | 'openai-responses', channelModel?: ChannelModel) {
+    return buildModel(await sdkPromise, {
+      sessionId: 'remote-gpt', prompt: 'hi', apiKey: 'test-key', provider,
+      model: 'gpt-6-astra', baseUrl: 'https://router.example.com/v1', channelModel,
+      permissionMode: 'plan', systemPrompt: 'system', piAgentDir: '/tmp/pi-agent', piSessionDir: '/tmp/pi-session',
+      authorizeToolCall: async (_name, input) => ({ behavior: 'allow', updatedInput: input }),
+    })
+  }
+
+  test.each(['custom', 'openai-responses'] as const)('Given %s 中转存在精确 GPT ID When 自动适配 Then 上下文输出与思考档位一致且不改协议地址ID', async (provider) => {
+    const expected = publish()
+    expect(await resolvePiModelCatalogStatus(provider, 'gpt-6-astra')).toBe('catalog')
+    expect(await resolvePiReasoningCapability(provider, 'gpt-6-astra')).toMatchObject({
+      source: 'pi-catalog', levels: ['low', 'medium', 'high', 'max'],
+    })
+    const { model, contextWindowSource } = await build(provider)
+    expect(model.contextWindow).toBe(expected.contextWindow)
+    expect(model.maxTokens).toBe(expected.maxTokens)
+    expect(model.thinkingLevelMap).toEqual(expected.thinkingLevelMap)
+    expect(model.id).toBe('gpt-6-astra')
+    expect(model.baseUrl).toBe('https://router.example.com/v1')
+    expect(model.api).toBe(provider === 'custom' ? 'openai-completions' : 'openai-responses')
+    expect(contextWindowSource).toBe('provider_catalog')
+  })
+
+  test('Given Pi JSON 缓存含新模型 When 全新 runtime 离线加载 Then 能力查询与请求模型使用同一份参数', async () => {
+    const sdk = await sdkPromise
+    const agentDir = mkdtempSync(join(tmpdir(), 'domi-remote-catalog-'))
+    try {
+      const model = remoteGpt()
+      writeFileSync(join(agentDir, 'models-store.json'), JSON.stringify({
+        openai: { models: [model], checkedAt: Date.now(), lastModified: Date.now() + 86_400_000 },
+      }))
+      const cachedCatalog = new PiRemoteModelCatalog(() => sdk.ModelRuntime.create({
+        credentials: catalogCredentials,
+        modelsPath: join(agentDir, 'models.json'), modelsStorePath: join(agentDir, 'models-store.json'),
+        allowModelNetwork: false, refreshOnCreate: false,
+      }), async () => 'fixture')
+      catalogRead.mockImplementation((provider) => cachedCatalog.getModels(provider))
+      const restored = await cachedCatalog.getModels('openai')
+      expect(restored.find((item) => item.id === model.id)?.contextWindow).toBe(1_048_576)
+      const built = await build('openai-responses')
+      expect(built.model.thinkingLevelMap).toEqual(model.thinkingLevelMap)
+      expect(built.model.maxTokens).toBe(model.maxTokens)
+      expect(await resolvePiReasoningCapability('openai-responses', model.id)).toMatchObject({
+        levels: ['low', 'medium', 'high', 'max'],
+      })
+    } finally {
+      rmSync(agentDir, { recursive: true, force: true })
+    }
+  })
+
+  test('Given 中转提供限制 When 与远端目录及临时适配冲突 Then 中转元数据优先', async () => {
+    publish()
+    const configured: ChannelModel = {
+      id: 'gpt-6-astra', name: 'GPT-6', enabled: true,
+      providerMetadata: { contextWindow: 64_000, maxTokens: 8_000, reasoningLevels: ['low', 'high'], input: ['text'] },
+      temporaryAdaptation: { contextWindow: 32_000, maxTokens: 4_000, reasoningLevels: ['max'] },
+    }
+    expect(await resolvePiReasoningCapability('custom', configured.id, configured)).toMatchObject({
+      levels: ['low', 'high'], source: 'provider-metadata',
+    })
+    expect(await resolvePiImageInputCapability('custom', configured.id, configured)).toBe('unsupported')
+    const { model } = await build('custom', configured)
+    expect(model.contextWindow).toBe(64_000)
+    expect(model.maxTokens).toBe(8_000)
+    expect(model.thinkingLevelMap).toEqual({ low: 'low', high: 'high' })
+    expect(model.input).toEqual(['text'])
+  })
+
+  test('Given 中转只声明支持推理 When 目录包含 Max Then 补全目录档位而不使用默认旧档位', async () => {
+    publish()
+    expect(await resolvePiReasoningCapability('custom', 'gpt-6-astra', {
+      providerMetadata: { reasoning: true },
+    })).toMatchObject({ levels: ['low', 'medium', 'high', 'max'] })
+  })
+
+  test('Given 仅 Codex 有同名模型或中转使用未知别名 When 查询 Then 不借用订阅限制或模糊匹配', async () => {
+    const model = publish()
+    expect(await resolvePiModelCatalogStatus('custom', 'gpt6')).toBe('missing')
+    expect(await resolvePiModelCatalogStatus('custom', 'gpt-6-astra-fast')).toBe('missing')
+    expect(await resolvePiReasoningCapability('custom', 'gpt-5.5-fast')).toBeUndefined()
+    expect(await resolvePiModelCatalogStatus('anthropic-compatible', 'gpt-6-astra')).toBe('missing')
+    catalogRead.mockImplementation(async (provider) => provider === 'openai-codex'
+      ? [{ ...model, provider, api: 'openai-codex-responses', contextWindow: 272_000 }]
+      : [])
+    expect(await resolvePiModelCatalogStatus('custom', 'gpt-6-astra')).toBe('missing')
+    expect(await resolvePiModelCatalogStatus('openai-codex', 'gpt-6-astra')).toBe('catalog')
+  })
+
+  test('Given 刷新失败且模型未匹配 When 用户已有临时适配 Then 继续使用原有配置', async () => {
+    catalogRefresh.mockRejectedValue(new Error('offline'))
+    catalogRead.mockResolvedValue([])
+    const configured: ChannelModel = {
+      id: 'gpt-6-astra', name: 'GPT-6', enabled: true,
+      temporaryAdaptation: { contextWindow: 400_000, maxTokens: 32_000, reasoningLevels: ['high', 'max'] },
+    }
+    const { model } = await build('custom', configured)
+    expect(model.contextWindow).toBe(400_000)
+    expect(model.maxTokens).toBe(32_000)
+    expect(await resolvePiReasoningCapability('custom', configured.id, configured)).toMatchObject({
+      source: 'temporary-adaptation', levels: ['high', 'max'],
+    })
   })
 })

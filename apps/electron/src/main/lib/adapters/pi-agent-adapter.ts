@@ -2429,10 +2429,14 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         })
         : undefined
       const modelExtensionFactories = [
-        ...(openAIReasoningProfile
+        ...(model.reasoning && (input.provider === 'openai-codex' || input.provider === 'openai-responses')
+          && (openAIReasoningProfile || model.thinkingLevelMap)
           ? [createOpenAIReasoningRequestExtension({
               profile: openAIReasoningProfile,
-              thinkingLevel: input.openAIThinkingLevel,
+              thinkingLevel: input.openAIThinkingLevel ?? input.thinkingLevel,
+              thinkingLevelMap: input.provider === 'openai-codex' && openAIReasoningProfile
+                ? undefined
+                : model.thinkingLevelMap,
             })]
           : []),
         ...(deepSeekReasoningProfile?.encodings['anthropic-messages']?.kind === 'deepseek-output-effort'

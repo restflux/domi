@@ -38,7 +38,7 @@ import {
 } from '@domi/shared'
 import { refreshCodexOAuth } from './codex-oauth-service'
 import { parseCodexPlanQuotaResponse } from './codex-plan-quota'
-import { listCodexModels } from './adapters/pi-model-registry'
+import { listCodexModels, refreshPiChannelModelCatalog } from './adapters/pi-model-registry'
 import { getFetchFn } from './proxy-fetch'
 import { getEffectiveProxyUrl } from './proxy-settings-service'
 import {
@@ -1679,6 +1679,21 @@ export async function testChannelDirect(input: ChannelDirectTestInput): Promise<
  * 针对不同供应商使用不同的 API 端点和响应解析。
  */
 export async function fetchModels(input: FetchModelsInput): Promise<FetchModelsResult> {
+  const result = await fetchProviderModels(input)
+  if (!result.success || input.provider === 'openai-codex') return result
+  try {
+    await refreshPiChannelModelCatalog(
+      inferProviderFromBaseUrl(input.provider, input.baseUrl),
+      await getEffectiveProxyUrl(),
+    )
+  } catch {
+    // 能力补全失败不撤销供应商成功返回的模型，也不删除已有适配。
+    return { ...result, message: `${result.message}；模型能力目录未更新，继续使用已有配置` }
+  }
+  return result
+}
+
+async function fetchProviderModels(input: FetchModelsInput): Promise<FetchModelsResult> {
   const proxyUrl = await getEffectiveProxyUrl()
   const provider = inferProviderFromBaseUrl(input.provider, input.baseUrl)
 
