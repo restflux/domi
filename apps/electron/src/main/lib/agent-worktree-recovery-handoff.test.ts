@@ -175,6 +175,7 @@ describe('Durable Agent Session handoff', () => {
       isolatedSnapshotOid: 'delivered-commit',
       changedFiles: ['src/delivered.ts'],
       summary: '已交付历史会话',
+      sourceLocalAvailable: false,
     }
     const sourceBefore = structuredClone(source)
     const portableCalls: unknown[] = []
@@ -202,6 +203,16 @@ describe('Durable Agent Session handoff', () => {
     expect(source).toEqual(sourceBefore)
   })
 
+  test('原项目不可用时只能跨项目交接，不能在原项目创建新目标', async () => {
+    await expect(handoff.prepareAgentSessionHandoff({
+      originSessionId: 'origin',
+      expectedRevision: 12,
+      targetKind: 'isolated',
+      confirmedIgnoreDirtyLocal: false,
+    }, dependencies({ ...isolatedSnapshot, sourceLocalAvailable: false })))
+      .rejects.toMatchObject({ code: 'not_git_repository' })
+  })
+
   test('来源为 Isolated 时可以交接到其他项目的当前目录，来源绑定保持不变', async () => {
     const prepared = await handoff.prepareAgentSessionHandoff({
       originSessionId: 'origin',
@@ -209,7 +220,7 @@ describe('Durable Agent Session handoff', () => {
       targetKind: 'local',
       confirmedIgnoreDirtyLocal: false,
       targetWorkspaceId: 'target-workspace',
-    }, dependencies(isolatedSnapshot, {
+    }, dependencies({ ...isolatedSnapshot, sourceLocalAvailable: false }, {
       updateSession: (id, updates) => ({
         ...child('local'),
         id,

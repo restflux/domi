@@ -2484,11 +2484,86 @@ describe.concurrent('SessionCheckoutModule', () => {
 
     const registryPath = join(context.configDir, 'managed-checkouts.json')
     const registry = JSON.parse(readFileSync(registryPath, 'utf8'))
-    registry.managedCheckouts[lease.checkoutId].phase = 'finalized'
+    const deliveredRecord = registry.managedCheckouts[lease.checkoutId]
+    const proof = deliveredRecord.delivery.proof
+    const previousReview = deliveredRecord.previousReview
+    const fullReview = {
+      ...previousReview,
+      preparedAt: Date.now(),
+      detailsMarkdown: '## 已交付\n\n保留完整验收证据。',
+      validationStatus: 'passed',
+      validationSummary: '全部通过',
+      tests: [{ command: 'bun test delivered-handoff', status: 'passed', summary: 'passed' }],
+      isolatedFingerprint: 'persisted-fingerprint',
+      isolatedHeadOid: deliveredHead,
+    }
+
+    for (const stableState of [
+      {
+        phase: 'finalized',
+        delivery: {
+          state: 'finalized', review: fullReview, commitOid: deliveredHead, proof,
+          isolatedFingerprint: 'persisted-fingerprint', finalizedAt: Date.now(), cleanup: 'pending',
+        },
+      },
+      {
+        phase: 'finalized',
+        delivery: {
+          state: 'finalized', review: fullReview, commitOid: deliveredHead, proof,
+          isolatedFingerprint: 'persisted-fingerprint', finalizedAt: Date.now(), cleanup: 'blocked',
+          cleanupMessage: '目录正在使用',
+        },
+      },
+      {
+        phase: 'retained',
+        delivery: {
+          state: 'retained', review: fullReview, commitOid: deliveredHead, proof,
+          isolatedFingerprint: 'persisted-fingerprint', retention: 'retain_manual', retainedAt: Date.now(),
+          expiresAt: null, cleanup: 'scheduled',
+        },
+      },
+    ]) {
+      deliveredRecord.phase = stableState.phase
+      deliveredRecord.delivery = stableState.delivery
+      registry.revision += 1
+      writeFileSync(registryPath, JSON.stringify(registry, null, 2))
+      const stableCaptured = await context.restart().captureSessionHandoff('session-1', discarded.target.revision)
+      expect(stableCaptured).toMatchObject({
+        localHeadOid: deliveredHead,
+        changedFiles: ['tracked.txt'],
+        validationStatus: 'passed',
+        validationSummary: '全部通过',
+        tests: [{ command: 'bun test delivered-handoff', status: 'passed', summary: 'passed' }],
+        isolatedSnapshotOid: deliveredHead,
+      })
+    }
+
+    deliveredRecord.phase = 'discarded'
+    deliveredRecord.delivery = { state: 'delivered', iteration: 1, commitOid: deliveredHead, proof, deliveredAt: Date.now() }
+    deliveredRecord.localRoot = join(context.root, 'moved-or-deleted-project')
+    registry.revision += 1
+    writeFileSync(registryPath, JSON.stringify(registry, null, 2))
+    const unavailableLocalCaptured = await context.restart().captureSessionHandoff('session-1', discarded.target.revision)
+    expect(unavailableLocalCaptured).toMatchObject({
+      sourceLocalAvailable: false,
+      localHeadOid: deliveredHead,
+      localDirty: false,
+      changedFiles: ['tracked.txt'],
+      isolatedSnapshotOid: deliveredHead,
+    })
+
+    deliveredRecord.delivery = { state: 'delivered', iteration: 1, commitOid: null, deliveredAt: Date.now() }
     registry.revision += 1
     writeFileSync(registryPath, JSON.stringify(registry, null, 2))
     await expect(context.restart().captureSessionHandoff('session-1', discarded.target.revision))
-      .rejects.toMatchObject({ code: 'operation_not_allowed' })
+      .rejects.toMatchObject({ code: 'not_git_repository' })
+
+    deliveredRecord.phase = 'finalized'
+    deliveredRecord.delivery = { state: 'delivered', iteration: 1, commitOid: deliveredHead, proof, deliveredAt: Date.now() }
+    registry.revision += 1
+    writeFileSync(registryPath, JSON.stringify(registry, null, 2))
+    await expect(context.restart().captureSessionHandoff('session-1', discarded.target.revision))
+      .rejects.toMatchObject({ code: 'not_git_repository' })
   }, 45_000)
 
   test('Given a fork inherits a dirty Worktree When it captures handoff Then Domi snapshots the shared checkout without granting owner writes', async () => {

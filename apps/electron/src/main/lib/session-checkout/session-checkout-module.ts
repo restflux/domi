@@ -32,6 +32,7 @@ import type {
   MarkReadyForReviewInput,
   SessionCheckoutModule,
   SessionCheckoutReconcileSummary,
+  SessionHandoffSnapshot,
   SessionCheckoutReleaseIntent,
   VerifiedIsolatedBindProof,
 } from './index.ts'
@@ -39,6 +40,7 @@ import type {
   DirectoryIdentity,
   GitCheckoutSnapshot,
   ManagedCheckoutRecord,
+  ManagedDeliveryProof,
   ManagedPreviewReceipt,
   ManagedWorktreeCheckpointRecord,
   ManagedWorktreePreviousReviewRecord,
@@ -61,6 +63,76 @@ const RETENTION_3D_MS = 3 * RETENTION_24H_MS
 const CLEANUP_IDENTITY_CHANGED_MESSAGE = 'Worktree 的 Git 身份或路径已变化，未执行清理。'
 const CLEANUP_RESIDUE_MESSAGE = 'Git Worktree 已解除注册，仅剩物理目录残余；可重试清理环境。'
 const TRANSIENT_CLEANUP_RETRY_DELAYS_MS = [100, 300, 800]
+const GIT_OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i
+
+interface StableDeliveredHandoffEvidence {
+  commitOid: string | null
+  proof?: ManagedDeliveryProof
+  review: ManagedWorktreeReviewRecord | ManagedWorktreePreviousReviewRecord | undefined
+  iteration: number
+}
+
+function resolveStableDeliveredHandoffEvidence(
+  record: ManagedCheckoutRecord,
+): StableDeliveredHandoffEvidence | undefined {
+  const delivery = record.delivery
+  if (record.phase === 'finalized' && delivery.state === 'finalized') {
+    return { commitOid: delivery.commitOid, proof: delivery.proof, review: delivery.review, iteration: delivery.review.iteration }
+  }
+  if (record.phase === 'retained' && delivery.state === 'retained') {
+    return { commitOid: delivery.commitOid, proof: delivery.proof, review: delivery.review, iteration: delivery.review.iteration }
+  }
+  if (record.phase === 'discarded' && delivery.state === 'delivered') {
+    return { commitOid: delivery.commitOid, proof: delivery.proof, review: record.previousReview, iteration: delivery.iteration }
+  }
+  return undefined
+}
+
+function createStableDeliveredHandoffSnapshot(input: {
+  sessionId: string
+  record: ManagedCheckoutRecord
+  session: SessionCheckoutSessionRecord | undefined
+  local: GitCheckoutSnapshot | null
+  localDirty: boolean
+  evidence: StableDeliveredHandoffEvidence
+}): SessionHandoffSnapshot {
+  const { sessionId, record, session, local, localDirty, evidence } = input
+  const stableOid = [evidence.commitOid, evidence.proof?.localHeadAfter]
+    .find((oid): oid is string => typeof oid === 'string' && GIT_OID_PATTERN.test(oid))
+  if (!local && !stableOid) {
+    throw new SessionCheckoutError('not_git_repository', '原项目当前不可用，且没有完整的已交付版本记录')
+  }
+  const review = evidence.review
+  const fullReview = review && 'validationStatus' in review ? review : undefined
+  const localHeadOid = local?.headOid ?? stableOid!
+  const deliveredOid = stableOid ?? localHeadOid
+  const localBranch = local?.branch ?? evidence.proof?.localBranch ?? null
+  return {
+    originSessionId: sessionId,
+    originTargetOwnerSessionId: record.ownerSessionId,
+    originTargetKind: 'isolated',
+    originCheckoutId: record.checkoutId,
+    originRevision: record.revision,
+    projectId: record.projectId,
+    projectName: record.projectName,
+    localHeadOid,
+    localHeadRef: localBranch ? `refs/heads/${localBranch}` : null,
+    localDirty,
+    sourceLocalAvailable: local !== null,
+    changedFiles: [...(evidence.proof?.changedFiles ?? review?.changedFiles ?? [])],
+    summary: review?.summary ?? session?.title ?? '继续已交付的 Worktree 会话',
+    ...(fullReview?.detailsMarkdown ? { detailsMarkdown: fullReview.detailsMarkdown } : {}),
+    validationStatus: fullReview?.validationStatus ?? 'not_run',
+    ...(fullReview?.validationSummary ? { validationSummary: fullReview.validationSummary } : {}),
+    tests: fullReview?.tests.map((test) => ({ ...test })) ?? [],
+    iteration: evidence.iteration,
+    ...(review ? { reviewId: review.reviewId } : {}),
+    configuredBaseOid: record.baseOid,
+    effectiveBaseOid: record.applyBaseOid ?? record.baseOid,
+    isolatedHeadOid: deliveredOid,
+    isolatedSnapshotOid: deliveredOid,
+  }
+}
 
 /**
  * 单个 checkout 清理/维护操作的启动收敛超时。
@@ -2690,8 +2762,6 @@ export function createSessionCheckoutModule(
       }
     }
 
-    if (!local) throw new SessionCheckoutError('not_git_repository', 'Local Checkout 当前不可用')
-    const localStatus = await dependencies.git.status(local.root)
     const record = dependencies.registry.read().managedCheckouts[binding.target.checkoutId]
     if (!record) throw new SessionCheckoutError('checkout_missing', 'Isolated Checkout 记录不存在')
     if (
@@ -2704,34 +2774,22 @@ export function createSessionCheckoutModule(
     if (record.revision !== expectedRevision) {
       throw new SessionCheckoutError('stale_target', 'Session Target 已变化，请刷新后重试')
     }
-    const delivery = record.delivery
-    if (record.phase === 'discarded' && delivery.state === 'delivered') {
-      const proof = delivery.proof
-      const previousReview = record.previousReview
-      const deliveredOid = delivery.commitOid ?? proof?.localHeadAfter ?? local.headOid
-      return {
-        originSessionId: sessionId,
-        originTargetOwnerSessionId: record.ownerSessionId,
-        originTargetKind: 'isolated',
-        originCheckoutId: record.checkoutId,
-        originRevision: record.revision,
-        projectId: record.projectId,
-        projectName: record.projectName,
-        localHeadOid: local.headOid,
-        localHeadRef: local.branch ? `refs/heads/${local.branch}` : null,
-        localDirty: localStatus.dirty,
-        changedFiles: [...(proof?.changedFiles ?? previousReview?.changedFiles ?? [])],
-        summary: previousReview?.summary ?? session?.title ?? '继续已交付的 Worktree 会话',
-        validationStatus: 'not_run',
-        tests: [],
-        iteration: delivery.iteration,
-        ...(previousReview ? { reviewId: previousReview.reviewId } : {}),
-        configuredBaseOid: record.baseOid,
-        effectiveBaseOid: record.applyBaseOid ?? record.baseOid,
-        isolatedHeadOid: deliveredOid,
-        isolatedSnapshotOid: deliveredOid,
-      }
+    const stableDeliveredEvidence = resolveStableDeliveredHandoffEvidence(record)
+    if (stableDeliveredEvidence) {
+      const stableLocal = local && pathsEqual(local.commonDir, record.gitCommonDir) ? local : null
+      const localDirty = stableLocal ? (await dependencies.git.status(stableLocal.root)).dirty : false
+      return createStableDeliveredHandoffSnapshot({
+        sessionId,
+        record,
+        session,
+        local: stableLocal,
+        localDirty,
+        evidence: stableDeliveredEvidence,
+      })
     }
+    if (!local) throw new SessionCheckoutError('not_git_repository', 'Local Checkout 当前不可用')
+    const localStatus = await dependencies.git.status(local.root)
+    const delivery = record.delivery
     if (record.phase !== 'ready' && record.phase !== 'recovery_required') {
       throw new SessionCheckoutError('operation_not_allowed', '当前 Worktree 状态不能安全交接')
     }

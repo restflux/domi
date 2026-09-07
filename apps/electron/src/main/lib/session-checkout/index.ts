@@ -111,6 +111,8 @@ export interface SessionHandoffSnapshot {
   projectName: string
   localHeadOid: string
   localHeadRef: string | null
+  /** 来源项目目录在捕获时是否仍可访问；false 只允许 portable 跨项目交接。 */
+  sourceLocalAvailable?: boolean
   localDirty: boolean
   changedFiles: string[]
   summary: string

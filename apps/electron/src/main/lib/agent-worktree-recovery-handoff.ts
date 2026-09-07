@@ -794,6 +794,9 @@ export async function prepareAgentSessionHandoff(
       dependencies,
     })
   }
+  if (snapshot.sourceLocalAvailable === false) {
+    throw new SessionCheckoutError('not_git_repository', '原项目当前不可用，请选择其他可用项目继续')
+  }
   if (snapshot.localDirty && input.targetKind === 'isolated' && !input.confirmedIgnoreDirtyLocal) {
     throw new SessionCheckoutError('dirty_confirmation_required', 'Local 存在未提交状态；需要明确确认新 Worktree 不复制这些修改')
   }
