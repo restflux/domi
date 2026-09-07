@@ -166,6 +166,42 @@ describe('Durable Agent Session handoff', () => {
     expect(source).toMatchObject({ workspaceId: 'workspace' })
   })
 
+  test('已交付并清理的 Isolated 来源可以在其他项目新建 Worktree，且不访问来源 Worktree', async () => {
+    const deliveredSnapshot: SessionHandoffSnapshot = {
+      ...isolatedSnapshot,
+      originRevision: 14,
+      localHeadOid: 'delivered-local-head',
+      isolatedHeadOid: 'delivered-commit',
+      isolatedSnapshotOid: 'delivered-commit',
+      changedFiles: ['src/delivered.ts'],
+      summary: '已交付历史会话',
+    }
+    const sourceBefore = structuredClone(source)
+    const portableCalls: unknown[] = []
+
+    const prepared = await handoff.prepareAgentSessionHandoff({
+      originSessionId: 'origin',
+      expectedRevision: 14,
+      targetKind: 'isolated',
+      confirmedIgnoreDirtyLocal: false,
+      targetWorkspaceId: 'target-workspace',
+    }, dependencies(deliveredSnapshot, {
+      createPortableSession: (origin, targetWorkspaceId) => {
+        portableCalls.push({ origin, targetWorkspaceId })
+        return { ...child('local'), id: 'portable-child', workspaceId: targetWorkspaceId, sessionTarget: { kind: 'unselected' } }
+      },
+    }))
+
+    expect(portableCalls).toHaveLength(1)
+    expect(prepared.child).toMatchObject({
+      id: 'portable-child',
+      workspaceId: 'target-workspace',
+      sessionTarget: { kind: 'isolated' },
+      handoffMode: 'portable',
+    })
+    expect(source).toEqual(sourceBefore)
+  })
+
   test('来源为 Isolated 时可以交接到其他项目的当前目录，来源绑定保持不变', async () => {
     const prepared = await handoff.prepareAgentSessionHandoff({
       originSessionId: 'origin',

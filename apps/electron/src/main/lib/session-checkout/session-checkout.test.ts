@@ -2442,6 +2442,55 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(readFileSync(join(lease.cwd, 'tracked.txt'), 'utf8')).toBe('normal handoff\n')
   }, 45_000)
 
+  test('Given an accepted Worktree was delivered and cleaned When session handoff is captured Then Domi uses persisted delivery evidence without reopening the old Worktree', async () => {
+    const context = createContext()
+    await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'delivered handoff\n')
+    const ready = await context.module.markReadyForReview('session-1', {
+      summary: '已交付会话跨项目交接',
+      validationStatus: 'passed',
+      tests: [{ command: 'bun test delivered-handoff', status: 'passed', summary: 'passed' }],
+      suggestedCommitMessage: 'fix: delivered handoff',
+    })
+    const preview = await context.module.operate({
+      action: 'preview', sessionId: 'session-1', expectedRevision: ready.revision,
+    })
+    if (preview.status !== 'previewed') throw new Error(`预期 previewed，实际为 ${preview.status}`)
+    git(context.projectRoot, 'add', 'tracked.txt')
+    git(context.projectRoot, 'commit', '-m', 'fix: accept delivered handoff')
+    const deliveredHead = git(context.projectRoot, 'rev-parse', 'HEAD')
+    const discarded = await context.module.operate({
+      action: 'discard', sessionId: 'session-1', expectedRevision: preview.target.revision, confirmDirty: true,
+    })
+    if (discarded.status !== 'discarded') throw new Error(`预期 discarded，实际为 ${discarded.status}`)
+    expect(existsSync(lease.cwd)).toBe(false)
+
+    const captured = await context.restart().captureSessionHandoff('session-1', discarded.target.revision)
+
+    expect(captured).toMatchObject({
+      originSessionId: 'session-1',
+      originTargetKind: 'isolated',
+      originCheckoutId: lease.checkoutId,
+      originRevision: discarded.target.revision,
+      localHeadOid: deliveredHead,
+      changedFiles: ['tracked.txt'],
+      summary: '已交付会话跨项目交接',
+      iteration: 1,
+      isolatedHeadOid: deliveredHead,
+      isolatedSnapshotOid: deliveredHead,
+    })
+    expect(existsSync(lease.cwd)).toBe(false)
+
+    const registryPath = join(context.configDir, 'managed-checkouts.json')
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8'))
+    registry.managedCheckouts[lease.checkoutId].phase = 'finalized'
+    registry.revision += 1
+    writeFileSync(registryPath, JSON.stringify(registry, null, 2))
+    await expect(context.restart().captureSessionHandoff('session-1', discarded.target.revision))
+      .rejects.toMatchObject({ code: 'operation_not_allowed' })
+  }, 45_000)
+
   test('Given a fork inherits a dirty Worktree When it captures handoff Then Domi snapshots the shared checkout without granting owner writes', async () => {
     const context = createContext()
     await context.module.bind('session-1', { kind: 'isolated' })

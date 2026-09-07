@@ -2704,10 +2704,37 @@ export function createSessionCheckoutModule(
     if (record.revision !== expectedRevision) {
       throw new SessionCheckoutError('stale_target', 'Session Target 已变化，请刷新后重试')
     }
+    const delivery = record.delivery
+    if (record.phase === 'discarded' && delivery.state === 'delivered') {
+      const proof = delivery.proof
+      const previousReview = record.previousReview
+      const deliveredOid = delivery.commitOid ?? proof?.localHeadAfter ?? local.headOid
+      return {
+        originSessionId: sessionId,
+        originTargetOwnerSessionId: record.ownerSessionId,
+        originTargetKind: 'isolated',
+        originCheckoutId: record.checkoutId,
+        originRevision: record.revision,
+        projectId: record.projectId,
+        projectName: record.projectName,
+        localHeadOid: local.headOid,
+        localHeadRef: local.branch ? `refs/heads/${local.branch}` : null,
+        localDirty: localStatus.dirty,
+        changedFiles: [...(proof?.changedFiles ?? previousReview?.changedFiles ?? [])],
+        summary: previousReview?.summary ?? session?.title ?? '继续已交付的 Worktree 会话',
+        validationStatus: 'not_run',
+        tests: [],
+        iteration: delivery.iteration,
+        ...(previousReview ? { reviewId: previousReview.reviewId } : {}),
+        configuredBaseOid: record.baseOid,
+        effectiveBaseOid: record.applyBaseOid ?? record.baseOid,
+        isolatedHeadOid: deliveredOid,
+        isolatedSnapshotOid: deliveredOid,
+      }
+    }
     if (record.phase !== 'ready' && record.phase !== 'recovery_required') {
       throw new SessionCheckoutError('operation_not_allowed', '当前 Worktree 状态不能安全交接')
     }
-    const delivery = record.delivery
     const review = delivery.state === 'ready_for_review'
       || delivery.state === 'preview_active'
       || delivery.state === 'preview_detached'
