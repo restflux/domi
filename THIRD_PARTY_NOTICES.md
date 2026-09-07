@@ -15,6 +15,17 @@ This list is a distribution notice, not a replacement for the complete license t
 
 Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 
+## Bundled command-output optimizer
+
+### RTK (Rust Token Killer)
+
+- Source and release: https://github.com/rtk-ai/rtk/releases/tag/v0.48.0 (commit `fde0a8f185945556f51718de0f4c430bb62b3df6`).
+- Copyright 2024 rtk-ai and rtk-ai Labs.
+- License: Apache-2.0; upstream license text is included at `third-party-licenses/rtk-Apache-2.0.txt` and shipped with Domi.
+- Domi distributes the official platform-specific RTK 0.48.0 executable as a separate component in `resources/rtk/`, invoking its `pipe --filter` CLI on existing command output. No RTK hooks, user configuration templates or Craft implementation are copied.
+- `apps/electron/rtk-manifest.json` pins the official release archive checksums and extracted executable SHA-256 values. Build preparation validates both before bundling, and runtime verifies the original executable digest. Windows packaging preserves the official unsigned RTK executable after the resource-signing transformer; Domi's own application/installer signing is unchanged. RTK bundling currently supports Windows/Linux x64 only. Source is available at the release link above.
+- The optimization feature is off by default. RTK telemetry is disabled in Domi's subprocess environment; Domi does not install global hooks or use a separately installed system RTK.
+
 ## Patched runtime dependencies
 
 ### Pi Agent Runtime

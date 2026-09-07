@@ -173,6 +173,7 @@ function defaultSettings(): AppSettings {
     windowsShellPreference: 'auto',
     agentThinking: { type: 'adaptive' },
     agentContextCompactorMode: 'off',
+    agentRtkEnabled: false,
     gitAttributionEnabled: false,
   }
 }
@@ -194,6 +195,7 @@ function normalizeSettings(data: PersistedSettings): {
       themeMode: data.themeMode || DEFAULT_THEME_MODE,
       interfaceVariant: data.interfaceVariant || DEFAULT_INTERFACE_VARIANT,
       workSidebarPreferences: normalizeWorkSidebarPreferences(data.workSidebarPreferences),
+      agentRtkEnabled: data.agentRtkEnabled === true,
       onboardingCompleted: data.onboardingCompleted ?? false,
       environmentCheckSkipped: data.environmentCheckSkipped ?? false,
       notificationsEnabled: data.notificationsEnabled ?? true,
@@ -261,6 +263,7 @@ export function createSettingsService(dependencies: SettingsServiceDependencies)
     const updated: AppSettings = {
       ...current,
       ...updates,
+      agentRtkEnabled: (updates.agentRtkEnabled ?? current.agentRtkEnabled) === true,
       ...(updates.visionRelay ? { visionRelay: resolveVisionRelayUpdate(current.visionRelay, updates.visionRelay) } : {}),
       ...(updates.workSidebarPreferences
         ? { workSidebarPreferences: normalizeWorkSidebarPreferences(updates.workSidebarPreferences) }

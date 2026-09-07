@@ -55,6 +55,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '../ui/button'
 import type { NotificationSoundId, NotificationSoundType, NotificationSoundSettings } from '@/types/settings'
 import { ContextCompactorSettings } from './ContextCompactorSettings'
+import { RtkSettings } from './RtkSettings'
 
 /** emoji-mart 选择回调的 emoji 对象类型 */
 interface EmojiMartEmoji {
@@ -417,6 +418,7 @@ export function GeneralSettings(): React.ReactElement {
       </SettingsSection>
 
       <ContextCompactorSettings />
+      <RtkSettings />
     </div>
   )
 }

@@ -52,6 +52,8 @@ jobs:
           scripts/verify-release-version.test.ts
           scripts/release-workflow.test.ts
           apps/electron/scripts/dist-win.test.ts
+          apps/electron/scripts/prepare-rtk.test.ts
+          apps/electron/src/main/lib/rtk/rtk-bundled.test.ts
 
       - name: 类型检查
         run: bun run typecheck
@@ -108,6 +110,10 @@ jobs:
             $env:CSC_KEY_PASSWORD = $env:WIN_CSC_KEY_PASSWORD
           }
           bun run dist:win:release
+
+      - name: 校验内置 RTK 与过滤链路
+        working-directory: apps/electron
+        run: bun run scripts/verify-rtk.ts --resources out/win-unpacked/resources
 
       - name: Windows 启动 smoke
         shell: pwsh
@@ -196,6 +202,10 @@ jobs:
           GITHUB_TOKEN: ''
           GH_TOKEN: ''
         run: bun run dist:linux -- --publish never
+
+      - name: 校验内置 RTK 与过滤链路
+        working-directory: apps/electron
+        run: bun run scripts/verify-rtk.ts --resources out/linux-unpacked/resources
 
       - name: 校验打包后的 Pi runtime
         working-directory: apps/electron

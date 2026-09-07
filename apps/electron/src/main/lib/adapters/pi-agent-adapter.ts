@@ -152,6 +152,11 @@ import {
 } from '../audit/pi-request-envelope.ts'
 import { recordPiAgentAuditEvent } from './pi-agent-audit.ts'
 
+import { createRtkBashToolDefinition } from './pi-rtk-output.ts'
+import { createRtkOriginalStore } from '../rtk/rtk-original-store.ts'
+import { rtkService } from '../rtk/rtk-service.ts'
+import { getSettings } from '../settings-service.ts'
+
 type PiSdk = typeof import('@earendil-works/pi-coding-agent')
 type BashOperations = import('@earendil-works/pi-coding-agent').BashOperations
 type BashToolOptions = import('@earendil-works/pi-coding-agent').BashToolOptions
@@ -271,6 +276,8 @@ export interface PiAgentQueryOptions extends AgentQueryInput {
     input: Record<string, unknown>,
     options: CanUseToolOptions,
   ) => Promise<PermissionResult>
+  /** 宿主会话工作台；RTK 原始输出只写此目录，不写 checkout。 */
+  rtkSessionDirectory?: string
   /** Pi session 级最终门禁，覆盖 builtin、产品、MCP 与 Trusted Extension 工具。 */
   authorizeToolCall: (
     toolName: string,
@@ -1828,6 +1835,7 @@ export function createDomiBashToolOptions(
   getWorkflow?: () => AgentWorkflow,
   onSuccessfulFrozenBunInstall?: SuccessfulFrozenBunInstallCallback,
   createLocalOperations?: CreateLocalBashOperations,
+  onExit?: (code: number | null) => void,
 ): BashToolOptions {
   const spawnHook: NonNullable<BashToolOptions['spawnHook']> = ({ command, cwd, env }) => {
     if (runtimeEnv?.shellKind === 'git-bash' && hasGitBashCmdNullDeviceRedirection(command)) {
@@ -1866,8 +1874,16 @@ export function createDomiBashToolOptions(
     }
   }
 
+  const observeExit = (operations: BashOperations): BashOperations => onExit ? {
+    async exec(command, cwd, options) {
+      const result = await operations.exec(command, cwd, options)
+      onExit(result.exitCode)
+      return result
+    },
+  } : operations
+
   if (runtimeEnv?.shellKind === 'wsl') {
-    const operations = createWslBashOperations(runtimeEnv)
+    const operations = observeExit(createWslBashOperations(runtimeEnv))
     return {
       operations: onSuccessfulFrozenBunInstall
         ? wrapBashOperationsForDependencySnapshot(operations, onSuccessfulFrozenBunInstall)
@@ -1876,12 +1892,14 @@ export function createDomiBashToolOptions(
     }
   }
 
-  const localOperations = onSuccessfulFrozenBunInstall
+  const localOperations = onSuccessfulFrozenBunInstall || onExit
     ? createLocalOperations?.({ ...(runtimeEnv?.shellPath && { shellPath: runtimeEnv.shellPath }) })
     : undefined
   return {
     ...(localOperations
-      ? { operations: wrapBashOperationsForDependencySnapshot(localOperations, onSuccessfulFrozenBunInstall!) }
+      ? { operations: onSuccessfulFrozenBunInstall
+        ? wrapBashOperationsForDependencySnapshot(observeExit(localOperations), onSuccessfulFrozenBunInstall)
+        : observeExit(localOperations) }
       : runtimeEnv?.shellPath
         ? { shellPath: runtimeEnv.shellPath }
         : {}),
@@ -1945,15 +1963,29 @@ function buildBuiltinToolDefinitions(
   getWorkflow?: () => AgentWorkflow,
   onSuccessfulFrozenBunInstall?: SuccessfulFrozenBunInstallCallback,
   fileCheckpoint?: PiFileCheckpointCallbacks,
+  rtkSessionDirectory?: string,
 ): ToolDefinition[] {
+  const canOptimize = (): boolean => getWorkflow?.() === 'direct' && getSettings().agentRtkEnabled === true
+  const saveOriginal = rtkSessionDirectory ? createRtkOriginalStore(rtkSessionDirectory) : undefined
+  const createBash = (onExit?: (code: number | null) => void) => sdk.createBashToolDefinition(cwd, createDomiBashToolOptions(
+    runtimeEnv, getWorkflow, onSuccessfulFrozenBunInstall, sdk.createLocalBashOperations, onExit,
+  )) as unknown as ToolDefinition
   const definitions = [
     sdk.createReadToolDefinition(cwd),
-    sdk.createBashToolDefinition(cwd, createDomiBashToolOptions(
-      runtimeEnv,
-      getWorkflow,
-      onSuccessfulFrozenBunInstall,
-      sdk.createLocalBashOperations,
-    )),
+    rtkSessionDirectory ? createRtkBashToolDefinition(createBash, {
+      isEnabled: () => getSettings().agentRtkEnabled === true,
+      getWorkflow: () => getWorkflow?.(),
+      supportedShell: runtimeEnv?.shellKind !== 'wsl',
+      dependencies: {
+        isActive: canOptimize,
+        filter: (name, text, signal) => rtkService.filter(name, text, signal, canOptimize),
+        saveOriginal: text => {
+          if (!canOptimize() || !saveOriginal) throw new Error('RTK 已停用')
+          return saveOriginal(text)
+        },
+        record: rtkService.record,
+      },
+    }) : createBash(),
     sdk.createEditToolDefinition(cwd),
     sdk.createWriteToolDefinition(cwd),
     sdk.createGrepToolDefinition(cwd),
@@ -2362,6 +2394,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         input.getWorkflow,
         input.onSuccessfulFrozenBunInstall,
         input.fileCheckpoint,
+        input.rtkSessionDirectory,
       )
       const productTools = buildDomiProductToolDefinitions(sdk, input, productToolRuntimeState)
       const adapterReadOnlyToolDefinitions = new Map<string, ToolDefinition>(

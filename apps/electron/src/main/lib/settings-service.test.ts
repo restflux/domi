@@ -20,6 +20,23 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+describe('RTK 设置默认与规范化', () => {
+  test('Given 旧配置或非布尔值 When 读取 Then 默认关闭；仅显式 true 开启', () => {
+    for (const value of [undefined, 'true', 1, false, true]) {
+      writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark', agentRtkEnabled: value }), 'utf-8')
+      expect(getSettings().agentRtkEnabled).toBe(value === true)
+    }
+  })
+  test('Given 开关保存 When 重读 Then 保留设置且无关更新不会复位', () => {
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark' }), 'utf-8')
+    atomicWrite = (path, data) => writeFileSync(path, JSON.stringify(data), 'utf-8')
+    updateSettings({ agentRtkEnabled: true })
+    updateSettings({ themeMode: 'light' })
+    expect(getSettings().agentRtkEnabled).toBe(true)
+    expect(updateSettings({ agentRtkEnabled: false }).agentRtkEnabled).toBe(false)
+  })
+})
+
 describe('Settings Pi-only 字段迁移', () => {
   test('Given 旧字段写回失败 When 读取设置 Then 保留已解析的用户配置而非回退默认值', () => {
     writeFileSync(settingsPath, JSON.stringify({

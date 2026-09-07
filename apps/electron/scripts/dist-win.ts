@@ -199,7 +199,13 @@ export function computeSourceFingerprint(context: DistWinContext, asarMode = tru
     }
   }
 
-  for (const configFile of ['package.json', 'electron-builder.yml', 'vite.config.ts']) {
+  // RTK 位于 ASAR 外，不能因 dist 未变化而复用含旧版/损坏组件的 unpacked。
+  const rtkDir = join(context.appDir, 'vendor', 'rtk', 'win-x64')
+  if (existsSync(rtkDir)) {
+    for (const file of walkFiles(rtkDir)) hash.update(readFileSync(file))
+  }
+
+  for (const configFile of ['package.json', 'electron-builder.yml', 'vite.config.ts', 'rtk-manifest.json']) {
     const configPath = join(context.appDir, configFile)
     if (existsSync(configPath)) {
       hash.update(`${configFile}:`)

@@ -8,6 +8,8 @@ import { ipcMain, nativeTheme, shell, dialog, BrowserWindow, app, clipboard, nat
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { existsSync, realpathSync, rmSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { RTK_IPC_CHANNELS } from '@domi/shared'
+import { rtkService } from './lib/rtk/rtk-service.ts'
 import { VisionRelayDirectoryGrantRegistry } from './lib/vision-relay-directory-grants'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -2005,6 +2007,8 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
   )
 
   // ===== 应用设置相关 =====
+
+  ipcMain.handle(RTK_IPC_CHANNELS.STATUS, () => rtkService.inspect())
 
   // 获取应用设置
   ipcMain.handle(

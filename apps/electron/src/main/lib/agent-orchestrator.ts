@@ -2229,6 +2229,7 @@ export class AgentOrchestrator {
         resumeSessionId: existingSdkSessionId,
         piAgentDir: getSdkConfigDir(),
         piSessionDir: join(getSdkConfigDir(), 'sessions'),
+        ...(workspaceSlug ? { rtkSessionDirectory: getAgentSessionWorkspacePath(workspaceSlug, sessionId) } : {}),
         ...(allAdditionalDirectories.length > 0 && { additionalDirectories: allAdditionalDirectories }),
         ...(workspaceSlug ? { additionalSkillPaths: getEffectivePiSkillPaths(workspaceSlug) } : {}),
         ...(skillTriggerRecorder ? {

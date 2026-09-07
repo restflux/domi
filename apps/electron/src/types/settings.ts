@@ -270,6 +270,8 @@ export const DEFAULT_WORK_SIDEBAR_PREFERENCES: WorkSidebarPreferences = {
 
 /** 应用设置 */
 export interface AppSettings {
+  /** 可选 RTK 命令输出优化，默认关闭；仅执行 Workflow 下生效。 */
+  agentRtkEnabled?: boolean
   /** 主题模式 */
   themeMode: ThemeMode
   /** 特殊风格主题 */

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createDistWinPlan, parseDistWinArgs, preservePreviousFastArtifacts } from './dist-win'
+import { computeSourceFingerprint, createDistWinPlan, parseDistWinArgs, preservePreviousFastArtifacts } from './dist-win'
 
 const tempRoots: string[] = []
 
@@ -23,6 +23,17 @@ const context = {
 const fastOptions = { mode: 'fast' as const, dryRun: false, full: false, parallel: true, noAsar: false }
 const unsignedOptions = { mode: 'unsigned' as const, dryRun: false, full: false, parallel: true, noAsar: false }
 const releaseOptions = { mode: 'release' as const, dryRun: false, full: false, parallel: true, noAsar: false }
+
+test('Given RTK 外部资源变更 When 计算快包指纹 Then 不能复用旧 unpacked', () => {
+  const appDir = mkdtempSync(join(tmpdir(), 'domi-rtk-fingerprint-'))
+  tempRoots.push(appDir)
+  const dir = join(appDir, 'vendor', 'rtk', 'win-x64')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'rtk.exe'), 'old')
+  const before = computeSourceFingerprint({ ...context, appDir })
+  writeFileSync(join(dir, 'rtk.exe'), 'new')
+  expect(computeSourceFingerprint({ ...context, appDir })).not.toBe(before)
+})
 
 describe('parseDistWinArgs', () => {
   test('defaults to the safer release channel', () => {

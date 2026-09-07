@@ -404,6 +404,7 @@ React UI 更新与 JSONL 持久化
 - `agent-orchestrator.ts`：会话编排、渠道和凭据、环境、并发、重试及事件持久化；巨型高冲突文件只组装 run context 和 wiring。
 - `pi-execution-controller.ts` / `execution-policy/`：Workflow + Execution Policy 组合、Workspace Boundary、Local Baseline、Shell/Git/Process Network 分类和单次审批。
 - `adapters/pi-final-tool-guard.ts`：Pi built-in、产品工具、MCP 与 Trusted Extension 的 session-level 最终授权 seam。
+- `rtk/` / `adapters/pi-rtk-output.ts`：默认关闭的 RTK 输出后处理；仅执行 Workflow 下对已确认成功且未截断的有限 Bash 文本运行固定 `pipe --filter`，原命令、权限与退出码不变。内置 RTK 0.48.0（rtk-manifest.json 固定官方归档/二进制 SHA-256，prepare:rtk 与 beforePack 按目标平台准备）；研究/Plan、WSL、失败/复杂命令和终端不优化。不依赖系统 PATH、不在用户运行时下载、不重写命令、不继承用户 filter/遥测配置，原文写会话工作台 `rtk-output/`（最多 256 份，不自动删除引用），统计仅本次进程估算。回归：`bun test ./apps/electron/src/main/lib/rtk/ ./apps/electron/src/main/lib/adapters/pi-rtk-output.test.ts`；构建资源准备后用 `DOMI_RTK_SMOKE=1 bun test ./apps/electron/src/main/lib/rtk/rtk-real.test.ts` 显式 smoke。
 - `adapters/pi-extension-trust.ts` / `pi-extension-resource-loader.ts`：按项目 canonical path + SHA-256 授权，在模块求值前 fail closed。
 - `managed-web-access/` / `audit/`：公开 Web 目标、secret、redirect 策略与脱敏 JSONL 审计。
 - `adapters/pi-agent-adapter.ts`：唯一 Runtime adapter，桥接 Domi 渠道、Skills、MCP、工具和流式/审计事件。

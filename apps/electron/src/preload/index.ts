@@ -6,6 +6,7 @@
  */
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { RTK_IPC_CHANNELS, type RtkStatus } from '@domi/shared'
 import {
   AGENT_IPC_CHANNELS,
   AGENT_ISLAND_IPC_CHANNELS,
@@ -549,6 +550,7 @@ export interface ElectronAPI {
 
   /** 获取应用设置 */
   getSettings: () => Promise<AppSettings>
+  getRtkStatus: () => Promise<RtkStatus>
 
   /** 更新应用设置 */
   updateSettings: (updates: Partial<AppSettings>) => Promise<AppSettings>
@@ -1894,6 +1896,7 @@ const electronAPI: ElectronAPI = {
   },
 
   // 应用设置
+  getRtkStatus: () => ipcRenderer.invoke(RTK_IPC_CHANNELS.STATUS),
   getSettings: () => {
     return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.GET)
   },
