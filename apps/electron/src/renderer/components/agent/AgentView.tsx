@@ -1013,7 +1013,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     [globalChannels],
   )
   const deliveryState = sessionTargetState.snapshot?.delivery?.state
-  const forcedReadOnlyReason = deliveryState === 'preview_active'
+  const targetProtectionReason = deliveryState === 'preview_active'
     ? 'preview_active' as const
     : deliveryState === 'retained'
       ? 'retained' as const
@@ -4258,7 +4258,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     },
     {
       key: 'execution-controls',
-      node: <ExecutionControls sessionId={sessionId} forcedReadOnlyReason={forcedReadOnlyReason} />,
+      node: <ExecutionControls sessionId={sessionId} targetProtectionReason={targetProtectionReason} />,
     },
     { key: 'speech', node: <SpeechButton className={inputToolbarButtonClass} /> },
     {
@@ -4306,7 +4306,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     streaming,
     handleAttachContent,
     attachmentMenuOpen,
-    forcedReadOnlyReason,
+    targetProtectionReason,
   ])
 
   const stopControl = (

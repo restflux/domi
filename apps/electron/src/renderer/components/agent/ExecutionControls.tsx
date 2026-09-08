@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
-import { ChevronDown, LockKeyhole, PlugZap, Telescope, Upload, X, Zap } from 'lucide-react'
+import { ChevronDown, PlugZap, Telescope, Upload, X, Zap } from 'lucide-react'
 import type { AgentExecutionControlsUpdate, AgentWorkflow, NormalizedAgentExecutionSettings } from '@domi/shared'
 import { cn } from '@/lib/utils.ts'
 import { Button } from '@/components/ui/button'
@@ -20,8 +20,8 @@ import { AGENT_WORKFLOW_DISPLAY_OPTIONS, getAgentWorkflowRuntimeDisplay } from '
 
 interface ExecutionControlsProps {
   sessionId: string
-  /** 宿主 Session Target 覆盖持久工作方式时，展示当前真正生效的只读状态。 */
-  forcedReadOnlyReason?: 'delivered' | 'retained' | 'preview_active'
+  /** 项目保护只影响修改资格，不覆盖工作方式。 */
+  targetProtectionReason?: 'delivered' | 'retained' | 'preview_active'
 }
 
 type ModeIcon = React.ComponentType<{ className?: string }>
@@ -31,7 +31,7 @@ const MODE_ICONS: Record<'read-only' | 'direct', ModeIcon> = {
   direct: Zap,
 }
 
-export function ExecutionControls({ sessionId, forcedReadOnlyReason }: ExecutionControlsProps): React.ReactElement {
+export function ExecutionControls({ sessionId, targetProtectionReason }: ExecutionControlsProps): React.ReactElement {
   const controls = useAtomValue(agentSessionExecutionControlsAtomFamily(sessionId))
   const temporaryExecution = useAtomValue(agentSessionTemporaryExecutionAtomFamily(sessionId))
   const grants = useAtomValue(agentSessionCapabilityGrantsAtomFamily(sessionId))
@@ -102,23 +102,12 @@ export function ExecutionControls({ sessionId, forcedReadOnlyReason }: Execution
   }
 
   const currentWorkflow = controls.workflow === 'direct' ? 'direct' : 'read-only'
-  const preferredMode = getAgentWorkflowRuntimeDisplay(currentWorkflow, temporaryExecution)
-  const forcedMode = forcedReadOnlyReason
-    ? {
-        kind: 'forced-read-only' as const,
-        label: forcedReadOnlyReason === 'preview_active'
-          ? '验收中 · 只读'
-          : forcedReadOnlyReason === 'retained'
-            ? '已保留 · 只读'
-            : '已交付 · 只读',
-        description: forcedReadOnlyReason === 'preview_active'
-          ? '当前 Local Preview 正在验收，项目修改需要先撤回验收。会话附件生图等非项目操作仍可继续。'
-          : '当前 Worktree 已交付或保留，项目修改需要创建下一轮 Worktree。会话附件生图等非项目操作仍可继续。',
-      }
-    : undefined
-  const currentMode = forcedMode ?? preferredMode
-  const isTemporaryExecution = !forcedMode && currentMode.kind === 'temporary-execute'
-  const CurrentModeIcon = forcedMode ? LockKeyhole : isTemporaryExecution ? PlugZap : MODE_ICONS[currentWorkflow]
+  const currentMode = getAgentWorkflowRuntimeDisplay(currentWorkflow, temporaryExecution)
+  const isTemporaryExecution = currentMode.kind === 'temporary-execute'
+  const CurrentModeIcon = isTemporaryExecution ? PlugZap : MODE_ICONS[currentWorkflow]
+  const protectionDescription = targetProtectionReason === 'preview_active'
+    ? '项目正在验收，修改项目需要先撤回验收。'
+    : targetProtectionReason ? '项目已交付或保留，修改项目需要开始下一轮修改。' : undefined
   const modeOptions = AGENT_WORKFLOW_DISPLAY_OPTIONS.filter((option) => option.value !== 'plan-first')
 
   return (
@@ -132,7 +121,7 @@ export function ExecutionControls({ sessionId, forcedReadOnlyReason }: Execution
                 variant="ghost"
                 disabled={disabled}
                 aria-label={`工作方式：${currentMode.label}${pushGrant ? `；代码上传授权：${pushGrant.remoteName}/${pushGrant.targetBranch}` : ''}`}
-                title={forcedMode ? `当前生效：${forcedMode.label}；下一轮默认：${preferredMode.label}` : undefined}
+                title={protectionDescription}
                 className={cn(
                   'flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground',
                   isTemporaryExecution && 'text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300',
@@ -171,12 +160,6 @@ export function ExecutionControls({ sessionId, forcedReadOnlyReason }: Execution
           <div className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
             工作方式
           </div>
-          {forcedMode ? (
-            <div className="mx-1 mb-1.5 rounded-md bg-amber-500/10 px-2 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-              <p className="font-medium">当前生效：{forcedMode.label}</p>
-              <p className="mt-0.5 text-muted-foreground">下一轮默认：{preferredMode.label}</p>
-            </div>
-          ) : null}
           <div className="flex flex-col gap-1">
             {modeOptions.map((option) => {
               const workflow = option.value === 'direct' ? 'direct' : 'read-only'

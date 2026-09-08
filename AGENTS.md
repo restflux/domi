@@ -420,6 +420,7 @@ React UI 更新与 JSONL 持久化
 - 不得重新引入 runtime selector、Claude adapter/router、Claude MCP wrapper 或平台 `claude.exe` 依赖。
 - Anthropic Provider、Claude 模型/logo、Domi 管理的可写 `AGENTS.md` / Memory、legacy `CLAUDE.md` 兼容输入，以及外部 Claude Skills 只读来源，都必须与 Runtime 删除相互独立。
 - 执行模式始终使用当前 Windows 用户权限并明确提示未 OS-sandbox；研究、执行、本次执行和 Plan 生命周期只改变 Workflow/当前 run lease，不能绕过 Isolated→Local 回写/维修/交付事务、target ownership、managed Worktree/workbench integrity、产品确认事务或 Extension Trust。敏感路径名、opaque/parser failure、动态删除、Local Baseline、destructive Git、外部影响、网络和解释器等通用风险在执行模式中用于审计和宿主结构边界，不恢复旧的普通 Policy 审批档位。
+- 交付／保留／放弃及 Preview follow-up 的项目保护独立于 Workflow：手动模式和当前 run lease 不被强制研究覆盖。Controller 通过 `session-target-protection.ts` 保守拦截项目写入和未知操作，Bash 保留只读命令与环境加固；PTY 尚无同等加固，保护期间使用 Bash 诊断而不开放 TerminalRun。项目修改仍走下一轮／撤回验收宿主确认。
 - 所有 Shell 判断必须消费同一份 Canonical Shell Analysis；Bash 与 PowerShell 必须使用各自语法解析器，严禁把 PowerShell source 送入 Bash AST。下游不得把已证明为 argv 字面量的文本重新解释为 executable。研究模式只能放行可证明无副作用的命令；执行模式中解析结果用于审计和宿主结构边界，解析失败不得转化为旧式权限档位或编造具体 Git 风险类别。PowerShell 变量求值只能在宿主提供的 managed root 内用于研究模式的安全正向判断。
 - Research / Plan First 的 Bash 只读白名单可支持有限的 stdout-only 管道，包括 `curl GET | tar --to-stdout | grep` 上游产物检查；stdout 解包只允许从 stdin 读取归档并显式选择成员，执行前清空 `TAR_OPTIONS`，不得放开落盘解压、外部解压程序、文件列表输入或命令 hook。
 - `ExecutionPolicy` 是唯一授权分类 owner，并通过 `allow / require-approval / deny` 强类型 resolution 输出决定；`AgentPermissionService` 及 UI 只负责审批交互和宿主事务，不得恢复 session command whitelist、raw-string classifier 或 allow-always 权限提升。

@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises'
+import { resolveProtectedTargetAccess } from './session-target-protection.ts'
 import { join, posix, win32 } from 'node:path'
 import { DIRECT_WORKFLOW_ADJUSTMENT_ANSWER_KEY } from '@domi/shared'
 import type {
@@ -276,6 +277,22 @@ export async function createPiExecutionController(
     const canonicalShellAnalysis = canonicalShellCommand === undefined
       ? undefined
       : analyzeShellCommand(canonicalShellCommand)
+    if (options.sessionTarget?.followupOnly) {
+      const protection = await resolveProtectedTargetAccess({
+        toolName, input: toolInput, cwd: options.workspaceRoot,
+        planSidecarDir: canonicalPlanSidecarDir, toolSource,
+        toolAnnotations: toolOptions.toolAnnotations,
+        interaction: options.interaction, shellAnalysis: canonicalShellAnalysis,
+      }, canonicalSessionWorkbenchRoot)
+      if (protection.outcome === 'deny') {
+        await options.audit({
+          sessionId: options.sessionId, toolName, action: 'protected-target',
+          outcome: 'deny', category: 'user-denied', executionPolicy: options.getExecutionPolicy(),
+          decisionCode: 'protected-target', durationMs: 0,
+        })
+        return { behavior: 'deny', message: protection.reason }
+      }
+    }
     if (toolName === 'Write' && typeof toolInput.content === 'string'
       && estimateTokenCount(toolInput.content) > WRITE_CONTENT_TOKEN_THRESHOLD) {
       return { behavior: 'deny', message: 'Write 内容过大，请拆分为较小的连续写入。' }

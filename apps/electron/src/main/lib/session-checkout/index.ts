@@ -55,7 +55,7 @@ export interface CheckoutLease {
   revision: number
   /** 当前 managed Worktree 中尚未交付到 Local 的阶段 checkpoint 数量。 */
   checkpointCount?: number
-  /** 已交付、已保留或正在 Local 验收的会话仅借用 Local 运行普通问答；Execution Controller 必须强制只读。 */
+  /** 已交付、已保留或正在验收的会话借用 Local；Controller 独立保护项目不被修改，不覆盖 Workflow。 */
   followupOnly?: boolean
   followupReason?: 'delivered' | 'discarded' | 'retained' | 'preview_active'
 }

@@ -1552,9 +1552,7 @@ export class AgentOrchestrator {
         permissionMode: permissionModeOverride ?? sessionMeta?.permissionMode ?? DOMI_DEFAULT_PERMISSION_MODE,
         workflow: 'read-only',
         // Tool execution starts only after the run workflow is initialized below; fail closed before that point.
-        getWorkflow: () => deliveredFollowupOnly
-          ? 'read-only'
-          : this.sessionWorkflows.get(sessionId) ?? 'read-only',
+        getWorkflow: () => this.sessionWorkflows.get(sessionId) ?? 'read-only',
         triggeredBy,
         ...(sessionTargetPrompt && { sessionTarget: sessionTargetPrompt }),
       })
@@ -1794,9 +1792,7 @@ export class AgentOrchestrator {
               planSidecarDir: getAgentPlanSidecarDir(sessionId, workspaceSlug),
               interaction: input.triggeredBy && input.triggeredBy !== 'user' ? 'unattended' : 'interactive',
               getExecutionPolicy: () => this.sessionExecutionPolicies.get(sessionId) ?? initialExecutionPolicy,
-              getWorkflow: () => deliveredFollowupOnly
-                ? 'read-only'
-                : this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
+              getWorkflow: () => this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
               isRunActive: () => this.activeSessions.get(sessionId) === runGeneration,
               hasGitPushSessionTrust: async () => {
                 if (!gitPushTrustTarget) return false
@@ -1860,9 +1856,7 @@ export class AgentOrchestrator {
                       reason: request.reason,
                       scope: request.scope,
                       executionPolicy: this.sessionExecutionPolicies.get(sessionId) ?? initialExecutionPolicy,
-                      workflow: deliveredFollowupOnly
-                        ? 'read-only'
-                        : this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
+                      workflow: this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
                       decisionCode: request.decisionCode ?? request.category,
                     },
                   },
@@ -1885,9 +1879,7 @@ export class AgentOrchestrator {
                     outcome: event.outcome,
                     ...(event.approval && { approval: event.approval }),
                     executionPolicy: event.executionPolicy,
-                    workflow: deliveredFollowupOnly
-                      ? 'read-only'
-                      : this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
+                    workflow: this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
                     ...(sessionTargetPrompt && {
                       targetKind: sessionTargetPrompt.kind,
                       targetOwnership: sessionTargetPrompt.ownership,
@@ -2206,9 +2198,8 @@ export class AgentOrchestrator {
           input: toolInput,
           options,
         }),
-        getWorkflow: () => deliveredFollowupOnly
-          ? 'read-only'
-          : this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
+        getWorkflow: () => this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
+        protectedTarget: deliveredFollowupOnly,
         handleAskUserQuestion: (toolInput, signal) => authorizePiExecution({
           type: 'ask-user',
           input: toolInput,
@@ -2369,9 +2360,7 @@ export class AgentOrchestrator {
         } : {}),
         getRequestEnvelopeContext: () => ({
           executionPolicy: this.sessionExecutionPolicies.get(sessionId) ?? initialExecutionPolicy,
-          workflow: deliveredFollowupOnly
-            ? 'read-only'
-            : this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
+          workflow: this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
           ...(sessionTargetPrompt && {
             sessionTarget: {
               kind: sessionTargetPrompt.kind,

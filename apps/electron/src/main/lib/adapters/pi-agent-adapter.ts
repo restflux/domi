@@ -286,6 +286,8 @@ export interface PiAgentQueryOptions extends AgentQueryInput {
   ) => Promise<PermissionResult>
   /** 供 Bash spawn hook 读取热切换后的 Workflow，仅在受限 Workflow 下加固只读命令。 */
   getWorkflow?: () => AgentWorkflow
+  /** 已交付项目仍需只读 CLI 加固；这不是工作方式覆盖。 */
+  protectedTarget?: boolean
   handleAskUserQuestion?: (
     input: Record<string, unknown>,
     signal: AbortSignal,
@@ -1836,6 +1838,7 @@ export function createDomiBashToolOptions(
   onSuccessfulFrozenBunInstall?: SuccessfulFrozenBunInstallCallback,
   createLocalOperations?: CreateLocalBashOperations,
   onExit?: (code: number | null) => void,
+  protectedTarget = false,
 ): BashToolOptions {
   const spawnHook: NonNullable<BashToolOptions['spawnHook']> = ({ command, cwd, env }) => {
     if (runtimeEnv?.shellKind === 'git-bash' && hasGitBashCmdNullDeviceRedirection(command)) {
@@ -1846,11 +1849,10 @@ export function createDomiBashToolOptions(
     }
 
     const workflow = getWorkflow?.()
-    const hardenedCommand = workflow && workflow !== 'direct'
-      ? hardenReadOnlyBashCommand(command)
-      : command
+    const requiresReadOnlyHardening = protectedTarget || (workflow !== undefined && workflow !== 'direct')
+    const hardenedCommand = requiresReadOnlyHardening ? hardenReadOnlyBashCommand(command) : command
     const mergedEnv = mergeRuntimeEnv(env, runtimeEnv?.env)
-    if (workflow && workflow !== 'direct') {
+    if (requiresReadOnlyHardening) {
       // 受限 workflow 的只读 CLI 不应因 pager、credential prompt 或 update notifier
       // 产生交互/隐式状态变化；命令分类器仍负责证明具体调用只读。
       mergedEnv.GIT_OPTIONAL_LOCKS = '0'
@@ -1964,11 +1966,12 @@ function buildBuiltinToolDefinitions(
   onSuccessfulFrozenBunInstall?: SuccessfulFrozenBunInstallCallback,
   fileCheckpoint?: PiFileCheckpointCallbacks,
   rtkSessionDirectory?: string,
+  protectedTarget = false,
 ): ToolDefinition[] {
-  const canOptimize = (): boolean => getWorkflow?.() === 'direct' && getSettings().agentRtkEnabled === true
+  const canOptimize = (): boolean => !protectedTarget && getWorkflow?.() === 'direct' && getSettings().agentRtkEnabled === true
   const saveOriginal = rtkSessionDirectory ? createRtkOriginalStore(rtkSessionDirectory) : undefined
   const createBash = (onExit?: (code: number | null) => void) => sdk.createBashToolDefinition(cwd, createDomiBashToolOptions(
-    runtimeEnv, getWorkflow, onSuccessfulFrozenBunInstall, sdk.createLocalBashOperations, onExit,
+    runtimeEnv, getWorkflow, onSuccessfulFrozenBunInstall, sdk.createLocalBashOperations, onExit, protectedTarget,
   )) as unknown as ToolDefinition
   const definitions = [
     sdk.createReadToolDefinition(cwd),
@@ -2395,6 +2398,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         input.onSuccessfulFrozenBunInstall,
         input.fileCheckpoint,
         input.rtkSessionDirectory,
+        input.protectedTarget,
       )
       const productTools = buildDomiProductToolDefinitions(sdk, input, productToolRuntimeState)
       const adapterReadOnlyToolDefinitions = new Map<string, ToolDefinition>(

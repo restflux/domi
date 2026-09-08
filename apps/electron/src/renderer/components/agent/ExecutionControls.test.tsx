@@ -14,7 +14,7 @@ function renderControls(
   executionPolicy: 'controlled' | 'autonomous' | 'full-access',
   withPushGrant = false,
   temporaryExecution = false,
-  forcedReadOnlyReason?: 'delivered' | 'retained' | 'preview_active',
+  targetProtectionReason?: 'delivered' | 'retained' | 'preview_active',
 ): string {
   const store = createStore()
   store.set(agentSessionsAtom, [{
@@ -43,7 +43,7 @@ function renderControls(
   return renderToStaticMarkup(
     <Provider store={store}>
       <TooltipProvider>
-        <ExecutionControls sessionId="session-1" forcedReadOnlyReason={forcedReadOnlyReason} />
+        <ExecutionControls sessionId="session-1" targetProtectionReason={targetProtectionReason} />
       </TooltipProvider>
     </Provider>,
   )
@@ -84,20 +84,19 @@ describe('ExecutionControls compact entry', () => {
     expect(html).not.toContain('>本次执行<')
   })
 
-  test('shows the effective delivered read-only state instead of the preferred Execute mode', () => {
+  test('shows the selected workflow independently of delivered project protection', () => {
     const html = renderControls('direct', 'full-access', false, false, 'delivered')
-
-    expect(html).toContain('aria-label="工作方式：已交付 · 只读"')
-    expect(html).toContain('>已交付 · 只读<')
-    expect(html).toContain('下一轮默认：执行')
-    expect(html).not.toContain('aria-label="工作方式：执行"')
+    expect(html).toContain('aria-label="工作方式：执行"')
+    expect(html).not.toContain('已交付 · 只读')
+    expect(renderControls('read-only', 'full-access', false, false, 'retained'))
+      .toContain('aria-label="工作方式：研究"')
   })
 
-  test('shows preview review as an effective read-only state', () => {
+  test('shows preview protection without overriding the workflow', () => {
     const html = renderControls('direct', 'full-access', false, false, 'preview_active')
 
-    expect(html).toContain('aria-label="工作方式：验收中 · 只读"')
-    expect(html).toContain('>验收中 · 只读<')
+    expect(html).toContain('aria-label="工作方式：执行"')
+    expect(html).toContain('修改项目需要先撤回验收')
   })
 
   test('shows an explicit compact indicator while code upload authorization is active', () => {

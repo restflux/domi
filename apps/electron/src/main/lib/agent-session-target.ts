@@ -36,7 +36,7 @@ export interface AgentSessionTarget {
   reviewLocalHeadOid?: string
   /** 最近一版验收，仅作为累计总结的辅助线索。 */
   previousReview?: CheckoutLease['previousReview']
-  /** 已交付、已保留或正在验收的会话借用 Local 回答普通问题时，所有 mutation tool 必须保持只读。 */
+  /** 已交付、已保留或正在验收的会话借用 Local；Controller 独立保护项目不被修改，不覆盖 Workflow。 */
   followupOnly: boolean
   followupReason?: CheckoutLease['followupReason']
   lease: CheckoutLease

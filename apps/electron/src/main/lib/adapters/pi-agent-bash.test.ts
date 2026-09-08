@@ -31,6 +31,15 @@ describe('Pi WSL Bash', () => {
     expect(windowsPathToWslPath('/home/alice/project')).toBe('/home/alice/project')
   })
 
+  test('Given protected target in Direct When Bash spawns Then diagnostic commands retain read-only hardening', async () => {
+    const options = createDomiBashToolOptions(undefined, () => 'direct', undefined, undefined, undefined, true)
+    expect(await options.spawnHook?.({ command: 'git status --short', cwd: '/repo', env: { TAR_OPTIONS: '--checkpoint-action=exec=bad' } }))
+      .toMatchObject({
+        command: 'git --no-pager --no-optional-locks -c core.fsmonitor=false status --short',
+        env: { GIT_OPTIONAL_LOCKS: '0', TAR_OPTIONS: '', GIT_PAGER: 'cat' },
+      })
+  })
+
   test('Given Workflow hot-switches When Bash spawns Then only restricted workflows harden read-only commands', async () => {
     let workflow: AgentWorkflow = 'direct'
     const options = createDomiBashToolOptions(undefined, () => workflow)

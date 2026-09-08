@@ -12,6 +12,8 @@ async function createHarness(options: {
   approval?: 'approved' | 'denied'
   workflowChangeAccepted?: boolean
   runActive?: boolean
+  followupOnly?: boolean
+  sessionWorkbenchRoot?: string
 } = {}) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'pi-execution-controller-'))
   const planSidecarDir = join(workspaceRoot, '.domi', 'plans')
@@ -27,6 +29,8 @@ async function createHarness(options: {
     sessionId: 'session-controller',
     workspaceRoot,
     localBaselineRoot: workspaceRoot,
+    sessionTarget: { kind: 'local', ownership: 'owner', followupOnly: options.followupOnly },
+    sessionWorkbenchRoot: options.sessionWorkbenchRoot,
     planSidecarDir,
     interaction: 'interactive',
     getExecutionPolicy: () => executionPolicy,
@@ -81,6 +85,76 @@ function toolOptions(
 }
 
 describe('PiExecutionController', () => {
+  test('Given protected project When approving this run Then session writes work but project writes remain denied', async () => {
+    const workbench = await mkdtemp(join(tmpdir(), 'protected-workbench-'))
+    const harness = await createHarness({
+      followupOnly: true, sessionWorkbenchRoot: workbench,
+      askUser: async (input) => {
+        const questions = input.questions as Array<{ question: string }>
+        return { behavior: 'allow', updatedInput: {
+          ...input, answers: { [questions[0]!.question]: '仅执行本次' },
+        } }
+      },
+    })
+    const write = (path: string) => harness.authorize({
+      type: 'tool', toolName: 'Write', input: { file_path: path, content: 'note' }, options: toolOptions(),
+    })
+    try {
+      harness.workflow = 'read-only'
+      harness.executionPolicy = 'full-access'
+      expect(await write(join(workbench, 'note.md'))).toMatchObject({ behavior: 'deny' })
+      expect(await harness.authorize({ type: 'tool', toolName: 'RequestDirectWorkflow', input: { details: '记录诊断结果' }, options: toolOptions() }))
+        .toMatchObject({ behavior: 'allow' })
+      expect(await harness.authorize({ type: 'request-direct-workflow', input: { details: '记录诊断结果' }, signal: new AbortController().signal }))
+        .toMatchObject({ behavior: 'allow' })
+      expect(harness.workflow as AgentWorkflow).toBe('direct')
+      expect(harness.workflowChanges.at(-1)?.source).toBe('approve-read-only-once')
+      expect(await write(join(workbench, 'note.md'))).toMatchObject({ behavior: 'allow' })
+      expect(await write(join(harness.workspaceRoot, 'note.md'))).toMatchObject({ behavior: 'deny' })
+      harness.workflow = 'read-only'
+      expect(await write(join(workbench, 'note.md'))).toMatchObject({ behavior: 'deny' })
+    } finally { await harness.dispose(); await rm(workbench, { recursive: true, force: true }) }
+  })
+
+  test('Given protected project in execution When using diagnostic and mutation tools Then every entry preserves protection', async () => {
+    const harness = await createHarness({ followupOnly: true })
+    try {
+      harness.workflow = 'direct'
+      harness.executionPolicy = 'full-access'
+      for (const [toolName, input, source, behavior] of [
+        ['Bash', { command: 'git status --short' }, 'host', 'allow'],
+        ['Bash', { command: 'echo changed > tracked.txt' }, 'host', 'deny'],
+        ['Bash', { command: 'bun run migrate' }, 'host', 'deny'],
+        ['TerminalRun', { command: 'git status', cwd: harness.workspaceRoot, title: 'status' }, 'product', 'deny'],
+        ['mcp__db__query', { query: 'SELECT 1' }, 'mcp', 'deny'],
+        ['mcp__gpt_image__imagegen', { prompt: 'test', outputMode: 'workspace' }, 'product', 'deny'],
+        ['mcp__gpt_image__imagegen', { prompt: 'test', outputMode: 'session' }, 'product', 'allow'],
+        ['RequestNextWorktreeIteration', { details: '修改项目' }, 'mcp', 'deny'],
+      ] as const) {
+        expect(await harness.authorize({ type: 'tool', toolName, input, options: { ...toolOptions(), toolSource: source } }))
+          .toMatchObject({ behavior })
+      }
+      expect(await harness.authorize({ type: 'tool', toolName: 'mcp__db__query', input: { query: 'SELECT 1' },
+        options: { ...toolOptions(), toolSource: 'mcp', toolAnnotations: { readOnlyHint: true, destructiveHint: false } },
+      })).toMatchObject({ behavior: 'allow' })
+    } finally { await harness.dispose() }
+  })
+
+  test('Given delivered follow-up in Direct When writing the project Then target protection still denies the write', async () => {
+    const harness = await createHarness({ followupOnly: true })
+    try {
+      harness.workflow = 'direct'
+      harness.executionPolicy = 'full-access'
+      expect(await harness.authorize({
+        type: 'tool', toolName: 'Write',
+        input: { file_path: join(harness.workspaceRoot, 'file.ts'), content: 'changed' },
+        options: toolOptions(),
+      })).toMatchObject({ behavior: 'deny' })
+    } finally {
+      await harness.dispose()
+    }
+  })
+
   test('Given a product browser mutation in Direct When authorized repeatedly Then one session-scoped external-impact approval is reused', async () => {
     const harness = await createHarness()
     try {
