@@ -7,7 +7,7 @@ const TOKEN_RATE_WINDOW_MS = 3_000
 const TOKEN_RATE_STALE_MS = 1_250
 const TOKEN_RATE_MIN_SAMPLE_MS = 250
 
-export type AgentRuntimePhaseKind = 'preparing' | 'thinking' | 'responding' | 'tool' | 'compacting'
+export type AgentRuntimePhaseKind = 'preparing' | 'waiting' | 'retrying' | 'thinking' | 'responding' | 'tool' | 'compacting'
 
 export interface AgentRuntimePhase {
   kind: AgentRuntimePhaseKind
@@ -274,6 +274,8 @@ export function resolveAgentRuntimePhase({
     }
   }
 
+  if (streamState?.runtimePhase === 'empty_retry') return { kind: 'retrying', label: 'Retrying empty response' }
+  if (streamState?.runtimePhase === 'waiting') return { kind: 'waiting', label: 'Waiting for model' }
   if (output.latestBlockKind === 'text') return { kind: 'responding', label: 'Writing response' }
   if (output.latestBlockKind === 'thinking') return { kind: 'thinking', label: 'Thinking' }
   if (output.latestBlockKind === 'tool') return { kind: 'tool', label: 'Using tools' }

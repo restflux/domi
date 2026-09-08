@@ -35,6 +35,7 @@ Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 - License: MIT
 - Copyright: © 2025 Mario Zechner and contributors
 - Local modifications: `patches/@earendil-works%2Fpi-*.patch`
+- Responses compatibility patch: preserves streamed text when item completion omits its body, reconciles final response text by message ID without synthesizing tool calls, and exposes content-free numeric stream diagnostics. Existing retry and runtime patches are retained.
 - License copy: `third-party-licenses/MIT-Pi.txt`
 - Runtime dependency changes in 0.85.1: Chord retains `esbuild@0.28.1` (MIT, https://github.com/evanw/esbuild); `@anthropic-ai/sdk@0.123.0` (MIT, https://github.com/anthropics/anthropic-sdk-typescript) adds `standardwebhooks@1.1.1` (MIT, https://github.com/standard-webhooks/standard-webhooks), with `@stablelib/base64@1.0.1` (MIT, https://github.com/StableLib/stablelib) and `fast-sha256@1.3.0` (Unlicense, https://github.com/dchest/fast-sha256-js). Upstream package license files are retained in the runtime dependency tree.
 - Runtime sync includes Chord's esbuild dependency; the installer continues to exclude esbuild and its platform binaries as build-time tools. Domi's supported Pi SDK path does not use `chord/bundler`.

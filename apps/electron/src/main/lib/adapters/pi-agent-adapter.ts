@@ -151,6 +151,7 @@ import {
   type PiRequestEnvelopeRuntimeContext,
 } from '../audit/pi-request-envelope.ts'
 import { recordPiAgentAuditEvent } from './pi-agent-audit.ts'
+import { createPiRuntimePhaseTracker } from './pi-runtime-phase.ts'
 
 import { createRtkBashToolDefinition } from './pi-rtk-output.ts'
 import { createRtkOriginalStore } from '../rtk/rtk-original-store.ts'
@@ -322,6 +323,7 @@ export interface PiAgentQueryOptions extends AgentQueryInput {
   /** 每次真实 provider request 的上下文构成估算。 */
   onContextBreakdown?: (breakdown: AgentContextBreakdown) => void
   onRetry?: (update: import('./pi-retry-control').PiRetryUpdate) => void
+  onRuntimePhase?: (update: import('@domi/shared').AgentRuntimePhaseUpdate) => void
   /** 渲染进程创建的本轮流式开始时间，用于隔离迟到的 native retry 事件和 audit。 */
   retryRunStartedAt?: number
   /** 仅供宿主 run audit wiring 使用，不依赖具体 writer。 */
@@ -2603,8 +2605,10 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       }
       // 代理作用域必须只覆盖模型 provider stream：在整个 session.prompt() 链上设
       // AsyncLocalStorage 会把 MCP/产品工具等同一 Agent loop 中的 fetch 也错误地送进 Codex 代理。
+      const runtimePhase = createPiRuntimePhaseTracker(input.retryRunStartedAt ?? Date.now(), (update) => input.onRuntimePhase?.(update))
       const providerStreamFn = session.agent.streamFunction
       session.agent.streamFunction = (requestModel, context, options) => {
+        runtimePhase.requestStarted()
         if (activeCompactionLifecycle && contextCompactorSettings.enabled && contextCompactorMode) {
           activeCompactionLifecycle.providerRequestOrdinal += 1
           const providerRequestId = `${activeCompactionLifecycle.attemptId}:provider:${activeCompactionLifecycle.providerRequestOrdinal}`
@@ -2796,6 +2800,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       unsubscribe = session.subscribe((event: AgentSessionEvent) => {
         try {
           void recordPiAgentAuditEvent(auditRecorder, event)
+          runtimePhase.observe(event)
           switch (event.type) {
             case 'message_update': {
               if (!isAssistantPiMessage(event.message)) break
@@ -3336,6 +3341,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
               }
               pendingCompactionContinuation = undefined
             } else if (pendingIncompleteTurnContinuation) {
+              if (!promptOutputEvidence.hasVisibleText && !promptOutputEvidence.hasToolCall) runtimePhase.retryEmptyResponse()
               nextPrompt = {
                 content: pendingIncompleteTurnContinuation,
                 skipSkillExpansion: true,

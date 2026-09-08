@@ -2372,6 +2372,9 @@ export class AgentOrchestrator {
         onRetry: (retry) => {
           this.eventBus.emit(sessionId, { kind: 'domi_event', event: { type: 'retry', ...retry } })
         },
+        onRuntimePhase: (update) => {
+          this.eventBus.emit(sessionId, { kind: 'domi_event', event: { type: 'runtime_phase', ...update } })
+        },
       }
 
       console.log(`[Agent 编排] 开始通过 Adapter 遍历事件流...`)

@@ -18,3 +18,88 @@
      "stream ended before message_stop",
      "stream ended before a terminal response event",
      "http2 request did not get a response",
+--- a/dist/api/openai-responses-shared.js
++++ b/dist/api/openai-responses-shared.js
+@@ -319,6 +319,8 @@
+ }
+ export async function processResponsesStream(openaiStream, output, stream, model, options) {
+     let sawTerminalResponseEvent = false;
++    // 仅计数，不保存正文、工具参数、模型标识或响应 ID。
++    const diagnostics = { eventCount: 0, textDeltaChars: 0, itemDoneTextChars: 0, terminalTextChars: 0, recoveredTextBlocks: 0, parsedTextChars: 0 };
+     const outputSlots = new Map();
+     const reasoningBlocksById = new Map();
+     const applyMessagePhaseStopReason = (item) => {
+@@ -340,6 +342,9 @@
+             partial: output,
+         });
+     };
++    // item.done 会移除活动 slot，终态恢复仍需按消息 ID 找回同一个正文块。
++    const textSlotsById = new Map();
++    const messageText = (item) => item.content?.map((part) => part.type === "output_text" ? part.text : part.type === "refusal" ? part.refusal : "").join("") || "";
+     const createSlot = (outputIndex, item) => {
+         if (item.type === "reasoning") {
+             const block = { type: "thinking", thinking: "" };
+@@ -358,6 +363,7 @@
+             const block = { type: "text", text: "" };
+             output.content.push(block);
+             const slot = { type: "text", block, contentIndex: output.content.length - 1 };
++            if (item.id) textSlotsById.set(item.id, slot);
+             outputSlots.set(outputIndex, slot);
+             stream.push({ type: "text_start", contentIndex: slot.contentIndex, partial: output });
+             return slot;
+@@ -433,6 +439,21 @@
+     const finalizeResponse = (response) => {
+         sawTerminalResponseEvent = true;
+         backfillReasoningSignatures(response.output ?? []);
++        // 只恢复可展示正文，不从终态合成工具调用，避免改变工具执行语义。
++        for (const [index, item] of (response.output ?? []).entries()) {
++            if (item.type !== "message" || !item.id) continue;
++            const text = messageText(item);
++            diagnostics.terminalTextChars += text.length;
++            if (!text) continue;
++            const slot = textSlotsById.get(item.id) ?? createSlot(index, item);
++            slot.block.textSignature = encodeTextSignatureV1(item.id, item.phase ?? undefined);
++            if (slot.block.text === text) continue;
++            slot.block.text = text;
++            diagnostics.recoveredTextBlocks += 1;
++            stream.push({ type: "text_end", contentIndex: slot.contentIndex, content: text, partial: output });
++        }
++        diagnostics.parsedTextChars = output.content.reduce((sum, block) => sum + (block.type === "text" ? block.text.length : 0), 0);
++        output.domiResponsesDiagnostics = { ...diagnostics };
+         if (response?.id) {
+             output.responseId = response.id;
+         }
+@@ -475,6 +496,7 @@
+         }
+     };
+     for await (const event of openaiStream) {
++        diagnostics.eventCount += 1;
+         if (event.type === "response.created") {
+             output.responseId = event.response.id;
+         }
+@@ -518,6 +540,7 @@
+             });
+         }
+         else if (event.type === "response.output_text.delta") {
++            diagnostics.textDeltaChars += event.delta.length;
+             const slot = getSlot(event.output_index, "text");
+             if (!slot)
+                 continue;
+@@ -576,6 +599,7 @@
+         }
+         else if (event.type === "response.output_item.done") {
+             const item = event.item;
++            if (item.type === "message") diagnostics.itemDoneTextChars += messageText(item).length;
+             applyMessagePhaseStopReason(item);
+             const slot = getOrCreateSlot(event.output_index, item);
+             if (item.type === "reasoning" && slot?.type === "thinking") {
+@@ -593,7 +617,8 @@
+                 outputSlots.delete(event.output_index);
+             }
+             else if (item.type === "message" && slot?.type === "text") {
+-                slot.block.text = item.content?.map((c) => (c.type === "output_text" ? c.text : c.refusal)).join("") || "";
++                // 兼容结束事件省略正文的网关，不得清空已接收的 delta。
++                slot.block.text = messageText(item) || slot.block.text;
+                 slot.block.textSignature = encodeTextSignatureV1(item.id, item.phase ?? undefined);
+                 stream.push({
+                     type: "text_end",

@@ -128,10 +128,11 @@ function uniqueTruthyPaths(paths: Array<string | null | undefined>): string[] {
 // Phase 2 将移除此转换，直接使用 SDKMessage 渲染
 // ============================================================================
 
-function isRunScopedRetryEvent(event: AgentEvent): event is Extract<AgentEvent, {
-  type: 'retrying' | 'retry_attempt' | 'retry_cleared' | 'retry_failed' | 'retry_cancelled'
+function isRunScopedStatusEvent(event: AgentEvent): event is Extract<AgentEvent, {
+  type: 'runtime_phase' | 'retrying' | 'retry_attempt' | 'retry_cleared' | 'retry_failed' | 'retry_cancelled'
 }> {
-  return event.type === 'retrying'
+  return event.type === 'runtime_phase'
+    || event.type === 'retrying'
     || event.type === 'retry_attempt'
     || event.type === 'retry_cleared'
     || event.type === 'retry_failed'
@@ -179,6 +180,8 @@ export function payloadToLegacyEvents(payload: AgentStreamPayload): AgentEvent[]
         }]
       case 'temporary_execution_changed':
         return [{ type: 'temporary_execution_changed', active: evt.active, runToken: evt.runToken }]
+      case 'runtime_phase':
+        return [evt]
       case 'model_resolved':
         return [{ type: 'model_resolved', model: evt.model }]
       case 'context_window':
@@ -796,7 +799,7 @@ export function useGlobalAgentListeners(): void {
           // 带 run 标识的 retry 事件必须在所有外围副作用前严格匹配当前流；
           // 否则旧 IPC 事件会复活已结束的 stream，或错误清掉新 run 的完成提醒。
           const eventStreamState = store.get(agentStreamingStatesAtom).get(sessionId)
-          if (isRunScopedRetryEvent(event) && event.runStartedAt != null && (
+          if (isRunScopedStatusEvent(event) && event.runStartedAt != null && (
             !eventStreamState || !isRetryEventForCurrentStream(eventStreamState, event)
           )) {
             continue
@@ -828,7 +831,7 @@ export function useGlobalAgentListeners(): void {
             store.set(agentStreamingStatesAtom, (prev) => {
               const existing = prev.get(sessionId)
               // 再做一次 scope 校验，防止同一 batch 内其它回调更新流状态后旧事件落入。
-              if (isRunScopedRetryEvent(event) && event.runStartedAt != null && (
+              if (isRunScopedStatusEvent(event) && event.runStartedAt != null && (
                 !existing || !isRetryEventForCurrentStream(existing, event)
               )) {
                 return prev

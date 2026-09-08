@@ -538,11 +538,13 @@ export interface TaskUsage {
   durationMs: number
 }
 
-/**
- * 重试尝试记录
- *
- * 记录每次重试尝试的详细信息，用于错误诊断和 UI 展示。
- */
+/** 模型请求阶段绑定当前 run，拒绝迟到事件污染下一轮。 */
+export interface AgentRuntimePhaseUpdate {
+  phase: 'waiting' | 'receiving' | 'empty_retry'
+  runStartedAt: number
+}
+
+/** 记录每次重试尝试的详细信息，用于错误诊断和 UI 展示。 */
 export interface RetryAttempt {
   /** 第几次 retry（1-based；不含初始请求） */
   attempt: number
@@ -626,6 +628,7 @@ export type AgentEvent =
   | { type: 'retry_cancelled'; runStartedAt?: number; attempt: number; maxAttempts: number; totalAttempt?: number; maxTotalAttempts?: number; reason?: string }
   // Usage 更新
   | { type: 'usage_update'; usage: AgentEventUsage }
+  | ({ type: 'runtime_phase' } & AgentRuntimePhaseUpdate)
   // 上下文压缩
   | { type: 'compacting' }
   | {
@@ -673,6 +676,7 @@ export type DomiEvent =
   | { type: 'retry'; status: 'starting' | 'attempt' | 'cleared' | 'failed' | 'cancelled'; attempt?: number; maxAttempts?: number; delaySeconds?: number; reason?: string; attemptData?: RetryAttempt; runStartedAt?: number; scheduledAt?: number; totalAttempt?: number; maxTotalAttempts?: number; error?: TypedError }
   | { type: 'model_resolved'; model: string }
   | { type: 'context_window'; contextWindow: number; source?: ContextWindowSource }
+  | ({ type: 'runtime_phase' } & AgentRuntimePhaseUpdate)
   | { type: 'context_breakdown'; breakdown: AgentContextBreakdown }
   | { type: 'permission_mode_changed'; mode: DomiPermissionMode }
   | { type: 'title_updated'; title: string }

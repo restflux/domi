@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { PiRequestEnvelopeSnapshot } from './pi-request-envelope.ts'
+import type { PiResponsesDiagnostics } from './pi-responses-diagnostics.ts'
 
 export interface PiRunAuditTimingContext {
   sessionId: string
@@ -38,6 +39,7 @@ export interface PiRunTurnTimingEvent extends PiRunAuditTimingBase {
   turn: number
   /** 仅 first_token：从宿主收到本轮请求到首 token 的端到端耗时。 */
   runDurationMs?: number
+  responses?: PiResponsesDiagnostics
 }
 
 export interface PiRunToolWaitTimingEvent extends PiRunAuditTimingBase {
@@ -113,7 +115,7 @@ export type PiRunAuditSourceEvent =
   | { type: 'turn_start' }
   | { type: 'model_request'; envelope: PiRequestEnvelopeSnapshot }
   | { type: 'assistant_update' }
-  | { type: 'assistant_end' }
+  | { type: 'assistant_end'; responses?: PiResponsesDiagnostics }
   | { type: 'authorization_start'; toolCallId: string; toolName: string; validation?: true }
   | { type: 'authorization_end'; toolCallId: string; toolName: string; outcome: 'allow' | 'deny' | 'error'; validation?: true }
   | { type: 'tool_execution_start'; toolCallId: string; toolName: string }
@@ -300,6 +302,7 @@ export function createPiRunAuditRecorder(options: PiRunAuditRecorderOptions): Pi
         turnStartedAt = undefined
         return emit({
           phase: 'model_generation',
+          ...(event.responses && { responses: event.responses }),
           sessionId: options.sessionId,
           ...(options.workspaceId && { workspaceId: options.workspaceId }),
           runStartedAt: options.runStartedAt,

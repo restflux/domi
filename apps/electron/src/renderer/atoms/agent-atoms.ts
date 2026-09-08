@@ -96,6 +96,7 @@ export interface AgentRetryState {
 /** Agent 会话的流式状态 */
 export interface AgentStreamState {
   running: boolean
+  runtimePhase?: import('@domi/shared').AgentRuntimePhaseUpdate['phase']
   /**
    * 后台任务等待态（软空闲）：本轮主体已结束、UI 可输入，但 SDK 通道仍开着等后台任务唤醒。
    * 此状态下 running 为 false，但服务端 activeSessions 仍保留，新消息必须走注入通道而非新建 run。
@@ -1046,6 +1047,10 @@ export function applyAgentEvent(
     case 'error':
       // 同上：保留运行锁和 retry 状态，等待专用 retry 终态或 STREAM_COMPLETE 收束。
       return prev
+
+    case 'runtime_phase':
+      if (!prev.running || event.runStartedAt !== prev.startedAt) return prev
+      return { ...prev, runtimePhase: event.phase }
 
     case 'usage_update': {
       const resumed = clearFinishedCompactionForResumedWork(prev)

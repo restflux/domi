@@ -1,6 +1,6 @@
 {
   "name": "@domi/shared",
-  "version": "0.1.72",
+  "version": "0.1.73",
   "license": "AGPL-3.0-only",
   "description": "Shared types, configuration and utilities for Domi",
   "type": "module",

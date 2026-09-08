@@ -1,6 +1,7 @@
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import type { PiRunAuditRecorder } from '../audit/pi-run-audit.ts'
 import { isAssistantPiMessage } from './pi-message-adapter.ts'
+import { readPiResponsesDiagnostics } from '../audit/pi-responses-diagnostics.ts'
 
 function isEffectiveAssistantUpdate(
   event: Extract<AgentSessionEvent, { type: 'message_update' }>,
@@ -39,7 +40,7 @@ export function recordPiAgentAuditEvent(
         : Promise.resolve()
     case 'message_end':
       return isAssistantPiMessage(event.message)
-        ? recorder.record({ type: 'assistant_end' })
+        ? recorder.record({ type: 'assistant_end', responses: readPiResponsesDiagnostics(event.message) })
         : Promise.resolve()
     case 'tool_execution_start':
       return recorder.record({
