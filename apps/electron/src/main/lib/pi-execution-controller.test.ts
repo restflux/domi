@@ -8,6 +8,8 @@ import type { PermissionResult } from './agent-permission-service.ts'
 import { createPiExecutionController } from './pi-execution-controller.ts'
 
 async function createHarness(options: {
+  independentReviewId?: string
+  sideChatParentSessionId?: string
   askUser?: (input: Record<string, unknown>) => Promise<PermissionResult>
   approval?: 'approved' | 'denied'
   workflowChangeAccepted?: boolean
@@ -27,6 +29,8 @@ async function createHarness(options: {
 
   const authorize = await createPiExecutionController({
     sessionId: 'session-controller',
+    independentReviewId: options.independentReviewId,
+    sideChatParentSessionId: options.sideChatParentSessionId,
     workspaceRoot,
     localBaselineRoot: workspaceRoot,
     sessionTarget: { kind: 'local', ownership: 'owner', followupOnly: options.followupOnly },
@@ -155,6 +159,59 @@ describe('PiExecutionController', () => {
     }
   })
 
+  test('Pi final guard转换规范名后，侧聊读取仍可用且外部路径及写入仍被拒绝', async () => {
+    const { installPiFinalToolGuard } = await import('./adapters/pi-final-tool-guard')
+    const h = await createHarness({ sideChatParentSessionId: 'parent' })
+    try {
+      const session: import('./adapters/pi-final-tool-guard').PiFinalToolGuardSession = { agent: {} }
+      installPiFinalToolGuard(session, { cwd: h.workspaceRoot, authorize: request => h.authorize({ type: 'tool', toolName: request.toolName, input: request.input, options: request.options }) })
+      const path = join(h.workspaceRoot, 'visible.txt')
+      await writeFile(path, '内容')
+      for (const name of ['read', 'grep', 'find', 'ls']) {
+        const result = await session.agent.beforeToolCall?.({ toolCall: { id: name, name }, args: { path: name === 'read' ? path : h.workspaceRoot, pattern: '*' } })
+        expect(result?.block).not.toBe(true)
+      }
+      expect((await session.agent.beforeToolCall?.({ toolCall: { id: 'outside', name: 'read' }, args: { path: join(tmpdir(), 'outside-side-chat.txt') } }))?.block).toBe(true)
+      expect((await session.agent.beforeToolCall?.({ toolCall: { id: 'write', name: 'write' }, args: { path, content: 'changed' } }))?.block).toBe(true)
+    } finally { await h.dispose() }
+  })
+
+  test('侧聊在执行状态也只能读取授权目录，不能写入、执行、委派、提权或使用同名扩展', async () => {
+    const h = await createHarness({ sideChatParentSessionId: 'parent' })
+    try {
+      h.workflow = 'direct'
+      const path = join(h.workspaceRoot, 'visible.txt')
+      await writeFile(path, '可见文件')
+      expect((await h.authorize({ type: 'tool', toolName: 'read', input: { path }, options: toolOptions('host') })).behavior).toBe('allow')
+      expect((await h.authorize({ type: 'tool', toolName: 'read', input: { path: join(tmpdir(), 'outside-side-chat.txt') }, options: toolOptions('host') })).behavior).toBe('deny')
+      for (const source of ['mcp', 'resource', 'product'] as const) {
+        expect((await h.authorize({ type: 'tool', toolName: 'read', input: { path }, options: toolOptions(source) })).behavior).toBe('deny')
+      }
+      for (const toolName of ['bash', 'write', 'edit', 'RequestDirectWorkflow', 'EnterPlanMode', 'DelegateAgent', 'CompactContext']) {
+        expect((await h.authorize({ type: 'tool', toolName, input: {}, options: toolOptions('host') })).behavior).toBe('deny')
+      }
+      for (const type of ['ask-user', 'request-direct-workflow', 'exit-plan'] as const) {
+        expect((await h.authorize({ type, input: {}, signal: new AbortController().signal })).behavior).toBe('deny')
+      }
+      expect(h.asks).toEqual([])
+      expect(h.approvals).toEqual([])
+      expect(h.workflowChanges).toEqual([])
+    } finally { await h.dispose() }
+  })
+
+  test('独立审查通过专用交互请求也不能提升权限或询问用户', async () => {
+    const h = await createHarness({ independentReviewId: 'review-1' })
+    try {
+      for (const type of ['ask-user', 'request-direct-workflow', 'exit-plan'] as const) {
+        const result = await h.authorize({ type, input: {}, signal: new AbortController().signal })
+        expect(result.behavior).toBe('deny')
+      }
+      expect(h.asks).toEqual([])
+      expect(h.workflowChanges).toEqual([])
+      expect((await h.authorize({ type: 'tool', toolName: 'ReadReviewSnapshot', input: {}, options: toolOptions('product') })).behavior).toBe('deny')
+      expect((await h.authorize({ type: 'tool', toolName: 'ReadReviewSnapshot', input: {}, options: toolOptions('mcp') })).behavior).toBe('deny')
+    } finally { await h.dispose() }
+  })
   test('Given a product browser mutation in Direct When authorized repeatedly Then one session-scoped external-impact approval is reused', async () => {
     const harness = await createHarness()
     try {

@@ -1,3 +1,4 @@
+import { openSideChatPanelAtom, sideChatHandoffAtomFamily } from '@/atoms/side-chat-atoms'
 import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * AgentView — Agent 模式主视图容器
@@ -2501,15 +2502,21 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       worktreeContinuation?: boolean
       worktreeContinuationAuthorizationToken?: string
       propagateSendFailure?: boolean
+      sideChatHandoff?: boolean
     },
   ): Promise<void> => {
     const isAuthorizedWorktreeContinuation = Boolean(runOptions?.worktreeContinuationAuthorizationToken)
     const isWorktreeContinuation = runOptions?.worktreeContinuation === true || isAuthorizedWorktreeContinuation
+    const isSideChatHandoff = runOptions?.sideChatHandoff === true
+    if (isSideChatHandoff && (!agentChannelId || !hasAvailableModel || !messagesLoaded || sessionTargetInteraction.requireChoiceBeforeSend || initialWorktreePreparationRef.current || sessionTargetState.loading || !sessionTargetState.snapshot || (!streaming && messagesRefreshingRef.current))) {
+      throw new Error('会话尚未准备好发送，请稍后重试。')
+    }
+    const cleanInput = isWorktreeContinuation || isSideChatHandoff
     const text = (overrideText ?? inputContent).trim()
     // 一次性 Worktree continuation 必须逐字使用宿主返回的 canonical message，
     // 不读取 composer suggestion、附件、附言、引用或 mention。
     const effectiveText = isWorktreeContinuation ? text : (text || suggestion || '')
-    const pendingAsideMessages = isWorktreeContinuation
+    const pendingAsideMessages = cleanInput
       ? []
       : getAsideQueuedMessages(queuedMessages).filter((aside) => !consumedAsideIdsRef.current.has(aside.id))
     const pendingAsideIds = new Set(pendingAsideMessages.map((aside) => aside.id))
@@ -2527,7 +2534,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       for (const aside of pendingAsideMessages) consumedAsideIdsRef.current.delete(aside.id)
       setQueuedMessages((current) => restoreFailedAsideMessages(current, pendingAsideMessages))
     }
-    const pendingFilesSnapshot = isWorktreeContinuation ? [] : pendingFilesRef.current
+    const pendingFilesSnapshot = cleanInput ? [] : pendingFilesRef.current
     if ((!effectiveText && pendingFilesSnapshot.length === 0) || !agentChannelId || !hasAvailableModel) return
     if (sessionTargetInteraction.requireChoiceBeforeSend) {
       toast.info('请先选择工作区', { description: '完成 Session Target 选择后即可发送。' })
@@ -2606,7 +2613,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         : null
       if (pendingFilesSnapshot.length > 0 && !attachmentContext) return
 
-      const quotedSelection = consumeQuotedSelection()
+      const quotedSelection = cleanInput ? null : consumeQuotedSelection()
       // Pi SDK 原生处理 steer/followUp；本地 atom 只作为可编辑/可排序的展示镜像。
       const kind: AgentQueueMessageKind = requestedQueueKind
       const message = createAgentQueuedMessage(
@@ -2638,6 +2645,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         setInputHtmlContent('')
       }
       setPromptSuggestions((prev) => {
+        if (isSideChatHandoff) return prev
         if (!prev.has(sessionId)) return prev
         const map = new Map(prev)
         map.delete(sessionId)
@@ -2656,6 +2664,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       } catch (error) {
         setQueuedMessages((prev) => removeQueuedMessage(prev, message.id))
         restorePendingAsides()
+        if (isSideChatHandoff) throw error
         setInputContent(effectiveText)
         setInputHtmlContent('')
         restoreQueuedAttachmentsToPending(message.attachments)
@@ -2678,7 +2687,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         : null
       if (pendingFilesSnapshot.length > 0 && !attachmentContext) return
 
-      const quotedSelection = consumeQuotedSelection()
+      const quotedSelection = cleanInput ? null : consumeQuotedSelection()
       const backgroundQueueKind: AgentQueueMessageKind = requestedQueueKind
       const message = createAgentQueuedMessage(effectiveText, crypto.randomUUID(), Date.now(), quotedSelection, {
         ...(attachmentContext ? {
@@ -2695,19 +2704,22 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         setInputHtmlContent('')
       }
       setPromptSuggestions((prev) => {
+        if (isSideChatHandoff) return prev
         if (!prev.has(sessionId)) return prev
         const map = new Map(prev)
         map.delete(sessionId)
         return map
       })
-      sendPlainTextAgentMessage(message, backgroundQueueKind).catch((error) => {
+      await sendPlainTextAgentMessage(message, backgroundQueueKind).catch((error) => {
         restorePendingAsides()
         console.error('[AgentView] 追加消息失败:', error)
         toast.error('追加消息失败', { description: String(error) })
         // 回滚：恢复输入框内容和建议，避免用户输入丢失
+        if (isSideChatHandoff) throw error
         setInputContent(effectiveText)
         setInputHtmlContent('')
         setPromptSuggestions((prev) => {
+          if (isSideChatHandoff) return prev
           const map = new Map(prev)
           if (suggestion) {
             map.set(sessionId, suggestion)
@@ -2739,6 +2751,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
     // 清除当前会话的提示建议
     setPromptSuggestions((prev) => {
+      if (isSideChatHandoff) return prev
       if (!prev.has(sessionId)) return prev
       const map = new Map(prev)
       map.delete(sessionId)
@@ -2753,14 +2766,14 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     let fileReferences = attachmentContext?.referenceBlock ?? ''
 
     // 构建引用选中文本：内联 XML 拼入 prompt，对话框不展示（parseAttachedFiles 剥离）
-    const quotedSelection = isWorktreeContinuation ? null : consumeQuotedSelection()
+    const quotedSelection = cleanInput ? null : consumeQuotedSelection()
     if (quotedSelection) {
       fileReferences = fileReferences + buildQuotedSelectionBlock(quotedSelection)
     }
 
     // 2. 构建最终消息
     const finalMessage = fileReferences + effectiveText
-    const mentions = parseQueuedMessageMentions(isWorktreeContinuation ? '' : effectiveText)
+    const mentions = parseQueuedMessageMentions(cleanInput ? '' : effectiveText)
 
     // 清除打断状态（上一轮的打断标记不再显示）
     store.set(stoppedByUserSessionsAtom, (prev: Set<string>) => {
@@ -4197,11 +4210,23 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const canSend = !workspaceSendDeferred && !initialWorktreePreparing && !sessionTargetInteraction.requireChoiceBeforeSend && (messagesLoaded || initialWorkspaceLoading) && (streaming || !messagesRefreshing || initialWorkspaceLoading) && (hasTextInput || pendingFiles.length > 0 || !!suggestion) && agentChannelId !== null && hasAvailableModel && (!streaming || hasTextInput)
   const alternateQueueEnterKind = getAgentQueueSubmitKind(true)
 
+  const openSideChat = React.useCallback(() => {
+    store.set(openSideChatPanelAtom, { parentSessionId: sessionId })
+  }, [store, sessionId])
+  const sendSideChatHandoff = React.useCallback(async (prompt: string): Promise<void> => {
+    await handleSend(prompt, 'followUp', { sideChatHandoff: true, propagateSendFailure: true })
+  }, [handleSend])
+  React.useEffect(() => {
+    store.set(sideChatHandoffAtomFamily(sessionId), { send: sendSideChatHandoff })
+    return () => { store.set(sideChatHandoffAtomFamily(sessionId), null) }
+  }, [store, sessionId, sendSideChatHandoff])
+
   const inputToolbarItems = React.useMemo<ToolbarItem[]>(() => [
     {
       key: 'composer-plus',
       node: (
         <ComposerPlusMenu
+          onSideChat={openSideChat}
           onInsertTrigger={(char) => richTextInputRef.current?.insertMentionTrigger(char)}
           disabled={!agentChannelId || !hasAvailableModel || workspaceSendDeferred}
         />
@@ -4299,6 +4324,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       node: <AgentStatusShortcut running={streaming || backgroundWaiting} onOpen={() => setSlashStatusOpen(true)} />,
     },
   ], [
+    openSideChat,
     minimalPresetEnabled,
     setModelPresentationPreset,
     backgroundWaiting,

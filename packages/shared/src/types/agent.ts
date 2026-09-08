@@ -692,7 +692,7 @@ export type DomiEvent =
   | { type: 'agent_queue_message_delivered'; uuid: string; kind: AgentQueueMessageKind }
 
 /** 外部入口触发 Agent 运行的来源 */
-export type AgentExternalRunSource = 'feishu' | 'dingtalk' | 'wechat' | 'bridge' | 'delegation' | 'worktree_handoff' | 'deferred_queue'
+export type AgentExternalRunSource = 'feishu' | 'dingtalk' | 'wechat' | 'bridge' | 'delegation' | 'worktree_handoff' | 'deferred_queue' | 'side_chat'
 
 /** Pi AssistantMessageEvent 的可序列化工具调用增量。 */
 export interface AgentToolCallDelta {
@@ -873,6 +873,10 @@ export interface AgentSessionMeta {
   rootSessionId?: string
   /** 来源委派任务 ID（由 collaboration 工具生成，用于父子会话关联） */
   sourceDelegationId?: string
+  /** 宿主创建的固定快照审查用途，普通会话更新不得解除此限制。 */
+  independentReviewId?: string
+  /** 宿主持久侧聊归属；不能通过普通元数据更新清除。 */
+  sideChatParentSessionId?: string
   /** 委派角色，用于 UI 和后续统计 */
   delegationRole?: AgentDelegationRole
   /** 委派任务当前状态 */

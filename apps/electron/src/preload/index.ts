@@ -6,6 +6,7 @@
  */
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { SIDE_CHAT_IPC_CHANNELS, type SideChatAPI } from '@domi/shared'
 import { RTK_IPC_CHANNELS, type RtkStatus } from '@domi/shared'
 import {
   AGENT_IPC_CHANNELS,
@@ -306,7 +307,7 @@ export interface BrowserRendererApi {
   onFocusEscapeRequested: (callback: (request: BrowserFocusEscapeRequest) => void) => () => void
 }
 
-export interface ElectronAPI {
+export interface ElectronAPI extends SideChatAPI {
   /** 当前 Work Session 的同页内置浏览器。 */
   browser: BrowserRendererApi
   /** 当前 Work Session 的可见 PTY 终端。 */
@@ -1491,6 +1492,10 @@ interface MigrationExportResult {
  * 实现 ElectronAPI 接口
  */
 const electronAPI: ElectronAPI = {
+  openSideChat: (input) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.OPEN, input),
+  getSideChat: (parentSessionId) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.GET, parentSessionId),
+  sendSideChat: (input) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.SEND, input),
+  stopSideChat: (parentSessionId) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.STOP, parentSessionId),
   browser: {
     open: (input) => ipcRenderer.invoke(BROWSER_IPC_CHANNELS.OPEN, input),
     activate: (input) => ipcRenderer.invoke(BROWSER_IPC_CHANNELS.ACTIVATE, input),

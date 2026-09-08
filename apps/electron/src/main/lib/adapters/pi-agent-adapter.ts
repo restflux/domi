@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { createSideChatResourceLoader } from './pi-side-chat-resource-loader'
 import { spawn } from 'node:child_process'
 import type { Dispatcher } from 'undici'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
@@ -263,6 +264,8 @@ export interface PiAgentContextCompactorOptions {
 }
 
 export interface PiAgentQueryOptions extends AgentQueryInput {
+  /** 仅由编排层从持久会话用途注入，不接收用户输入。 */
+  sideChatParentSessionId?: string
   apiKey: string
   baseUrl?: string
   provider: ProviderType
@@ -2349,7 +2352,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       let contextCompactorLifecycleActive = true
       const contextCompactorSettings = resolvePiContextCompactorSettings({
         ...input.contextCompactor?.settings,
-        enabled: contextCompactorMode === 'observe' || contextCompactorMode === 'enhance',
+        enabled: !input.sideChatParentSessionId && (contextCompactorMode === 'observe' || contextCompactorMode === 'enhance'),
       })
       const productToolRuntimeState: DomiProductToolRuntimeState = { tasks: new Map(), nextTaskId: 1 }
       const getContextCompactorHostSnapshot = async (signal: AbortSignal): Promise<PiContextCompactorHostSnapshot> => {
@@ -2402,13 +2405,13 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         input.rtkSessionDirectory,
         input.protectedTarget,
       )
-      const productTools = buildDomiProductToolDefinitions(sdk, input, productToolRuntimeState)
+      const productTools = input.sideChatParentSessionId ? [] : buildDomiProductToolDefinitions(sdk, input, productToolRuntimeState)
       const adapterReadOnlyToolDefinitions = new Map<string, ToolDefinition>(
         [...builtinTools, ...productTools]
           .filter((tool) => isParallelReadOnlyPiToolName(tool.name))
           .map((tool) => [tool.name, tool] as const),
       )
-      const customTools = filterToolsForModelPresentation([
+      const customTools = input.sideChatParentSessionId ? builtinTools.filter(tool => ['read', 'grep', 'find', 'ls'].includes(tool.name)) : filterToolsForModelPresentation([
         buildCurrentSessionCompactionTool(
           sdk,
           () => { compactContextRequested = true },
@@ -2507,7 +2510,13 @@ export class PiAgentAdapter implements AgentProviderAdapter {
             }]
           : []),
       ]
-      const resourceLoader = createTrustedPiResourceLoader(
+      const resourceLoader = input.sideChatParentSessionId ? createSideChatResourceLoader(sdk, {
+        cwd,
+        agentDir: input.piAgentDir,
+        settingsManager,
+        systemPrompt: input.systemPrompt,
+        extensionFactories: modelExtensionFactories,
+      }) : createTrustedPiResourceLoader(
         sdk,
         this.extensionTrustStore,
         cwd,
@@ -3142,7 +3151,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
             const promptInput = nextPrompt
             let prompt: string
             try {
-              prompt = promptInput.skipSkillExpansion
+              prompt = input.sideChatParentSessionId || promptInput.skipSkillExpansion
                 ? promptInput.content
                 : await preparePromptWithDomiSkills(resourceLoader, promptInput.content, input.skillMentions)
             } catch (error) {

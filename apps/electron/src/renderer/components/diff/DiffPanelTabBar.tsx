@@ -2,7 +2,7 @@
  * DiffPanelTabBar — 右侧面板顶部 Tab 栏（单层分段控件）
  *
  * 原「文件 / 文件改动」外层 Tab 与文件视图内层「会话文件 / 项目文件」子 Tab
- * 合并为一层：[会话文件 | 项目文件 | 文件改动 (+ 问答)]，
+ * 合并为一层：[会话文件 | 项目文件 | 文件改动 (+ 侧聊)]，
  * 消除双层 Tab 的认知成本。会话/项目两个入口仍写入原有两层状态：
  * AgentSidePanelTab('files') + AgentFileSourceFilter，持久化结构不变。
  */
@@ -160,13 +160,13 @@ export function DiffPanelTabBar({
                 onClick={() => onTabChange('chat')}
                 className="min-w-0 flex-1 self-stretch px-2 text-left"
               >
-                <span className="block truncate text-center">问答</span>
+                <span className="block truncate text-center">侧聊</span>
               </button>
               {onCloseChat && (
                 <button
                   type="button"
                   className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                  aria-label="关闭问答 Tab"
+                  aria-label="关闭侧聊 Tab"
                   onClick={onCloseChat}
                 >
                   <X className="size-3" />

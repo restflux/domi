@@ -33,15 +33,23 @@ const MENU_ITEMS = [
 
 export interface ComposerPlusMenuProps {
   onInsertTrigger?: (char: string) => void
+  onSideChat?: () => void
   disabled?: boolean
 }
 
-export function ComposerPlusMenu({ onInsertTrigger, disabled = false }: ComposerPlusMenuProps): React.ReactElement {
+export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false }: ComposerPlusMenuProps): React.ReactElement {
   // 待插入的触发符：onSelect 记录，菜单关闭时在 onCloseAutoFocus 中消费；
   // Esc/点击外部关闭时不设置，走默认焦点还原。
+  const pendingSideChatRef = React.useRef(false)
   const pendingCharRef = React.useRef<string | null>(null)
 
   const handleCloseAutoFocus = (event: Event): void => {
+    if (pendingSideChatRef.current) {
+      pendingSideChatRef.current = false
+      event.preventDefault()
+      onSideChat?.()
+      return
+    }
     const char = pendingCharRef.current
     if (!char) return
     event.preventDefault()
@@ -65,6 +73,12 @@ export function ComposerPlusMenu({ onInsertTrigger, disabled = false }: Composer
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="z-[9999] min-w-56" onCloseAutoFocus={handleCloseAutoFocus}>
+        {onSideChat && (
+          <DropdownMenuItem className="gap-2.5 py-1.5" onSelect={() => { pendingSideChatRef.current = true }}>
+            <MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
+            <span className="text-xs font-medium leading-4">侧聊</span>
+          </DropdownMenuItem>
+        )}
         {MENU_ITEMS.map(({ char, label, icon: Icon }) => (
           <DropdownMenuItem key={char} onSelect={() => { pendingCharRef.current = char }} className="gap-2.5 py-1.5">
             <Icon className="size-4 shrink-0 text-muted-foreground" />

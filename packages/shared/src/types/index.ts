@@ -72,3 +72,5 @@ export * from './agent-island'
 
 // Token 使用记录相关类型
 export * from './usage'
+
+export * from "./side-chat"

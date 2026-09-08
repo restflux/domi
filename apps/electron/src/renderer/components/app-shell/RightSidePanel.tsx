@@ -1,3 +1,5 @@
+import { sideChatVisibleMapAtom } from '@/atoms/side-chat-atoms'
+import { SideChatPanel } from '@/components/agent/side-chat/SideChatPanel'
 /**
  * RightSidePanel — Work 会话的统一右侧工作区。
  *
@@ -104,7 +106,7 @@ function ActiveRightSidePanel({
   const browserStateMap = useAtomValue(browserStateMapAtom)
   const setBrowserStateMap = useSetAtom(browserStateMapAtom)
   const sideChatMap = useAtomValue(agentSideChatMapAtom)
-  const setSideChatMap = useSetAtom(agentSideChatMapAtom)
+  const [sideChatVisibleMap, setSideChatVisibleMap] = useAtom(sideChatVisibleMapAtom)
   const fileSourceFilterMap = useAtomValue(agentFileSourceFilterMapAtom)
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
   const scratchSaveState = useAtomValue(scratchPadSaveStateAtom)
@@ -146,7 +148,7 @@ function ActiveRightSidePanel({
       closeable: true,
     })),
     ...(previewFile ? [{ id: 'preview' as const, tool: 'preview' as const, label: getPreviewTitle(previewFile.filePath) ?? '预览', closeable: true }] : []),
-    ...(sideChatConversationId ? [{ id: 'side-chat' as const, tool: 'side-chat' as const, label: '问答', closeable: true }] : []),
+    ...((sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) ? [{ id: 'side-chat' as const, tool: 'side-chat' as const, label: '侧聊', closeable: true }] : []),
   ]
   const activeTabId = resolveAvailableTabId(state, tabs)
   const activeTool = toolFromRightWorkspaceTab(activeTabId)
@@ -289,7 +291,7 @@ function ActiveRightSidePanel({
       return
     }
     if (tabId === 'preview') setPreviewFileMap((current) => { const next = new Map(current); next.delete(currentSessionId); return next })
-    if (tabId === 'side-chat') setSideChatMap((current) => { const next = new Map(current); next.delete(currentSessionId); return next })
+    if (tabId === 'side-chat') setSideChatVisibleMap((current) => new Map(current).set(currentSessionId, false))
     if (activeTabId === tabId) setActiveTab(fallbackTabId)
   }
 
@@ -321,6 +323,8 @@ function ActiveRightSidePanel({
             <TerminalPane terminal={activeTerminal} />
           ) : activeTool === 'preview' ? (
             <PreviewTabContent sessionId={currentSessionId} mode="workspace" />
+          ) : activeTool === 'side-chat' ? (
+            <SideChatPanel key={currentSessionId} parentSessionId={currentSessionId} />
           ) : activeTool === 'scratch' ? (
             <ScratchPadWorkspace />
           ) : (

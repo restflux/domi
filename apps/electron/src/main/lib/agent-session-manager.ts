@@ -564,7 +564,7 @@ export function getAgentSessionSDKMessages(id: string): SDKMessage[] {
  */
 export function updateAgentSessionMeta(
   id: string,
-  updates: Partial<Pick<AgentSessionMeta, 'title' | 'channelId' | 'modelId' | 'sdkSessionId' | 'piSessionFile' | 'piEntryBindings' | 'piTreeActiveLeafId' | 'sessionTarget' | 'codexFastMode' | 'visionRelayAttachedDirectories' | 'reasoningLevel' | 'openAIThinkingLevel' | 'modelPresentationPreset' | 'workspaceId' | 'pinned' | 'starred' | 'needsFollowUp' | 'archived' | 'attachedDirectories' | 'attachedFiles' | 'forkSourceDir' | 'forkSourceSdkSessionId' | 'resumeAtMessageUuid' | 'stoppedByUser' | 'workActivityRun' | 'workActivityTasks' | 'workActivityViewedAt' | 'workActivityAcknowledgedOutcomeAt' | 'workActivityRemovedOutcomeAt' | 'executionPolicy' | 'workflow' | 'permissionMode' | 'completedButUnconfirmed' | 'sourceAutomationId' | 'automationGraduated' | 'handoffId' | 'handoffOriginSessionId' | 'handoffMode' | 'handoffDegradedReason' | 'handoffStartedAt' | 'recoveryHandoffId' | 'recoveryOriginSessionId' | 'recoveryHandoffStartedAt' | 'parentSessionId' | 'rootSessionId' | 'sourceDelegationId' | 'delegationRole' | 'delegationStatus' | 'delegationCheckoutReleasedAt' | 'delegationDepth' | 'delegationGoal'>>,
+  updates: Partial<Pick<AgentSessionMeta, 'title' | 'channelId' | 'modelId' | 'sdkSessionId' | 'piSessionFile' | 'piEntryBindings' | 'piTreeActiveLeafId' | 'sessionTarget' | 'codexFastMode' | 'visionRelayAttachedDirectories' | 'reasoningLevel' | 'openAIThinkingLevel' | 'modelPresentationPreset' | 'workspaceId' | 'pinned' | 'starred' | 'needsFollowUp' | 'archived' | 'attachedDirectories' | 'attachedFiles' | 'forkSourceDir' | 'forkSourceSdkSessionId' | 'resumeAtMessageUuid' | 'stoppedByUser' | 'workActivityRun' | 'workActivityTasks' | 'workActivityViewedAt' | 'workActivityAcknowledgedOutcomeAt' | 'workActivityRemovedOutcomeAt' | 'executionPolicy' | 'workflow' | 'permissionMode' | 'completedButUnconfirmed' | 'sourceAutomationId' | 'automationGraduated' | 'handoffId' | 'handoffOriginSessionId' | 'handoffMode' | 'handoffDegradedReason' | 'handoffStartedAt' | 'recoveryHandoffId' | 'recoveryOriginSessionId' | 'recoveryHandoffStartedAt' | 'parentSessionId' | 'rootSessionId' | 'sourceDelegationId' | 'sideChatParentSessionId' | 'delegationRole' | 'delegationStatus' | 'delegationCheckoutReleasedAt' | 'delegationDepth' | 'delegationGoal'>>,
 ): AgentSessionMeta {
   const index = readIndex()
   const idx = index.sessions.findIndex((s) => s.id === id)
@@ -574,6 +574,11 @@ export function updateAgentSessionMeta(
   }
 
   const existing = index.sessions[idx]!
+  if (existing.sideChatParentSessionId && (
+    ('sideChatParentSessionId' in updates && updates.sideChatParentSessionId !== existing.sideChatParentSessionId)
+    || ('parentSessionId' in updates && updates.parentSessionId !== existing.parentSessionId)
+    || ('workspaceId' in updates && updates.workspaceId !== existing.workspaceId)
+  )) throw new Error('侧聊归属不能通过普通会话更新更改')
   const updateKeys = Object.keys(updates)
   // 星标、待继续与 Work Activity 展示状态只是人工标记，不应改变会话的新鲜度或归档状态。
   const isManualMarkerOnly = updateKeys.every((key) => (
@@ -975,6 +980,9 @@ export async function forkAgentSession(input: ForkSessionInput, hostPiForkPoint?
     throw new Error(`源 Agent 会话不存在: ${sessionId}`)
   }
 
+  if (sourceMeta.independentReviewId || sourceMeta.sideChatParentSessionId) {
+    throw new Error('此只读会话不能分叉为可执行会话；请从主会话发起新的任务。')
+  }
   if (!sourceMeta.sdkSessionId) {
     throw new PiForkUnavailableError('sdk_session_missing', '该会话没有 SDK session，无法继承完整历史')
   }

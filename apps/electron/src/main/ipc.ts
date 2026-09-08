@@ -314,6 +314,8 @@ import { FileExtensionTrustStore } from './lib/adapters/pi-extension-trust.ts'
 import { PiExtensionTrustService } from './lib/pi-extension-trust-service.ts'
 import { registerPiExtensionTrustIpc } from './ipc/register-pi-extension-trust-ipc.ts'
 import { registerPiRunTimingIpc } from './ipc/register-pi-run-timing-ipc.ts'
+import { registerSideChatIpc } from './ipc/register-side-chat-ipc.ts'
+import { sideChatService } from './lib/side-chat/production'
 import { registerSessionCheckoutIpc } from './ipc/register-session-checkout-ipc.ts'
 import { registerBrowserIpc, type BrowserIpcGuard } from './ipc/register-browser-ipc.ts'
 import type { BrowserSessionService } from './lib/browser/browser-session-service.ts'
@@ -1076,6 +1078,7 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
     },
   })
   registerPiExtensionTrustIpc(ipcMain, extensionTrustService)
+  registerSideChatIpc(ipcMain, sideChatService)
   registerPiRunTimingIpc(ipcMain, new PiRunTimingQuery({ filePath: getPiRunTimingAuditPath() }))
   const sessionCheckout = getSessionCheckoutModule()
   const sessionCheckoutOperationGuard = new SessionCheckoutOperationGuard({

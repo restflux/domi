@@ -88,6 +88,7 @@ import {
 } from './builtin-mcp/chrome-devtools-intent'
 import { isBuiltinMcpUserEnabled } from './builtin-mcp/settings'
 import { buildPiBuiltinTools } from './adapters/pi-builtin-tools'
+import { claimSideChatLaunch, SIDE_CHAT_SYSTEM_PROMPT } from './side-chat/policy'
 import { buildPiMcpTools } from './adapters/pi-mcp-tools'
 import type { AgentToolAnnotationsMap } from './agent-tool-annotations'
 import { buildAgentRuntimeEnv, mergeRuntimeEnv, type AgentRuntimeEnv } from './agent-runtime-env'
@@ -906,6 +907,18 @@ export class AgentOrchestrator {
     let userMessagePersisted = false
     let persistedUserMessageUuid: string | undefined
     let sessionMeta = getAgentSessionMeta(sessionId)
+    const independentReviewId = sessionMeta?.independentReviewId
+    if (independentReviewId) {
+      callbacks.onError('此历史审查记录不能继续运行；请回到主会话或侧聊中提问。')
+      callbacks.onComplete({ startedAt: streamStartedAt })
+      return
+    }
+    const sideChatParentSessionId = sessionMeta?.sideChatParentSessionId
+    if (sideChatParentSessionId && !claimSideChatLaunch(sessionId, sideChatParentSessionId, input)) {
+      callbacks.onError('侧聊只能由所属主会话的侧聊入口发送消息。')
+      callbacks.onComplete({ startedAt: streamStartedAt })
+      return
+    }
     let trustedWorktreeContinuation: TrustedWorktreeContinuationAuthorization | undefined
     let prevalidatedWorktreeContinuationTarget: Awaited<ReturnType<typeof resolveProductionAgentSessionTarget>> | undefined
     if (
@@ -1510,7 +1523,7 @@ export class AgentOrchestrator {
       }
 
       // 10. 构建 Pi 内置工具、用户 MCP 和本轮动态 custom tools。
-      const mcpServers = this.buildMcpServers(workspaceSlug, true)
+      const mcpServers = sideChatParentSessionId ? {} : this.buildMcpServers(workspaceSlug, true)
       const chromeDevtoolsMcpName = getBuiltinMcpName('chrome-devtools')
       const chromeDevtoolsMentioned = mentionedMcpServers?.some((name) => (
         name === 'chrome-devtools' || name === chromeDevtoolsMcpName
@@ -1520,7 +1533,7 @@ export class AgentOrchestrator {
         userMessage,
         chromeDevtoolsMentioned,
       )
-      if (chromeDevtoolsRequestedForRun) {
+      if (!sideChatParentSessionId && chromeDevtoolsRequestedForRun) {
         console.log('[Agent 编排] 正在启动浏览器调试工具 (chrome-devtools)')
         injectChromeDevtoolsMcpServer(mcpServers)
       }
@@ -1538,7 +1551,9 @@ export class AgentOrchestrator {
         : input.triggeredBy === 'bridge' || input.triggeredBy === 'channel'
           ? 'automation' as const
           : input.triggeredBy
-      const builtinToolResult = await buildPiBuiltinTools(piSdk, {
+      const builtinToolResult = sideChatParentSessionId
+        ? { tools: [], toolAnnotations: {}, collaborationAvailable: false }
+        : await buildPiBuiltinTools(piSdk, {
         sessionId,
         channelId,
         modelId: selectedModelId,
@@ -1556,7 +1571,7 @@ export class AgentOrchestrator {
         triggeredBy,
         ...(sessionTargetPrompt && { sessionTarget: sessionTargetPrompt }),
       })
-      const piBuiltinTools: unknown[] = [...builtinToolResult.tools, ...(customTools ?? [])]
+      const piBuiltinTools: unknown[] = [...builtinToolResult.tools, ...(sideChatParentSessionId ? [] : customTools ?? [])]
       const piToolAnnotations: AgentToolAnnotationsMap = { ...builtinToolResult.toolAnnotations }
       const collaborationAvailable = builtinToolResult.collaborationAvailable
 
@@ -1682,7 +1697,7 @@ export class AgentOrchestrator {
         ?? legacyWorkflow
         ?? persistedControls.workflow
       const planCommandWorkflow = resolveAgentPlanCommandWorkflow(requestedWorkflow, planCommand.matched)
-      let initialWorkflow: AgentWorkflow = planCommandWorkflow.runWorkflow
+      let initialWorkflow: AgentWorkflow = sideChatParentSessionId ? 'read-only' : planCommandWorkflow.runWorkflow
       this.sessionExecutionPolicies.set(sessionId, initialExecutionPolicy)
       this.sessionWorkflows.set(sessionId, initialWorkflow)
       const continuationWorkflow = resolveWorktreeContinuationRunWorkflow(initialWorkflow, trustedWorktreeContinuation)
@@ -1707,7 +1722,7 @@ export class AgentOrchestrator {
         bun: runtimeStatus?.bun ?? { available: false, version: null },
         environment: mergeRuntimeEnv(process.env, runtimeEnv.env),
       })
-      if (dependencyRuntime) {
+      if (dependencyRuntime && !sideChatParentSessionId) {
         const controller = new AbortController()
         this.dependencyPreparationControllers.set(sessionId, { generation: runGeneration, controller })
         const preparation = await getWorktreeDependencySnapshotService().prepare({
@@ -1782,6 +1797,7 @@ export class AgentOrchestrator {
       const authorizePiExecution = await (async () => {
             return createPiExecutionController({
               sessionId,
+              sideChatParentSessionId,
               ...(workspaceId && { workspaceId }),
               workspaceRoot: executionWorkspaceRoot,
               localBaselineRoot,
@@ -2033,7 +2049,7 @@ export class AgentOrchestrator {
         standardSystemPromptAppend,
       )
       const startAutoTitleGeneration = (): void => {
-        if (titleGenerationStarted) return
+        if (sideChatParentSessionId || titleGenerationStarted) return
         titleGenerationStarted = true
 
         // 标题请求与前台 Agent run 使用独立的 Codex Responses 请求，可并发执行。
@@ -2123,7 +2139,7 @@ export class AgentOrchestrator {
         : undefined
       const queryOptions: PiAgentQueryOptions = {
         sessionId,
-        prompt: finalPrompt,
+        prompt: sideChatParentSessionId ? userMessage : finalPrompt,
         // Pi runtime 使用渠道配置的真实模型 ID，不支持历史 `[1m]` 后缀变体：
         // 智谱等端点不识别 glm-5.2[1m] 这类后缀，会返回 1211「模型不存在」。
         // 因此 pi 分支直接使用用户配置的原始模型 ID，不追加任何 `[1m]`。
@@ -2215,14 +2231,15 @@ export class AgentOrchestrator {
           input: toolInput,
           signal,
         }),
-        systemPrompt: systemPromptAppend + buildPiAdditionalDirectoriesPrompt(allAdditionalDirectories),
+        sideChatParentSessionId,
+        systemPrompt: sideChatParentSessionId ? SIDE_CHAT_SYSTEM_PROMPT : systemPromptAppend + buildPiAdditionalDirectoriesPrompt(allAdditionalDirectories),
         ...(modelPresentationPreset !== 'standard' && { modelPresentationPreset }),
         resumeSessionId: existingSdkSessionId,
         piAgentDir: getSdkConfigDir(),
         piSessionDir: join(getSdkConfigDir(), 'sessions'),
         ...(workspaceSlug ? { rtkSessionDirectory: getAgentSessionWorkspacePath(workspaceSlug, sessionId) } : {}),
         ...(allAdditionalDirectories.length > 0 && { additionalDirectories: allAdditionalDirectories }),
-        ...(workspaceSlug ? { additionalSkillPaths: getEffectivePiSkillPaths(workspaceSlug) } : {}),
+        ...(!sideChatParentSessionId && workspaceSlug ? { additionalSkillPaths: getEffectivePiSkillPaths(workspaceSlug) } : {}),
         ...(skillTriggerRecorder ? {
           skillTriggerRecorder,
           onSkillTrigger: (trigger: SkillTriggerEvent) => {
@@ -3251,6 +3268,7 @@ export class AgentOrchestrator {
    * 典型场景：用户在 Agent 运行中通过 PermissionModeSelector 切换模式。
    */
   async updateSessionPermissionMode(sessionId: string, mode: DomiPermissionMode): Promise<void> {
+    if (getAgentSessionMeta(sessionId)?.independentReviewId || getAgentSessionMeta(sessionId)?.sideChatParentSessionId) throw new Error('此只读会话的权限不可更改')
     const runGeneration = this.activeSessions.get(sessionId)
     if (runGeneration === undefined) return
     const workflow: AgentWorkflow = mode === 'plan' ? 'read-only' : 'direct'
@@ -3269,6 +3287,7 @@ export class AgentOrchestrator {
     sessionId: string,
     controls: AgentExecutionControlsUpdate,
   ): Promise<void> {
+    if (getAgentSessionMeta(sessionId)?.independentReviewId || getAgentSessionMeta(sessionId)?.sideChatParentSessionId) throw new Error('此只读会话的权限不可更改')
     const runGeneration = this.activeSessions.get(sessionId)
     if (runGeneration === undefined) return
     if (controls.executionPolicy) {
@@ -3755,6 +3774,7 @@ export class AgentOrchestrator {
     mentionedCalendarEventIds?: string[],
     nextTurnAsides?: AgentNextTurnAside[],
   ): Promise<string> {
+    if (getAgentSessionMeta(sessionId)?.independentReviewId || getAgentSessionMeta(sessionId)?.sideChatParentSessionId) throw new Error('此会话不能通过主任务队列追加消息，请使用所属侧聊入口')
     if (worktreeContinuationAuthorizationRegistry.isConfirmationInProgress(sessionId)) {
       throw new Error('Worktree 续跑确认正在处理中，请等待完成后再追加消息')
     }

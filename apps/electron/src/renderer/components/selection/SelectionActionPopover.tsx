@@ -38,7 +38,7 @@ export function SelectionActionPopover({
           }}
         >
           <MessageCircle className="size-4" />
-          打开右侧问答
+          在侧聊中询问
         </button>
       </div>
     </div>

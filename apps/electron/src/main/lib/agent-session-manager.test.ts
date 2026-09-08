@@ -180,6 +180,18 @@ describe('Agent 会话 JSONL 读取', () => {
 })
 
 describe('Agent 会话 runtime 元数据', () => {
+  test('侧聊用途一经持久化不能被元数据更新解除或改父，JSONL多轮内容保持独立', () => {
+    const parent = manager.createAgentSession('主任务')
+    const child = manager.createAgentSession('侧聊')
+    manager.updateAgentSessionMeta(child.id, { sideChatParentSessionId: parent.id, parentSessionId: parent.id })
+    expect(() => manager.updateAgentSessionMeta(child.id, { sideChatParentSessionId: undefined })).toThrow('归属')
+    expect(() => manager.updateAgentSessionMeta(child.id, { parentSessionId: 'foreign' })).toThrow('归属')
+    for (const text of ['第一轮', '第二轮']) manager.appendSDKMessages(child.id, [{ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'text', text }] } }])
+    expect(manager.getAgentSessionSDKMessages(child.id)).toHaveLength(2)
+    expect(manager.getAgentSessionSDKMessages(parent.id)).toHaveLength(0)
+    expect(manager.getAgentSessionMeta(child.id)?.sideChatParentSessionId).toBe(parent.id)
+  })
+
   test('Given rewound Pi metadata When a restore is prepared Then commit returns to source and rollback returns to the rewind branch', () => {
     const session = manager.createAgentSession('Pi rewind metadata restore')
     const piDir = join(tempHome, '.domi', 'sdk-config', 'sessions')

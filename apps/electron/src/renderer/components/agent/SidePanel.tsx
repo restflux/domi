@@ -11,7 +11,7 @@ import { X, ExternalLink, ChevronRight, MoreHorizontal, FolderSearch, Pencil, Fo
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ImageLightbox } from '@/components/ui/image-lightbox'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +28,7 @@ import {
 } from './session-artifact-visibility.ts'
 import { DiffPanelTabBar } from '@/components/diff/DiffPanelTabBar'
 import { DiffChangesList } from '@/components/diff/DiffChangesList'
-import { ChatView } from '@/components/chat/ChatView'
+import { SideChatPanel } from './side-chat/SideChatPanel'
 import {
   agentSidePanelOpenAtom,
   agentFileSourceFilterMapAtom,
@@ -47,7 +47,7 @@ import {
   fileBrowserAutoRevealAtom,
 } from '@/atoms/agent-atoms'
 import type { AgentSidePanelTab, AgentFileSourceFilter } from '@/atoms/agent-atoms'
-import { agentSideChatMapAtom } from '@/atoms/chat-atoms'
+
 import { interfaceVariantAtom } from '@/atoms/theme'
 import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import { sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
@@ -582,24 +582,8 @@ export function SidePanel({
   const hasVisibleWorkspaceAttachedItems = showProjectFiles && hasWorkspaceAttachedItems
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const isClassic = interfaceVariant === 'classic'
-  const sideChatMap = useAtomValue(agentSideChatMapAtom)
-  const setSideChatMap = useSetAtom(agentSideChatMapAtom)
-  const sideChatConversationId = sideChatMap.get(sessionId) ?? null
-  const effectiveActiveTab: AgentSidePanelTab = activeTab === 'chat' && !sideChatConversationId
-    ? 'files'
-    : activeTab
-
-  const handleCloseChatTab = React.useCallback(() => {
-    setSideChatMap((prev) => {
-      if (!prev.has(sessionId)) return prev
-      const next = new Map(prev)
-      next.delete(sessionId)
-      return next
-    })
-    if (activeTab === 'chat') {
-      onTabChange('files')
-    }
-  }, [activeTab, onTabChange, sessionId, setSideChatMap])
+  const effectiveActiveTab = activeTab
+  const handleCloseChatTab = React.useCallback(() => onTabChange('files'), [onTabChange])
 
 
   return (
@@ -638,19 +622,13 @@ export function SidePanel({
               sourceFilter={fileSourceFilter}
               onSourceFilterChange={setFileSourceFilter}
               onCloseChat={handleCloseChatTab}
-              showChatTab={Boolean(sideChatConversationId)}
+              showChatTab
               isWindows={isWindows}
             />
           )}
 
           {effectiveActiveTab === 'chat' ? (
-            sideChatConversationId ? (
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <ChatView conversationId={sideChatConversationId} />
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs">暂无问答会话</div>
-            )
+            <SideChatPanel key={sessionId} parentSessionId={sessionId} />
           ) : effectiveActiveTab === 'changes' ? (
             usesSessionTarget && !hasBoundSessionTarget ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">

@@ -13,6 +13,11 @@ const session: AgentSessionMeta = {
 }
 
 describe('外部 Agent 运行激活', () => {
+  test('侧聊运行不抢占正在显示的父会话或其他工作区', () => {
+    for (const currentSessionId of ['parent', 'other']) {
+      expect(shouldForegroundExternalAgentRun({ source: 'side_chat', originSessionId: 'parent', activationToken: 'nonce', currentSessionId })).toBe(false)
+    }
+  })
   test('只有仍停留在 origin 且携带主进程 token 的 Worktree handoff 会自动切换', () => {
     expect(shouldForegroundExternalAgentRun({ source: 'worktree_handoff', originSessionId: 'parent', activationToken: 'nonce', currentSessionId: 'parent' })).toBe(true)
     expect(shouldForegroundExternalAgentRun({ source: 'worktree_handoff', originSessionId: 'parent', activationToken: 'nonce', currentSessionId: 'other' })).toBe(false)

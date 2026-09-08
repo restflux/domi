@@ -1,3 +1,4 @@
+import { isSideChatReadTool } from './side-chat/policy'
 import { mkdir } from 'node:fs/promises'
 import { resolveProtectedTargetAccess } from './session-target-protection.ts'
 import { join, posix, win32 } from 'node:path'
@@ -55,6 +56,9 @@ export type PiExecutionAuthorize = (
 
 export interface PiExecutionControllerOptions {
   sessionId: string
+  /** 从持久会话元数据读取，不能由工具输入或 Workflow 提升覆盖。 */
+  independentReviewId?: string
+  sideChatParentSessionId?: string
   workspaceId?: string
   /** 当前 checkout 的 Workspace Boundary root。 */
   workspaceRoot: string
@@ -264,9 +268,25 @@ export async function createPiExecutionController(
     toolOptions: CanUseToolOptions,
   ): Promise<PermissionResult> => {
     const toolSource = toolOptions.toolSource ?? 'host'
+    if (options.independentReviewId || (options.sideChatParentSessionId && !isSideChatReadTool(toolName, toolSource))) {
+      return { behavior: 'deny', message: '此只读会话不能使用该工具或提升权限。' }
+    }
+
     const isHostInteractionTool = toolSource === 'host'
     const validationFailure = validateToolInput(toolName, toolInput)
     if (validationFailure) return validationFailure
+    if (options.sideChatParentSessionId) {
+      // 普通研究模式的读取范围较宽；侧聊只授权当前 checkout 与自己的工作台。
+      const rawPath = toolInput.path ?? toolInput.file_path ?? '.'
+      if (typeof rawPath !== 'string') return { behavior: 'deny', message: '侧聊读取路径无效。' }
+      try {
+        const target = await canonicalizePath(resolvePortablePath(normalizeMsysPath(rawPath), options.workspaceRoot))
+        if (!isWithinWorkspace(target, canonicalWorkspaceRoot)
+          && !(canonicalSessionWorkbenchRoot && isWithinWorkspace(target, canonicalSessionWorkbenchRoot))) {
+          return { behavior: 'deny', message: '侧聊只能读取当前项目和自身工作台中的文件。' }
+        }
+      } catch { return { behavior: 'deny', message: '无法验证侧聊读取路径，已拒绝访问。' } }
+    }
     const normalizedToolName = toolName.toLowerCase()
     const canonicalShellCommand = (normalizedToolName === 'bash' || normalizedToolName === 'terminalrun')
       && typeof toolInput.command === 'string'
@@ -403,7 +423,7 @@ export async function createPiExecutionController(
       return { behavior: 'allow', updatedInput: toolInput }
     }
 
-    const currentWorkflow = options.getWorkflow()
+    const currentWorkflow = options.sideChatParentSessionId ? 'read-only' : options.getWorkflow()
     if (toolName === 'RequestDirectWorkflow' && isHostInteractionTool) {
       if (currentWorkflow === 'direct') {
         return { behavior: 'allow', updatedInput: toolInput }
@@ -606,6 +626,9 @@ export async function createPiExecutionController(
   }
 
   return async (request): Promise<PermissionResult> => {
+    if ((options.independentReviewId || options.sideChatParentSessionId) && request.type !== 'tool') {
+      return { behavior: 'deny', message: '独立审查不能请求交互或提升权限。' }
+    }
     if (request.type === 'tool') {
       return authorizeTool(request.toolName, request.input, request.options)
     }
@@ -616,7 +639,7 @@ export async function createPiExecutionController(
       if (options.interaction === 'unattended') {
         return { behavior: 'deny', message: '无人值守调用不能请求切换 Workflow。' }
       }
-      const currentWorkflow = options.getWorkflow()
+      const currentWorkflow = options.sideChatParentSessionId ? 'read-only' : options.getWorkflow()
       if (currentWorkflow === 'direct') {
         return { behavior: 'allow', updatedInput: request.input }
       }

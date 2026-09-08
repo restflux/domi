@@ -879,6 +879,7 @@ async function continueDelegation(
   const record = getDelegationRecordForContinuation(ctx, args.delegationId)
   if (!record) throw new Error(`未找到当前会话下的委派: ${args.delegationId}`)
   const childSession = getAgentSessionMeta(record.childSessionId)
+  if (childSession?.independentReviewId || childSession?.sideChatParentSessionId) throw new Error('此会话不能通过协作委派入口继续运行。')
   if (childSession?.delegationCheckoutReleasedAt !== undefined) {
     throw new Error('该协作会话已结束并释放 Worktree 占用，不能继续运行；请创建新的协作子会话。')
   }
