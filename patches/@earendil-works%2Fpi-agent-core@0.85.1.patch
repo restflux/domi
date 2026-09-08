@@ -95,7 +95,7 @@
      };
      // Resolve API key (important for expiring tokens)
      const resolvedApiKey = (config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
-@@ -413,6 +447,10 @@
+@@ -422,6 +456,10 @@
                      result: createErrorToolResult("Operation aborted"),
                      isError: true,
                  };
@@ -207,7 +207,7 @@
      /**
       * Returns steering messages to inject into the conversation mid-run.
       *
-@@ -377,6 +391,8 @@
+@@ -379,6 +393,8 @@
  } | {
      type: "agent_end";
      messages: AgentMessage[];

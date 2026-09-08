@@ -27,6 +27,8 @@ Domi 是一个基于开源 [Pi](https://github.com/earendil-works/pi) 的桌面�
 
 ### 环境
 
+当前 Work 会话使用 **Pi 0.85.1**，通过项目锁文件安装，并保留 Domi 的压缩、重试和工具终止补丁；无需全局安装 Pi。
+
 需要：
 
 - [Bun](https://bun.sh/)

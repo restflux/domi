@@ -1,6 +1,6 @@
 {
   "name": "domi",
-  "version": "0.20.19",
+  "version": "0.20.20",
   "description": "Domi — local-first Personal Coding Workbench with multi-model Chat and general Agent workflows",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -34,15 +34,15 @@
     "jotai": "^2.17.1"
   },
   "overrides": {
-    "@earendil-works/pi-agent-core": "0.84.4",
-    "@earendil-works/pi-ai": "0.84.4",
-    "@earendil-works/pi-coding-agent": "0.84.4",
-    "@earendil-works/pi-tui": "0.84.4"
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1"
   },
   "patchedDependencies": {
-    "@earendil-works/pi-agent-core@0.84.4": "patches/@earendil-works%2Fpi-agent-core@0.84.4.patch",
-    "@earendil-works/pi-ai@0.84.4": "patches/@earendil-works%2Fpi-ai@0.84.4.patch",
-    "@earendil-works/pi-coding-agent@0.84.4": "patches/@earendil-works%2Fpi-coding-agent@0.84.4.patch",
+    "@earendil-works/pi-agent-core@0.85.1": "patches/@earendil-works%2Fpi-agent-core@0.85.1.patch",
+    "@earendil-works/pi-ai@0.85.1": "patches/@earendil-works%2Fpi-ai@0.85.1.patch",
+    "@earendil-works/pi-coding-agent@0.85.1": "patches/@earendil-works%2Fpi-coding-agent@0.85.1.patch",
     "node-pty@1.1.0": "patches/node-pty@1.1.0.patch"
   }
 }

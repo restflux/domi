@@ -6,9 +6,9 @@ import { join, resolve } from 'node:path'
 import { extractFile } from '@electron/asar'
 
 const PI_PACKAGE = '@earendil-works/pi-coding-agent'
-const PI_PATCH_NAME = '@earendil-works%2Fpi-coding-agent@0.84.4.patch'
+const PI_PATCH_NAME = '@earendil-works%2Fpi-coding-agent@0.85.1.patch'
 const PI_AGENT_CORE_PACKAGE = '@earendil-works/pi-agent-core'
-const PI_AGENT_CORE_PATCH_NAME = '@earendil-works%2Fpi-agent-core@0.84.4.patch'
+const PI_AGENT_CORE_PATCH_NAME = '@earendil-works%2Fpi-agent-core@0.85.1.patch'
 
 export const PI_COMPACTION_RUNTIME_FILES = [
   'dist/core/agent-session.js',

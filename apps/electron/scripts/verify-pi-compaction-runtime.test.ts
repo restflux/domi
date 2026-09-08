@@ -53,8 +53,8 @@ function writeRuntime(nodeModulesDir: string, overrides: Partial<Record<string, 
 }
 
 function writePatch(repoRoot: string): void {
-  const patchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-coding-agent@0.84.4.patch')
-  const corePatchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-agent-core@0.84.4.patch')
+  const patchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-coding-agent@0.85.1.patch')
+  const corePatchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-agent-core@0.85.1.patch')
   mkdirSync(join(patchPath, '..'), { recursive: true })
   writeFileSync(patchPath, PI_COMPACTION_REQUIRED_MARKERS.map(marker => `+${marker}`).join('\n'))
   writeFileSync(corePatchPath, PI_TERMINATION_REQUIRED_MARKERS.map(marker => `+${marker}`).join('\n'))

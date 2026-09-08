@@ -68,7 +68,7 @@ domi/
 #### @domi/electron
 - **职责**：Electron 桌面应用主体，集成所有包
 - **关键依赖**：
-  - `@earendil-works/pi-coding-agent@0.84.4` - 默认 Agent Runtime
+  - `@earendil-works/pi-coding-agent@0.85.1` - 默认 Agent Runtime
   - `@larksuiteoapi/node-sdk` - 飞书集成
   - Radix UI、TipTap、Tailwind CSS
   - 内置终端：`node-pty` + `@xterm/xterm`，PTY 运行于 Electron utility process
@@ -151,7 +151,7 @@ bun run generate:icons    # 生成应用图标
 | **构建工具** | Vite | 6.0.3 |
 | **打包工具** | esbuild | 0.24.0+ |
 | **分发工具** | Electron Builder | 25.1.8 |
-| **Agent SDK** | `@earendil-works/pi-*` | 0.82.1 |
+| **Agent SDK** | `@earendil-works/pi-*` | 0.85.1 |
 | **飞书 SDK** | @larksuiteoapi/node-sdk | 最新 |
 
 ## 核心架构
@@ -416,7 +416,7 @@ React UI 更新与 JSONL 持久化
 
 - Domi 默认不依赖 Pi 或 Claude Code 的全局用户配置，并继续使用自己的配置根和会话 sidecar。唯一例外是用户显式开启的只读全局能力：Skills 可从 `~/.pi/agent/skills`、`~/.agents/skills`、`~/.claude/skills` 发现；MCP 只读取 `~/.pi/agent/mcp.json` 顶层 `mcpServers`，不跟随 `imports`、不加载外部 packages/extensions。
 - Pi external runtime 依赖版本以 `apps/electron/package.json` 为准，升级时必须同时验证 adapter、sync-runtime-deps、打包和 Windows smoke。
-- Pi `0.84.4` 原生负责工具结果后的 pre-turn 压缩生命周期、Session 更新、同一 Agent loop 续跑和失败事件；Domi patch 继续负责增强 checkpoint、单次物理摘要请求、最终 Provider Context 投影与精确 token 门禁、最多两次安全尝试和超限 fail-closed。不得恢复 threshold hidden continuation 或双重摘要请求来绕开原生生命周期。
+- Pi `0.85.1` 原生负责工具结果后的 pre-turn 压缩生命周期、Session 更新、同一 Agent loop 续跑和失败事件；Domi patch 继续负责增强 checkpoint、单次物理摘要请求、最终 Provider Context 投影与精确 token 门禁、最多两次安全尝试和超限 fail-closed。不得恢复 threshold hidden continuation 或双重摘要请求来绕开原生生命周期。
 - 不得重新引入 runtime selector、Claude adapter/router、Claude MCP wrapper 或平台 `claude.exe` 依赖。
 - Anthropic Provider、Claude 模型/logo、Domi 管理的可写 `AGENTS.md` / Memory、legacy `CLAUDE.md` 兼容输入，以及外部 Claude Skills 只读来源，都必须与 Runtime 删除相互独立。
 - 执行模式始终使用当前 Windows 用户权限并明确提示未 OS-sandbox；研究、执行、本次执行和 Plan 生命周期只改变 Workflow/当前 run lease，不能绕过 Isolated→Local 回写/维修/交付事务、target ownership、managed Worktree/workbench integrity、产品确认事务或 Extension Trust。敏感路径名、opaque/parser failure、动态删除、Local Baseline、destructive Git、外部影响、网络和解释器等通用风险在执行模式中用于审计和宿主结构边界，不恢复旧的普通 Policy 审批档位。

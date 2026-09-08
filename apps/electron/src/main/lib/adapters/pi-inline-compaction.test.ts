@@ -150,6 +150,45 @@ describe('patched Pi Agent loop prepareNextTurn lifecycle', () => {
     ])
   })
 
+  test('Given 顺序工具批次 When 首个工具触发取消 Then 不再执行后续工具且向后续流传递取消信号', async () => {
+    const controller = new AbortController()
+    const executed: string[] = []
+    let providerCalls = 0
+    await runAgentLoop(
+      [{ role: 'user', content: '执行两个工具', timestamp: Date.now() }],
+      {
+        systemPrompt: 'test', messages: [],
+        tools: ['first', 'second'].map((name) => ({
+          name,
+          label: name,
+          description: name,
+          parameters: Type.Object({}),
+          execute: async () => {
+            executed.push(name)
+            controller.abort()
+            return { content: [{ type: 'text' as const, text: 'cancelled' }], details: {} }
+          },
+        })),
+      },
+      { model: MODEL as never, toolExecution: 'sequential', convertToLlm: (messages) => messages as never },
+      () => {},
+      controller.signal,
+      async (_model, _context, options) => {
+        providerCalls += 1
+        if (providerCalls > 1) {
+          expect(options?.signal?.aborted).toBe(true)
+          return completed({ ...assistant([]), stopReason: 'aborted' })
+        }
+        return completed(assistant(['first', 'second'].map((name) => ({
+          type: 'toolCall', id: name, name, arguments: {},
+        }))))
+      },
+    )
+
+    expect(executed).toEqual(['first'])
+    expect(controller.signal.aborted).toBe(true)
+  })
+
   test('ends terminating tool batches before next-turn preparation', async () => {
     const willContinue: boolean[] = []
     let endedByTool: boolean | undefined
