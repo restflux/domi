@@ -36,7 +36,7 @@
     },
     "apps/electron": {
       "name": "@domi/electron",
-      "version": "0.20.23",
+      "version": "0.21.0",
       "dependencies": {
         "@earendil-works/pi-agent-core": "0.85.1",
         "@earendil-works/pi-ai": "0.85.1",
@@ -182,7 +182,7 @@
     },
     "packages/shared": {
       "name": "@domi/shared",
-      "version": "0.1.73",
+      "version": "0.2.0",
       "devDependencies": {
         "typescript": "^5.0.0",
       },

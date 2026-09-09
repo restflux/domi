@@ -25,6 +25,16 @@ describe('Work 侧聊', () => {
     expect(html).toContain('复制')
     expect(html).not.toContain('交给主助手')
   })
+  test('仅图片历史仍显示用户消息并复用附件缩略图，不把存储路径当正文', () => {
+    const text = '<attached_files>\n- 截图.png: C:/host/child/side-chat-images-1/image.png\n</attached_files>\n'
+    const messages: SDKMessage[] = [{ type: 'user', parent_tool_use_id: null, uuid: 'image-only', message: { content: [{ type: 'text', text }] } }]
+    expect(sideChatTextMessages(messages)).toHaveLength(1)
+    const html = renderToStaticMarkup(<TooltipProvider><SideChatMessage role="user" text={text} handoffDisabled={false} onHandoff={() => {}} onError={() => {}} /></TooltipProvider>)
+    expect(html).toContain('animate-pulse')
+    expect(html).not.toContain('C:/host/child')
+    expect(html).not.toContain('编辑图片')
+    expect(html).not.toContain('交给主助手')
+  })
   test('默认发送不把全局模型固化为覆盖，只传递该父会话明确选定的模型', () => {
     const draft = { text: ' 问题 ', quotedText: '原文', model: null, focusRevision: 0 }
     expect(sideChatSendInput('a', draft)).toEqual({ parentSessionId: 'a', message: '问题', quotedText: '原文' })

@@ -9,6 +9,7 @@
  */
 
 import * as React from 'react'
+import { isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtom, useSetAtom, useAtomValue, useStore } from 'jotai'
 import { toast } from 'sonner'
 import { Pin, PinOff, Star, Flag, Settings, Plus, Trash2, Pencil, PanelLeftClose, PanelLeftOpen, ArrowRightLeft, Search, Archive, ArchiveRestore, ArrowLeft, Bot, MessageSquare, MessageSquarePlus, MoreHorizontal, FolderOpen, FolderInput, FolderPlus, GripVertical, Clock, AlarmClock, ChevronRight, ChevronDown, Blocks, GitBranch, Check, Hash, ListFilter, Maximize2, Minimize2 } from 'lucide-react'
@@ -1184,6 +1185,10 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
   // Work 模式状态
   const [agentSessions, setAgentSessions] = useAtom(agentSessionsAtom)
+  const navigationAgentSessions = React.useMemo(
+    () => agentSessions.filter(isAgentSessionVisibleInNavigation),
+    [agentSessions],
+  )
   const [currentAgentSessionId, setCurrentAgentSessionId] = useAtom(currentAgentSessionIdAtom)
   const agentIndicatorMap = useAtomValue(agentSessionIndicatorMapAtom)
   const unviewedCompletedSessionIds = useAtomValue(unviewedCompletedSessionIdsAtom)
@@ -1401,26 +1406,26 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const pinnedAgentSessions = React.useMemo(
     () => {
       if (viewMode !== 'active') return []
-      const filtered = agentSessions.filter((s) =>
+      const filtered = navigationAgentSessions.filter((s) =>
         s.pinned
         && !draftSessionIds.has(s.id)
-        && !hasPinnedVisibleParent(s, agentSessions)
+        && !hasPinnedVisibleParent(s, navigationAgentSessions)
       )
       return sortAgentSessionsByUpdatedAtDesc(filtered)
     },
-    [agentSessions, viewMode, draftSessionIds]
+    [navigationAgentSessions, viewMode, draftSessionIds]
   )
 
   const pinnedAgentSessionTrees = React.useMemo<AgentSessionTreeItem[]>(
     () => pinnedAgentSessions.map((session) => ({
       session,
-      childSessions: getDirectDelegatedChildren(agentSessions, session.id).filter((child) => (
+      childSessions: getDirectDelegatedChildren(navigationAgentSessions, session.id).filter((child) => (
         !child.archived
         && !draftSessionIds.has(child.id)
         && !isHiddenAutomationSession(child)
       )),
     })),
-    [agentSessions, draftSessionIds, pinnedAgentSessions],
+    [navigationAgentSessions, draftSessionIds, pinnedAgentSessions],
   )
 
   /** 对话按日期分组（根据 viewMode 过滤归档状态，排除 draft）。 */
@@ -1442,8 +1447,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
   /** 已归档 Agent 会话数量（跨项目） */
   const archivedAgentSessionCount = React.useMemo(
-    () => agentSessions.filter((s) => s.archived && !draftSessionIds.has(s.id)).length,
-    [agentSessions, draftSessionIds]
+    () => navigationAgentSessions.filter((s) => s.archived && !draftSessionIds.has(s.id)).length,
+    [navigationAgentSessions, draftSessionIds]
   )
 
   // 初始加载对话列表 + 用户档案 + Agent 会话
@@ -2015,7 +2020,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const automationGroup = React.useMemo<AgentProjectGroup | null>(
     () => {
       const sessions = sortAgentSessionsByUpdatedAtDesc(
-        agentSessions.filter((session) =>
+        navigationAgentSessions.filter((session) =>
           !session.archived
           && !session.pinned
           && !draftSessionIds.has(session.id)
@@ -2028,7 +2033,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         sessions,
       }
     },
-    [agentSessions, draftSessionIds],
+    [navigationAgentSessions, draftSessionIds],
   )
 
   /** 完成项目排序并持久化（合成「自动任务」组与真实项目一起排序，二者分别持久化） */
@@ -2714,18 +2719,18 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   /** Agent 普通历史（排除置顶 / 归档 / draft），作为项目和时间分组的共同事实源。 */
   const visibleAgentHistory = React.useMemo(
     () => orderSidebarSessions(
-      agentSessions.filter((session) =>
+      navigationAgentSessions.filter((session) =>
         !session.archived
         && !session.pinned
         && !draftSessionIds.has(session.id)
         // 自动任务会话不进入普通历史，统一归到「自动任务」视图
         && !isHiddenAutomationSession(session)
         // 已被置顶母会话收纳的子会话留在置顶区的母会话下面，避免重复显示为项目根会话
-        && !hasPinnedVisibleParent(session, agentSessions)
+        && !hasPinnedVisibleParent(session, navigationAgentSessions)
       ),
       workSidebarPreferences.sortMode,
     ),
-    [agentSessions, draftSessionIds, workSidebarPreferences.sortMode],
+    [navigationAgentSessions, draftSessionIds, workSidebarPreferences.sortMode],
   )
 
   /** Agent 普通历史按项目分组。 */
@@ -2832,20 +2837,20 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   /** Agent 归档会话按日期分组（跨项目），含委派树 */
   const archivedAgentSessionTrees = React.useMemo(() => {
     const archived = sortAgentSessionsByUpdatedAtDesc(
-      agentSessions.filter((s) => s.archived && !draftSessionIds.has(s.id))
+      navigationAgentSessions.filter((s) => s.archived && !draftSessionIds.has(s.id))
     )
     const trees = buildAgentSessionTrees(archived)
     // groupByDate 要求 T extends { updatedAt: number }，AgentSessionTreeItem 不直接满足
     const wrapped = trees.map((tree) => ({ updatedAt: tree.session.updatedAt, tree }))
     return groupByDate(wrapped).map((g) => ({ label: g.label, items: g.items.map((w) => w.tree) }))
-  }, [agentSessions, draftSessionIds])
+  }, [navigationAgentSessions, draftSessionIds])
 
   const handleRailModeSwitch = React.useCallback((targetMode: AppMode) => {
     setViewMode('active')
     if (targetMode === mode) return
 
     const isChatMode = targetMode === 'chat'
-    const sessions = isChatMode ? conversations : agentSessions
+    const sessions = isChatMode ? conversations : navigationAgentSessions
     const lastId = isChatMode ? currentConversationId : currentAgentSessionId
 
     if (lastId) {
@@ -2856,7 +2861,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       }
     }
 
-    const tab = tabs.find((t) => t.type === targetMode)
+    const tab = tabs.find((t) => t.type === targetMode
+      && (isChatMode || isAgentSessionVisibleInNavigation(agentSessions.find((session) => session.id === t.sessionId))))
     if (tab) {
       openSession(targetMode, tab.sessionId, tab.title)
       return
@@ -2872,6 +2878,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   }, [
     mode,
     conversations,
+    navigationAgentSessions,
     agentSessions,
     currentConversationId,
     currentAgentSessionId,
@@ -2908,7 +2915,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         }))
     }
 
-    return agentSessions
+    return navigationAgentSessions
       .filter((session) =>
         !session.archived
         && !draftSessionIds.has(session.id)
@@ -2947,7 +2954,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   }, [
     mode,
     conversations,
-    agentSessions,
+    navigationAgentSessions,
     draftSessionIds,
     currentWorkspaceId,
     activeSessionId,

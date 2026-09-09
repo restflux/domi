@@ -1,3 +1,4 @@
+import { sendSideChatDraft } from './side-chat-send'
 import { mergeAgentMessageTimeline } from '@/lib/agent-message-timeline'
 import * as React from 'react'
 import { toast } from 'sonner'
@@ -8,13 +9,15 @@ import { appModeAtom } from '@/atoms/app-mode'
 import { sideChatDraftAtomFamily, sideChatHandoffAtomFamily, sideChatViewAtomFamily, sideChatOperationAtomFamily } from '@/atoms/side-chat-atoms'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { MessageLoading } from '@/components/ai-elements/message'
-import { CornerDownLeft, Square, X, Quote } from 'lucide-react'
+import { CornerDownLeft, Square, X, Quote, ImagePlus } from 'lucide-react'
+import { AttachmentPreviewItem } from '@/components/chat/AttachmentPreviewItem'
+import { sideChatImagesAtomFamily, sideChatImageLoadingAtomFamily, sideChatComposerErrorAtomFamily, prepareSideChatImages, imagePreview } from './side-chat-images'
 import { RichTextInput, type RichTextInputHandle } from '@/components/ai-elements/rich-text-input'
 import { inputToolbarSendButtonClass, inputToolbarDangerButtonClass } from '@/components/ai-elements/input-toolbar-styles'
 import { SideChatMessage } from './SideChatMessage'
 import { Button } from '@/components/ui/button'
 import { startSideChatPolling } from './side-chat-polling'
-import { sideChatHandoffPrompt, sideChatTextMessages, sideChatSendInput } from './side-chat-behavior'
+import { sideChatHandoffPrompt, sideChatTextMessages } from './side-chat-behavior'
 
 export function SideChatPanel({ parentSessionId }: { parentSessionId: string }): React.ReactElement {
   const [draft, setDraft] = useAtom(sideChatDraftAtomFamily(parentSessionId))
@@ -31,7 +34,23 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
   const operationAtom = sideChatOperationAtomFamily(parentSessionId)
   const pending = useAtomValue(operationAtom).sending
   const [handoffPending, setHandoffPending] = React.useState(false)
-  const [error, setError] = React.useState('')
+  const [error, setError] = useAtom(sideChatComposerErrorAtomFamily(parentSessionId))
+  const imagesAtom = sideChatImagesAtomFamily(parentSessionId)
+  const loadingImagesAtom = sideChatImageLoadingAtomFamily(parentSessionId)
+  const [images, setImages] = useAtom(imagesAtom)
+  const loadingImages = useAtomValue(loadingImagesAtom)
+  const fileInput = React.useRef<HTMLInputElement>(null)
+  const addImages = async (files: File[]): Promise<void> => {
+    if (!files.length) return
+    if (store.get(loadingImagesAtom)) { setError('图片正在读取，请稍后再添加。'); return }
+    store.set(loadingImagesAtom, true)
+    setError('')
+    try {
+      const prepared = await prepareSideChatImages(files, store.get(imagesAtom))
+      store.set(imagesAtom, (current) => [...current, ...prepared])
+    } catch (cause) { setError(String(cause)) }
+    finally { store.set(loadingImagesAtom, false) }
+  }
   const handoffLock = React.useRef(false)
   const input = React.useRef<RichTextInputHandle>(null)
   const bottom = React.useRef<HTMLDivElement>(null)
@@ -59,17 +78,8 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
   }, [view?.messages, liveMessages])
   const model = draft.model ?? (view?.channelId && view.modelId ? { channelId: view.channelId, modelId: view.modelId } : channelId && modelId ? { channelId, modelId } : null)
   const send = async (): Promise<void> => {
-    if (store.get(operationAtom).sending || running || !draft.text.trim() || !view) return
-    store.set(operationAtom, (current) => ({ sending: true, revision: current.revision + 1 }))
-    setError('')
     followBottom.current = true
-    const sent = draft
-    try {
-      await window.electronAPI.sendSideChat(sideChatSendInput(parentSessionId, sent))
-      setDraft((current) => ({ ...current, text: current.text === sent.text ? '' : current.text, quotedText: current.quotedText === sent.quotedText ? '' : current.quotedText }))
-      setView((current) => current ? { ...current, isRunning: true } : current)
-    } catch (cause) { setError(String(cause)) }
-    finally { store.set(operationAtom, (current) => ({ ...current, sending: false })) }
+    await sendSideChatDraft(store, parentSessionId, running, (payload) => window.electronAPI.sendSideChat(payload))
   }
   const passToMain = async (text: string): Promise<void> => {
     if (!handoff || handoffLock.current) return
@@ -117,14 +127,22 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
             <Button size="icon-sm" variant="ghost" aria-label="移除引用" onClick={() => setDraft((current) => ({ ...current, quotedText: '' }))}><X className="size-3.5" /></Button>
           </div>
         )}
+        {images.length > 0 && <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="待发送图片">
+          {images.map((image, index) => <AttachmentPreviewItem key={image.id} filename={image.filename} mediaType={image.mediaType}
+            previewUrl={imagePreview(image)} onRemove={() => setImages((current) => current.filter((item) => item.id !== image.id))}
+            imageSiblings={images.map((item) => ({ filename: item.filename, previewUrl: imagePreview(item) }))} siblingIndex={index} />)}
+        </div>}
         <div role="group" aria-label="侧聊消息">
           <RichTextInput key={parentSessionId} ref={input} value={draft.text}
             onChange={(text) => setDraft((current) => ({ ...current, text }))}
-            onSubmit={() => void send()} placeholder="在侧聊中提问…"
+            onSubmit={() => void send()} onPasteFiles={(files) => void addImages(files)} placeholder="在侧聊中提问…"
             enableMentions={false} autoFocusTrigger={parentSessionId}
             className="min-h-[88px] max-h-60 overflow-y-auto px-3 py-2" />
         </div>
         <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
+          <input key={parentSessionId} ref={fileInput} type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" aria-label="选择侧聊图片"
+            onChange={(event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; void addImages(files) }} />
+          <Button size="icon" variant="ghost" aria-label="添加图片" title="添加图片" disabled={loadingImages || pending} onClick={() => fileInput.current?.click()}><ImagePlus className="size-4" /></Button>
           <div className="min-w-0 flex-1 overflow-hidden">
             <ModelSelector externalSelectedModel={model} onModelSelect={(option) => setDraft((current) => ({
               ...current, model: { channelId: option.channelId, modelId: option.modelId },
@@ -135,7 +153,7 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
               void window.electronAPI.stopSideChat(parentSessionId).catch((cause: unknown) => setError(String(cause)))
             }}><Square className="size-4" /></Button>
           ) : (
-            <Button size="icon" variant="ghost" className={inputToolbarSendButtonClass} aria-label="发送" title="发送" disabled={pending || !view || !draft.text.trim()} onClick={() => void send()}><CornerDownLeft className="size-4" /></Button>
+            <Button size="icon" variant="ghost" className={inputToolbarSendButtonClass} aria-label="发送" title="发送" disabled={pending || loadingImages || !view || (!draft.text.trim() && !images.length)} onClick={() => void send()}><CornerDownLeft className="size-4" /></Button>
           )}
         </div>
       </div>

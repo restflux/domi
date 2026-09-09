@@ -1856,6 +1856,8 @@ export async function searchAgentSessionMessages(query: string): Promise<AgentMe
 
   for (const session of index.sessions) {
     if (results.length >= maxResults) break
+    // 附属侧聊只经父会话侧板恢复，不占用普通导航搜索的有限结果槽位。
+    if (session.sideChatParentSessionId) continue
 
     const filePath = getAgentSessionMessagesPath(session.id)
     if (!existsSync(filePath)) continue

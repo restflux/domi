@@ -1,9 +1,12 @@
 import type { SDKMessage, SideChatSendInput } from '@domi/shared'
 import type { SideChatDraft } from '@/atoms/side-chat-atoms'
+import type { SideChatPendingImage } from './side-chat-images'
 
 /** 未显式选模型时让 Main 从父/侧聊元数据解析，避免全局 UI 选择串入另一会话。 */
-export function sideChatSendInput(parentSessionId: string, draft: SideChatDraft): SideChatSendInput {
-  return { parentSessionId, message: draft.text.trim(), ...(draft.model ?? {}), ...(draft.quotedText ? { quotedText: draft.quotedText } : {}) }
+export function sideChatSendInput(parentSessionId: string, draft: SideChatDraft, images: readonly SideChatPendingImage[] = []): SideChatSendInput {
+  return { parentSessionId, message: draft.text.trim(), ...(draft.model ?? {}), ...(draft.quotedText ? { quotedText: draft.quotedText } : {}),
+    ...(images.length ? { images: images.map(({ filename, mediaType, data }) => ({ filename, mediaType, data })) } : {}),
+  }
 }
 
 export interface SideChatTextMessage { id: string; role: 'user' | 'assistant'; text: string; modelId?: string }

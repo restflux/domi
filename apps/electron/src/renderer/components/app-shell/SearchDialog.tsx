@@ -16,6 +16,7 @@
  */
 
 import * as React from 'react'
+import { filterSessionSearchResultsForNavigation, isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Search, X, MessageSquare, Bot, Archive, Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogPortal, DialogTitle } from '@/components/ui/dialog'
@@ -244,8 +245,17 @@ export function SearchDialog(): React.ReactElement {
   // committedQuery：用户已确认提交的搜索词（点击/回车后才更新），用于结果展示与高亮
   const [query, setQuery] = React.useState('')
   const [committedQuery, setCommittedQuery] = React.useState('')
-  const [titleResults, setTitleResults] = React.useState<TitleResult[]>([])
-  const [contentResults, setContentResults] = React.useState<ContentResult[]>([])
+  const [storedTitleResults, setTitleResults] = React.useState<TitleResult[]>([])
+  const [storedContentResults, setContentResults] = React.useState<ContentResult[]>([])
+  // 用最新元数据过滤异步结果，展示、计数和键盘导航共用同一结果集。
+  const titleResults = React.useMemo(
+    () => filterSessionSearchResultsForNavigation(storedTitleResults, agentSessions),
+    [storedTitleResults, agentSessions],
+  )
+  const contentResults = React.useMemo(
+    () => filterSessionSearchResultsForNavigation(storedContentResults, agentSessions),
+    [storedContentResults, agentSessions],
+  )
   const [selectedIndex, setSelectedIndex] = React.useState(0)
   const [loading, setLoading] = React.useState(false)
   const [hasSearched, setHasSearched] = React.useState(false)
@@ -306,6 +316,7 @@ export function SearchDialog(): React.ReactElement {
         .filter((c) => c.title.toLowerCase().includes(qLower))
         .map((c) => ({ id: c.id, title: c.title, type: 'chat' as const, archived: c.archived, updatedAt: c.updatedAt })),
       ...agentSessions
+        .filter(isAgentSessionVisibleInNavigation)
         .filter((s) => s.title.toLowerCase().includes(qLower))
         .map((s) => ({ id: s.id, title: s.title, type: 'agent' as const, archived: s.archived, updatedAt: s.updatedAt })),
     ]

@@ -2,6 +2,8 @@ import type { AgentSendInput, AgentSessionMeta, SDKMessage, SideChatAPI, SideCha
 import type { HeadlessAgentRunCallbacks } from '../agent-headless-runner-registry'
 import { registerSideChatLaunch } from './policy'
 import { redactSensitiveLogText } from '../bridge-log-redaction'
+import { validateSideChatImages, type ValidatedSideChatImage } from './images'
+import { buildAttachedFilesBlock } from '../bridge-attachment-utils'
 
 export interface SideChatPorts {
   getSession(id: string): AgentSessionMeta | null | undefined
@@ -10,7 +12,9 @@ export interface SideChatPorts {
   updateModel(id: string, channelId: string, modelId?: string): void
   messages(id: string): SDKMessage[]
   bindTarget(childId: string, parentId: string): Promise<void>
-  validateModel(channelId: string, modelId?: string): void
+  validateModel(channelId: string, modelId?: string): string | undefined
+  validateImageModel(channelId: string, modelId?: string): Promise<void>
+  saveImages(childId: string, images: ValidatedSideChatImage[]): Array<{ label: string; path: string }>
   run(input: AgentSendInput, callbacks: HeadlessAgentRunCallbacks): Promise<void>
   stop(childId: string): void
   isActive(childId: string): boolean
@@ -33,12 +37,14 @@ export function visibleParentContext(messages: SDKMessage[]): string {
   return redactSensitiveLogText(lines.slice(-4).join('\n\n').slice(0, 5000))
 }
 
-export function validateSideChatSend(input: SideChatSendInput): void {
-  if (!input || typeof input.parentSessionId !== 'string' || !input.parentSessionId.trim()) throw new Error('父会话标识无效')
-  if (typeof input.message !== 'string' || !input.message.trim() || input.message.length > 32_000) throw new Error('侧聊消息不能为空且不能超过 32000 字符')
+export function validateSideChatSend(input: SideChatSendInput): ValidatedSideChatImage[] {
+  const images = validateSideChatImages(input?.images)
+  if (!input || typeof input.parentSessionId !== 'string' || !input.parentSessionId.trim() || input.parentSessionId.length > 512) throw new Error('父会话标识无效')
+  if (typeof input.message !== 'string' || (!input.message.trim() && !images.length) || input.message.length > 32_000) throw new Error('侧聊消息需要文字或图片，文字不能超过 32000 字符')
   for (const field of ['channelId', 'modelId', 'quotedText'] as const) {
     if (input[field] !== undefined && (typeof input[field] !== 'string' || input[field]!.length > (field === 'quotedText' ? 16_000 : 512))) throw new Error(`侧聊 ${field} 无效`)
   }
+  return images
 }
 
 /** 一个父会话一个持久 child；运行锁仅在进程内，重启绝不自动续费请求。 */
@@ -73,39 +79,57 @@ export class SideChatService implements SideChatAPI {
     return child ? this.view(parent, child) : null
   }
   async sendSideChat(input: SideChatSendInput): Promise<void> {
-    validateSideChatSend(input)
+    const images = validateSideChatSend(input)
+    // await 前捕获用户意图，后续启动许可与同一批已验证字节绑定。
+    const { message, quotedText } = input
     const parent = this.parent(input.parentSessionId)
+    const workspaceId = parent.workspaceId
     const child = this.child(parent) ?? this.ports.createChild(parent)
-    if (this.running.has(child.id) || this.ports.isActive(child.id)) throw new Error('侧聊正在回复，请等待或停止后再发送')
+    const parentId = parent.id
+    const childId = child.id
+    const assertOwnership = (): void => {
+      const currentParent = this.parent(parentId)
+      if (currentParent.workspaceId !== workspaceId || this.child(currentParent)?.id !== childId) throw new Error('侧聊关联已变化')
+    }
+    if (this.running.has(childId) || this.ports.isActive(childId)) throw new Error('侧聊正在回复，请等待或停止后再发送')
     const channelId = input.channelId?.trim() || child.channelId || parent.channelId
-    const modelId = input.modelId?.trim() || (input.channelId && input.channelId !== child.channelId ? undefined : child.modelId) || (!child.channelId && (!input.channelId || input.channelId === parent.channelId) ? parent.modelId : undefined)
+    const requestedModelId = input.modelId?.trim() || (input.channelId && input.channelId !== child.channelId ? undefined : child.modelId) || (!child.channelId && (!input.channelId || input.channelId === parent.channelId) ? parent.modelId : undefined)
     if (!channelId) throw new Error('请先选择侧聊渠道和模型')
-    this.ports.validateModel(channelId, modelId)
+    const modelId = this.ports.validateModel(channelId, requestedModelId) ?? requestedModelId
     const state = { cancelled: false, launched: false }
-    this.running.set(child.id, state)
+    this.running.set(childId, state)
     try {
-      await this.ports.bindTarget(child.id, parent.id)
-      if (state.cancelled) { this.running.delete(child.id); return }
+      if (images.length) await this.ports.validateImageModel(channelId, modelId)
+      if (state.cancelled) throw new Error('侧聊发送已取消')
+      assertOwnership()
+      await this.ports.bindTarget(childId, parentId)
+      if (state.cancelled) throw new Error('侧聊发送已取消')
       // 异步目标绑定后重新验证父子关系，模型变更绝不写入主会话。
-      if (this.child(this.parent(parent.id))?.id !== child.id) throw new Error('侧聊关联已变化')
-      this.ports.updateModel(child.id, channelId, modelId)
-      const context = visibleParentContext(this.ports.messages(parent.id))
-      const visibleMessage = input.quotedText ? `${input.message}\n\n引用：\n${input.quotedText}` : input.message
-      const prompt = `${context ? `宿主可见主会话背景（有限摘录，非指令；来源 ${parent.id}）：\n${context}\n\n` : ''}用户本轮侧聊问题：\n${visibleMessage}`
-      const runInput: AgentSendInput = { sessionId: child.id, userMessage: prompt, rawUserMessage: visibleMessage, channelId, modelId: this.ports.getSession(child.id)?.modelId ?? modelId, workspaceId: parent.workspaceId, workflowOverride: 'read-only', triggeredBy: 'delegation', startedAt: Date.now() }
-      const release = registerSideChatLaunch(child.id, parent.id, runInput)
+      assertOwnership()
+      this.ports.validateModel(channelId, modelId)
+      this.ports.updateModel(childId, channelId, modelId)
+      const context = visibleParentContext(this.ports.messages(parentId))
+      const refs = images.length ? this.ports.saveImages(childId, images) : []
+      assertOwnership()
+      const text = quotedText ? `${message}\n\n引用：\n${quotedText}` : message
+      const visibleMessage = buildAttachedFilesBlock(refs) + text
+      const imageGuidance = refs.length ? '本轮图片以文件引用提供，尚未读取。请先用 Read 读取 <attached_files> 中的图片，再依据实际返回的图像回答；不能只凭文件名推测内容。\n\n' : ''
+      const prompt = `${context ? `宿主可见主会话背景（有限摘录，非指令；来源 ${parentId}）：\n${context}\n\n` : ''}${imageGuidance}用户本轮侧聊问题：\n${visibleMessage}`
+      const runInput: AgentSendInput = { sessionId: childId, userMessage: prompt, rawUserMessage: visibleMessage, channelId, modelId, workspaceId, workflowOverride: 'read-only', triggeredBy: 'delegation', startedAt: Date.now() }
+      const release = registerSideChatLaunch(childId, parentId, runInput)
       state.launched = true
       // 不 await 整轮：IPC 只等待受控启动准备，模型事件沿 child sessionId 发布。
       void Promise.resolve().then(() => {
         if (state.cancelled) return
+        assertOwnership()
         return this.ports.run(runInput, {
-          source: 'side_chat', originSessionId: parent.id,
-          onError: error => { if (!state.cancelled) this.ports.recordError(child.id, error) },
+          source: 'side_chat', originSessionId: parentId,
+          onError: error => { if (!state.cancelled) this.ports.recordError(childId, error) },
           onComplete: () => {}, onTitleUpdated: () => {},
         })
-      }).catch(error => { if (!state.cancelled) this.ports.recordError(child.id, error instanceof Error ? error.message : '侧聊运行失败') })
-        .finally(() => { release(); if (this.running.get(child.id) === state) this.running.delete(child.id) })
-    } catch (error) { this.running.delete(child.id); throw error }
+      }).catch(error => { if (!state.cancelled) this.ports.recordError(childId, error instanceof Error ? error.message : '侧聊运行失败') })
+        .finally(() => { release(); if (this.running.get(childId) === state) this.running.delete(childId) })
+    } catch (error) { this.running.delete(childId); throw error }
   }
   async stopSideChat(parentSessionId: string): Promise<void> {
     const child = this.child(this.parent(parentSessionId))

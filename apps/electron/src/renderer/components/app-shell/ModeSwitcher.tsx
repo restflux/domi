@@ -9,6 +9,7 @@
  */
 
 import * as React from 'react'
+import { isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { appModeAtom, type AppMode } from '@/atoms/app-mode'
 import { activeViewAtom } from '@/atoms/active-view'
@@ -38,7 +39,7 @@ export function ModeSwitcher(): React.ReactElement {
   /** 尝试恢复目标模式下的上一个对话/会话，按优先级 fallback */
   const restoreSession = React.useCallback((targetMode: AppMode) => {
     const isChatMode = targetMode === 'chat'
-    const sessions = isChatMode ? conversations : agentSessions
+    const sessions = isChatMode ? conversations : agentSessions.filter(isAgentSessionVisibleInNavigation)
     const lastId = isChatMode ? currentConversationId : currentAgentSessionId
 
     // 1. 上次选中的对话仍存在 → 恢复
@@ -50,7 +51,8 @@ export function ModeSwitcher(): React.ReactElement {
       }
     }
     // 2. 已打开的同类型 Tab → 聚焦
-    const tab = tabs.find((t) => t.type === targetMode)
+    const tab = tabs.find((t) => t.type === targetMode
+      && (isChatMode || isAgentSessionVisibleInNavigation(agentSessions.find((session) => session.id === t.sessionId))))
     if (tab) {
       openSession(targetMode, tab.sessionId, tab.title)
       return

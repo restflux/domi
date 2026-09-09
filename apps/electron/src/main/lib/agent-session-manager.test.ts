@@ -58,6 +58,7 @@ function writeAgentSessionsIndex(sessions: Array<{
   executionPolicy?: string
   workflow?: string
   piToolProfile?: 'full' | 'noBash' | 'readOnly'
+  sideChatParentSessionId?: string
   sessionTarget?: { kind: 'unselected' | 'local' }
   createdAt: number
   updatedAt: number
@@ -78,6 +79,18 @@ function writeAgentWorkspacesIndex(workspaces: Array<{
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'agent-workspaces.json'), JSON.stringify({ version: 2, workspaces }), 'utf-8')
 }
+
+test('普通内容搜索在结果限额前排除附属侧聊，不删除历史或隐藏同名普通会话', async () => {
+  const sessions = Array.from({ length: 31 }, (_, index) => ({
+    id: `side-search-${index}`, title: '侧边聊天', workspaceId: 'workspace-a', createdAt: index, updatedAt: index,
+    ...(index < 30 ? { sideChatParentSessionId: 'parent' } : {}),
+  }))
+  writeAgentSessionsIndex(sessions)
+  for (const session of sessions) writeAgentSessionJsonl(session.id, [JSON.stringify({ type: 'user', uuid: 'search-hit', message: { content: [{ type: 'text', text: '图片导航测试' }] } })])
+  const results = await manager.searchAgentSessionMessages('图片导航')
+  expect(results.map((result) => result.sessionId)).toEqual(['side-search-30'])
+  expect(existsSync(join(tempHome, '.domi', 'agent-sessions', 'side-search-0.jsonl'))).toBe(true)
+})
 
 function createIndexedSessions(count: number) {
   return Array.from({ length: count }, (_, index) => ({

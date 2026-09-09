@@ -17,8 +17,10 @@ export function registerSideChatIpc(ipc: SideChatIpcRegistrar, service: SideChat
   ipc.handle(SIDE_CHAT_IPC_CHANNELS.SEND, async (_, input) => {
     validateSideChatSend(input as SideChatSendInput)
     // 丢弃任意额外字段，不接收 child ID、权限或自定义工具。
-    const { parentSessionId, message, channelId, modelId, quotedText } = input as SideChatSendInput
-    return service.sendSideChat({ parentSessionId, message, channelId, modelId, quotedText })
+    const { parentSessionId, message, channelId, modelId, quotedText, images } = input as SideChatSendInput
+    return service.sendSideChat({ parentSessionId, message, channelId, modelId, quotedText,
+      ...(images === undefined ? {} : { images: images.map(({ filename, mediaType, data }) => ({ filename, mediaType, data })) }),
+    })
   })
   ipc.handle(SIDE_CHAT_IPC_CHANNELS.STOP, async (_, input) => service.stopSideChat(parentId(input)))
 }

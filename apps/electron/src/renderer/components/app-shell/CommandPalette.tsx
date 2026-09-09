@@ -7,6 +7,7 @@
  */
 
 import * as React from 'react'
+import { isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai'
 import {
   Bot,
@@ -129,7 +130,7 @@ export function CommandPalette(): React.ReactElement {
     [conversations],
   )
   const recentAgentSessions = React.useMemo(
-    () => [...agentSessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSION_ITEMS),
+    () => agentSessions.filter(isAgentSessionVisibleInNavigation).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSION_ITEMS),
     [agentSessions],
   )
 

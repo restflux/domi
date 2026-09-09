@@ -4,6 +4,11 @@ import { bindProductionAgentSessionTargetForLaunch, resolveProductionAgentSessio
 import { assertEnabledModelForChannel, listEnabledAgentModelsForChannel } from '../agent-model-selection'
 import { isRegisteredAgentActive, runRegisteredHeadlessAgent, stopRegisteredAgent } from '../agent-headless-runner-registry'
 import { SideChatService } from './service'
+import { getChannelById } from '../channel-manager'
+import { resolvePiImageInputCapability } from '../adapters/pi-model-registry'
+import { getAgentWorkspace } from '../agent-workspace-manager'
+import { resolveAgentSessionWorkspacePath } from '../config-paths'
+import { saveSideChatImages } from './image-storage'
 
 export const sideChatService = new SideChatService({
   getSession: getAgentSessionMeta, listSessions: listAgentSessions, messages: getAgentSessionSDKMessages,
@@ -30,7 +35,26 @@ export const sideChatService = new SideChatService({
   validateModel(channelId, modelId) {
     const available = listEnabledAgentModelsForChannel(channelId, '侧聊')
     if (!available.models.length) throw new Error('所选渠道没有启用的模型')
-    assertEnabledModelForChannel({ channelId, modelId, purpose: '侧聊' })
+    const selected = modelId ?? available.models[0]!.id
+    assertEnabledModelForChannel({ channelId, modelId: selected, purpose: '侧聊' })
+    return selected
+  },
+  async validateImageModel(channelId, modelId) {
+    const channel = getChannelById(channelId)
+    if (!channel?.enabled) throw new Error('所选渠道不存在或未启用')
+    const model = channel.models.find(item => item.id === modelId && item.enabled)
+    if (!model) throw new Error('所选模型不存在或未启用')
+    const capability = await resolvePiImageInputCapability(channel.provider, model.id, model)
+    if (capability === 'unsupported') throw new Error('当前侧聊模型不支持图片，请选择支持图片的模型后重试')
+    if (capability === 'unknown') throw new Error('无法确认当前侧聊模型支持图片，请在渠道设置中配置图片输入能力或选择已支持图片的模型')
+  },
+  saveImages(childId, images) {
+    const child = getAgentSessionMeta(childId)
+    const parent = child?.sideChatParentSessionId ? getAgentSessionMeta(child.sideChatParentSessionId) : undefined
+    const workspace = child?.workspaceId ? getAgentWorkspace(child.workspaceId) : undefined
+    if (!child || !parent || !workspace || child.parentSessionId !== parent.id || parent.workspaceId !== child.workspaceId
+      || child.independentReviewId || parent.sideChatParentSessionId || parent.sourceDelegationId || parent.independentReviewId) throw new Error('侧聊图片归属无效')
+    return saveSideChatImages(resolveAgentSessionWorkspacePath(workspace.slug, child.id), images)
   },
   run: runRegisteredHeadlessAgent,
   stop: id => stopRegisteredAgent(id, 'renderer-stop-control'),

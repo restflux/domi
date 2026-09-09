@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import { isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtomValue, useSetAtom, useStore } from 'jotai'
 import type { AgentSessionMeta, ConversationMeta } from '@domi/shared'
 import { cn } from '@/lib/utils'
@@ -126,6 +127,7 @@ export function TabSwitcher(): ReactElement | null {
       }))
 
     const agentCandidates = agentSessions
+      .filter(isAgentSessionVisibleInNavigation)
       .filter((session) => !session.archived && !draftSessionIds.has(session.id))
       .map(buildAgentCandidate)
 
