@@ -10,6 +10,8 @@
  */
 
 import * as React from 'react'
+import type { ImageGenerationChannelConfig } from '@domi/shared'
+import { ChannelImageGenerationConfig } from './ChannelImageGenerationConfig'
 import {
   ArrowLeft,
   Eye,
@@ -277,6 +279,11 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     channel?.finishReasonMode ?? 'auto',
   )
 
+  const [imageConfig, setImageConfig] = React.useState<ImageGenerationChannelConfig | null>(channel?.imageGeneration ?? null)
+  const imageGeneration = React.useMemo(() => ['openai', 'openai-responses', 'google', 'custom'].includes(provider) && imageConfig
+    ? { ...imageConfig, models: [...new Set(imageConfig.models.map((model) => model.trim()).filter(Boolean))] } : null, [provider, imageConfig])
+  const hasImageModels = Boolean(imageGeneration?.models.length)
+
   // 新模型输入
   const [newModelId, setNewModelId] = React.useState('')
   const [newModelName, setNewModelName] = React.useState('')
@@ -363,13 +370,14 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
         models: currentModels,
         enabled: currentEnabled,
         finishReasonMode: currentFinishReasonMode,
+        imageGeneration,
       })
       toast.success('已保存', { id: 'auto-save-success' })
     } catch (error) {
       console.error('[模型配置表单] auto-save 失败:', error)
       toast.error('自动保存失败，请检查后手动重试', { id: 'auto-save-error' })
     }
-  }, [isEdit, channel])
+  }, [isEdit, channel, imageGeneration])
 
   /** 触发防抖 auto-save */
   const scheduleAutoSave = React.useCallback((
@@ -756,6 +764,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
         models,
         enabled,
         finishReasonMode,
+        imageGeneration,
       }
       const savedChannel = await window.electronAPI.createChannel(input)
       toast.success('渠道创建成功')
@@ -767,7 +776,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     } finally {
       setSaving(false)
     }
-  }, [name, provider, baseUrl, effectiveApiKey, hasRequiredSecret, models, enabled, finishReasonMode])
+  }, [name, provider, baseUrl, effectiveApiKey, hasRequiredSecret, models, enabled, finishReasonMode, imageGeneration])
 
   /** 显示第三方 Base URL 风险确认。 */
   const requestBaseUrlRiskAcknowledgement = (action: 'auto-save' | 'create' | 'fetch' | 'save-and-close' | 'test' | null): void => {
@@ -809,7 +818,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
 
   /** 创建渠道（仅新建模式） */
   const handleCreate = async (): Promise<void> => {
-    if (models.length === 0) {
+    if (models.length === 0 && !hasImageModels) {
       toast.warning('尚未配置模型，建议先从供应商获取或手动添加', { id: 'no-models-warn' })
       return
     }
@@ -827,8 +836,9 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
     || effectiveApiKey.trim() !== ''
     || models.length > 0
     || finishReasonMode !== 'auto'
+    || imageConfig !== null
   )
-  const hasNoModels = !isEdit && models.length === 0
+  const hasNoModels = !isEdit && models.length === 0 && !hasImageModels
 
   /** 返回按钮：创建模式下有未保存内容时拦截 */
   const handleBack = (): void => {
@@ -1136,6 +1146,8 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
           </SettingsCard>
         </SettingsSection>
       )}
+
+      <ChannelImageGenerationConfig value={imageConfig} onChange={setImageConfig} provider={provider} />
 
       {/* 已启用模型 */}
       <SettingsSection

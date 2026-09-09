@@ -31,6 +31,8 @@ export interface ToolbarItem {
   key: string
   /** 行内渲染的节点（建议是 36px 圆角矩形按钮或带文本的紧凑按钮） */
   node: React.ReactNode
+  /** 低频工具始终收入更多菜单。 */
+  menuOnly?: boolean
 }
 
 interface InputToolbarOverflowProps {
@@ -50,12 +52,14 @@ const DEFAULT_GAP_PX = 6
 const DEFAULT_MORE_BUTTON_PX = 36
 
 export function InputToolbarOverflow({
-  items,
+  items: allItems,
   trailing,
   gapPx = DEFAULT_GAP_PX,
   moreButtonPx = DEFAULT_MORE_BUTTON_PX,
   className,
 }: InputToolbarOverflowProps): React.ReactElement {
+  const items = React.useMemo(() => allItems.filter((item) => !item.menuOnly), [allItems])
+  const menuItems = allItems.filter((item) => item.menuOnly)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const itemRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
   const [containerWidth, setContainerWidth] = React.useState(0)
@@ -134,7 +138,7 @@ export function InputToolbarOverflow({
     for (let i = 0; i < items.length; i++) {
       const w = itemWidths[items[i]!.key]!
       const next = total + w + (i > 0 ? gapPx : 0)
-      if (next > containerWidth) {
+      if (next + (menuItems.length ? moreButtonPx + gapPx : 0) > containerWidth) {
         const reserved = moreButtonPx + gapPx
         let fit = i
         let acc = total
@@ -148,10 +152,10 @@ export function InputToolbarOverflow({
       total = next
     }
     return items.length
-  }, [containerWidth, itemWidths, items, gapPx, moreButtonPx])
+  }, [containerWidth, itemWidths, items, gapPx, moreButtonPx, menuItems.length])
 
   const visibleItems = items.slice(0, visibleCount)
-  const overflowItems = items.slice(visibleCount)
+  const overflowItems = [...items.slice(visibleCount), ...menuItems]
   const hasOverflow = overflowItems.length > 0
 
   const setItemRef = (key: string) => (el: HTMLDivElement | null): void => {
@@ -196,9 +200,10 @@ export function InputToolbarOverflow({
               </TooltipContent>
             </Tooltip>
             <PopoverContent
+              forceMount
               side="top"
               align="end"
-              className="w-auto p-1.5"
+              className="w-auto p-1.5 data-[state=closed]:hidden"
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
               <div className="flex items-center gap-1.5">

@@ -1,5 +1,6 @@
 import type {
   AgentNextTurnAside,
+  ImageGenerationSelection,
   AgentQueueMessageKind,
   AgentSubmitOrEnqueueResult,
 } from '@domi/shared'
@@ -21,6 +22,7 @@ export interface AgentQueuedAttachment {
 }
 
 export interface AgentQueuedMessage {
+  imageGeneration?: ImageGenerationSelection
   id: string
   text: string
   createdAt: number
@@ -41,6 +43,7 @@ export function createAgentQueuedMessage(
   createdAt: number,
   quotedSelection?: QuotedSelection | null,
   options?: {
+    imageGeneration?: ImageGenerationSelection
     fileReferenceBlock?: string
     attachments?: AgentQueuedAttachment[]
     additionalDirectories?: string[]
@@ -54,6 +57,7 @@ export function createAgentQueuedMessage(
     createdAt,
     kind: options?.kind ?? 'steering',
   }
+  if (options?.imageGeneration) message.imageGeneration = { ...options.imageGeneration }
   if (quotedSelection) message.quotedSelection = quotedSelection
   if (options?.fileReferenceBlock) message.fileReferenceBlock = options.fileReferenceBlock
   if (options?.attachments && options.attachments.length > 0) message.attachments = options.attachments

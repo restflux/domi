@@ -34,6 +34,23 @@ function message(id: string, sessionId = 'session'): AgentDeferredQueueMessageIn
 }
 
 describe('main deferred Agent message queue', () => {
+  test('生图请求入队后固定参数，不受调用方对象的后续编辑影响', () => {
+    let active = true
+    const started: AgentDeferredQueueMessageInput[] = []
+    const queue = new AgentDeferredMessageQueue({
+      isActive: () => active,
+      startRun: (input) => { started.push(input) },
+      onStarted: () => {},
+      schedule: (callback) => callback(),
+    })
+    const input = { ...message('image'), imageGeneration: { channelId: 'images', modelId: 'gpt-image-2.5-flare', quality: 'high' as const } }
+    queue.enqueue(input)
+    input.imageGeneration.modelId = 'gpt-image-2.5-sunburst'
+    active = false
+    queue.onRunComplete('session', false, false)
+    expect(started[0]?.imageGeneration?.modelId).toBe('gpt-image-2.5-flare')
+  })
+
   test('starts an accepted idle-session message once with its complete payload and stable uuid', () => {
     const started: AgentDeferredQueueMessageInput[] = []
     const statuses: Array<{ messageId: string; startedAt: number }> = []

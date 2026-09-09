@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { buildPiNanoBananaTool } from './nano-banana-agent-tool'
 
+mock.module('../channel-manager', () => ({ getChannelById: () => undefined, decryptApiKey: () => '' }))
+mock.module('../settings-service', () => ({ getSettings: () => ({}), updateSettings: () => undefined }))
+
 // 可变的模拟凭据：验证 Agent 注入仅依赖凭据、不依赖工具设置页开关
 let mockedCredentials: Record<string, string> = {}
 

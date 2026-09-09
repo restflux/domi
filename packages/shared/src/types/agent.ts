@@ -260,6 +260,8 @@ export interface SDKAssistantMessage {
 
 /** SDK user 消息 */
 export interface SDKUserMessage {
+  /** 本条用户请求的生图选择，不含凭据。 */
+  _imageGeneration?: import('./image-generation').ImageGenerationSelection
   type: 'user'
   message?: {
     content?: SDKUserContentBlock[]
@@ -1281,6 +1283,8 @@ export interface AgentNextTurnAside {
  * Agent 发送消息的输入参数
  */
 export interface AgentSendInput {
+  /** 本次生图选择，独立于主对话模型。 */
+  imageGeneration?: import('./image-generation').ImageGenerationSelection
   /** 会话 ID */
   sessionId: string
   /** 用户消息内容（传给 Agent 的 SDK 文本）。 */

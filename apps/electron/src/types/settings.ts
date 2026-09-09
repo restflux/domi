@@ -270,6 +270,10 @@ export const DEFAULT_WORK_SIDEBAR_PREFERENCES: WorkSidebarPreferences = {
 
 /** 应用设置 */
 export interface AppSettings {
+  /** 各 Chat/Work 会话的生图选择；仅存非敏感参数。 */
+  imageGenerationSelections?: Record<string, import('@domi/shared').ImageGenerationSelection | null>
+  /** 默认生图选择（不包含凭据）。 */
+  imageGeneration?: import('@domi/shared').ImageGenerationSelection | null
   /** 可选 RTK 命令输出优化，默认关闭；仅执行 Workflow 下生效。 */
   agentRtkEnabled?: boolean
   /** 主题模式 */

@@ -102,6 +102,8 @@ export type MessageRole = 'user' | 'assistant' | 'system'
  * 聊天消息
  */
 export interface ChatMessage {
+  /** 本条用户消息的生图参数，供重试恢复。 */
+  imageGeneration?: import('./image-generation').ImageGenerationSelection
   /** 消息唯一标识 */
   id: string
   /** 发送者角色 */
@@ -205,6 +207,8 @@ export interface MessageSearchResult {
  * 发送消息的输入参数
  */
 export interface ChatSendInput {
+  /** 本次生图选择，独立于主对话模型。 */
+  imageGeneration?: import('./image-generation').ImageGenerationSelection
   /** 对话 ID */
   conversationId: string
   /** 用户消息内容 */
@@ -291,6 +295,7 @@ export interface StreamErrorEvent {
  * Chat 工具活动（记忆工具调用状态）
  */
 export interface ChatToolActivity {
+  imageGeneration?: import('./image-generation').ImageGenerationResultMetadata
   /** 工具调用 ID */
   toolCallId: string
   /** 工具名称 */

@@ -1,7 +1,7 @@
 /**
  * GPT Image 生图工具模块（Chat 模式）
  *
- * 基于 OpenAI Images API 提供 AI 生图能力，模型为 gpt-image-2。
+ * 基于 OpenAI Images API 提供 AI 生图能力，模型由本次生图选择或兼容配置决定。
  * 实现对齐 Codex 的 image_generation.imagegen 工具
  * （codex-rs/ext/image-generation）：
  * - 文生图：POST {base}/images/generations
@@ -13,37 +13,13 @@
  */
 
 import type { ToolCall, ToolResult, ToolDefinition } from '@domi/core'
-import type { ChatToolMeta, FileAttachment } from '@domi/shared'
+import type { ChatToolMeta, FileAttachment, ImageGenerationSelection } from '@domi/shared'
 import { randomUUID } from 'node:crypto'
-import { getToolCredentials } from '../chat-tool-config'
+import { resolveImageGenerationConfig, isImageGenerationAvailable } from '../image-generation/config'
+import { generateImages, type GeneratedImage, type GenerationMetadata } from '../image-generation/service'
 import { saveAttachment, readAttachmentAsBase64, isImageAttachment } from '../attachment-service'
 
 // ===== OpenAI Images API 类型（与 Codex codex-api/src/images.rs 对齐） =====
-
-interface ImagesApiImageUrl {
-  image_url: string
-}
-
-interface ImagesApiDataItem {
-  /** 生成图的 base64（首选） */
-  b64_json?: string
-  /** 部分兼容端点返回 URL 而非 base64 */
-  url?: string
-}
-
-interface ImagesApiResponse {
-  created?: number
-  data?: ImagesApiDataItem[]
-  error?: { message?: string; code?: string }
-}
-
-// ===== 默认配置 =====
-
-const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
-const DEFAULT_MODEL = 'gpt-image-2'
-
-/** 单次请求超时（生成型 API 较慢，放宽到 3 分钟） */
-const REQUEST_TIMEOUT_MS = 180_000
 
 /** 编辑请求最多携带的参考图数量（对齐 Codex MAX_EDIT_IMAGES） */
 const MAX_EDIT_IMAGES = 5
@@ -53,7 +29,7 @@ const MAX_EDIT_IMAGES = 5
 export const GPT_IMAGE_TOOL_META: ChatToolMeta = {
   id: 'gpt-image',
   name: 'GPT Image',
-  description: 'AI 图片生成与编辑（基于 OpenAI GPT Image，模型 gpt-image-2）',
+  description: 'AI 图片生成与编辑（使用已选 GPT Image 模型）',
   params: [
     { name: 'prompt', type: 'string', description: '图片生成/编辑描述', required: true },
   ],
@@ -62,7 +38,7 @@ export const GPT_IMAGE_TOOL_META: ChatToolMeta = {
   executorType: 'builtin',
   systemPromptAppend: `
 <gpt_image_instructions>
-你拥有基于 OpenAI GPT Image（gpt-image-2）的图片生成和编辑能力。
+你拥有基于 OpenAI GPT Image 的图片生成和编辑能力；实际模型与参数由用户选择和宿主配置决定。
 
 **imagegen — 生成/编辑图片：**
 当用户需要创建或修改图片时调用：
@@ -129,8 +105,7 @@ export const GPT_IMAGE_TOOL_DEFINITIONS: ToolDefinition[] = [
  * 检查 GPT Image 工具是否可用（API Key 已配置）
  */
 export function isGptImageAvailable(): boolean {
-  const credentials = getToolCredentials('gpt-image')
-  return !!credentials.apiKey
+  return isImageGenerationAvailable('gpt-image')
 }
 
 // ===== 工具执行 =====
@@ -147,6 +122,10 @@ export function isGptImageToolCall(toolName: string): boolean {
 
 /** GPT Image 工具执行所需的额外上下文 */
 export interface GptImageContext {
+  /** 主进程本次请求的内存快照，不持久化。null 表示发送时不可用。 */
+  preparedConfig?: import('../image-generation/config').ImageGenerationConfig | null
+  imageGeneration?: ImageGenerationSelection
+  signal?: AbortSignal
   /** 对话 ID（用于保存附件） */
   conversationId: string
   /** 当前用户消息的附件列表 */
@@ -163,14 +142,14 @@ export interface GptImageContext {
  * 按时间从早到晚排列：前一轮用户附件 → 前一轮助手附件 → 当前用户附件。
  * 最多携带 MAX_EDIT_IMAGES 张，超出截断。
  */
-function collectReferenceImages(context: GptImageContext): ImagesApiImageUrl[] {
+function collectReferenceImages(context: GptImageContext): GeneratedImage[] {
   const allAttachments: FileAttachment[] = [
     ...(context.previousUserAttachments ?? []),
     ...(context.previousAssistantAttachments ?? []),
     ...(context.currentAttachments ?? []),
   ]
 
-  const images: ImagesApiImageUrl[] = []
+  const images: GeneratedImage[] = []
   for (const attachment of allAttachments) {
     if (images.length >= MAX_EDIT_IMAGES) break
     if (!isImageAttachment(attachment.mediaType)) continue
@@ -178,7 +157,7 @@ function collectReferenceImages(context: GptImageContext): ImagesApiImageUrl[] {
     try {
       const base64 = readAttachmentAsBase64(attachment.localPath)
       images.push({
-        image_url: `data:${attachment.mediaType};base64,${base64}`,
+        mimeType: attachment.mediaType, data: base64,
       })
     } catch (error) {
       console.warn(`[GPT Image] 读取参考图失败: ${attachment.localPath}`, error)
@@ -188,218 +167,35 @@ function collectReferenceImages(context: GptImageContext): ImagesApiImageUrl[] {
   return images
 }
 
-/**
- * 宽高比 → OpenAI size 映射。
- * gpt-image 支持 1024x1024 / 1536x1024 / 1024x1536 / auto；
- * 无法直接对应的比例交给服务端 auto 处理。
- */
-function aspectRatioToSize(aspectRatio?: string): string | undefined {
-  switch (aspectRatio) {
-    case '1:1':
-      return '1024x1024'
-    case '16:9':
-      return '1536x1024'
-    case '9:16':
-      return '1024x1536'
-    default:
-      return undefined
-  }
+export { buildImagesRequest } from '../image-generation/service'
+
+export interface GptImageExecutionResult extends ToolResult {
+  imageGeneration?: GenerationMetadata
 }
 
-/**
- * 构建 OpenAI Images API 请求体
- *
- * 导出的纯函数，便于单测验证与 Codex 对齐的请求形状。
- */
-export function buildImagesRequest(
-  prompt: string,
-  referenceImages: ImagesApiImageUrl[],
-  model: string,
-  options: {
-    size?: string
-    numberOfImages: number
-  },
-): { path: string; body: Record<string, unknown> } {
-  const size = options.size || 'auto'
-  const n = options.numberOfImages
-
-  // 带参考图 → 编辑端点；否则 → 文生图端点
-  if (referenceImages.length > 0) {
-    return {
-      path: 'images/edits',
-      body: {
-        model,
-        prompt,
-        images: referenceImages,
-        size,
-        quality: 'auto',
-        background: 'auto',
-        n,
-      },
-    }
-  }
-
-  return {
-    path: 'images/generations',
-    body: {
-      model,
-      prompt,
-      size,
-      quality: 'auto',
-      background: 'auto',
-      n,
-    },
-  }
-}
-
-/**
- * 执行 GPT Image 工具调用
- */
-export async function executeGptImageTool(
-  toolCall: ToolCall,
-  context: GptImageContext,
-): Promise<ToolResult> {
-  const credentials = getToolCredentials('gpt-image')
-
-  if (!credentials.apiKey) {
-    return {
-      toolCallId: toolCall.id,
-      content: 'GPT Image 未配置 API Key',
-      isError: true,
-    }
-  }
-
+export async function executeGptImageTool(toolCall: ToolCall, context: GptImageContext): Promise<GptImageExecutionResult> {
   try {
-    const prompt = toolCall.arguments.prompt as string
-    const aspectRatio = toolCall.arguments.aspectRatio as string | undefined
-    const size = (toolCall.arguments.size as string | undefined) || aspectRatioToSize(aspectRatio)
-    const useReferenceImages = toolCall.arguments.useReferenceImages === 'true'
-    const numberOfImages = typeof toolCall.arguments.numberOfImages === 'number'
-      ? Math.min(Math.max(Math.round(toolCall.arguments.numberOfImages), 1), 4)
-      : 1
-
-    if (!prompt) {
-      return {
-        toolCallId: toolCall.id,
-        content: '参数缺失: prompt',
-        isError: true,
-      }
-    }
-
-    const baseUrl = credentials.baseUrl?.trim() || DEFAULT_BASE_URL
-    const model = credentials.model?.trim() || DEFAULT_MODEL
-
-    // 收集参考图
-    const referenceImages = useReferenceImages ? collectReferenceImages(context) : []
-
-    // 构建请求
-    const { path, body } = buildImagesRequest(prompt, referenceImages, model, {
-      size,
-      numberOfImages,
+    if (context.preparedConfig === null) throw new Error('本次请求没有可用的生图配置，请重新选择后发送')
+    const config = context.preparedConfig ?? resolveImageGenerationConfig('gpt-image', context.imageGeneration)
+    const prompt = typeof toolCall.arguments.prompt === 'string' ? toolCall.arguments.prompt : ''
+    const useReferences = toolCall.arguments.useReferenceImages === 'true' || toolCall.arguments.useReferenceImages === true
+    const references = useReferences ? collectReferenceImages(context) : []
+    const result = await generateImages(config, prompt, context.conversationId, references, {
+      size: typeof toolCall.arguments.size === 'string' ? toolCall.arguments.size : undefined,
+      aspectRatio: typeof toolCall.arguments.aspectRatio === 'string' ? toolCall.arguments.aspectRatio : undefined,
+      imageSize: typeof toolCall.arguments.imageSize === 'string' ? toolCall.arguments.imageSize : undefined,
+      numberOfImages: typeof toolCall.arguments.numberOfImages === 'number' ? toolCall.arguments.numberOfImages : undefined,
+      signal: context.signal,
     })
-
-    const url = `${baseUrl.replace(/\/+$/, '')}/${path}`
-
-    console.log(`[GPT Image] 调用 Images API: ${path}, model=${model}, prompt="${prompt.slice(0, 50)}..."`)
-
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-    let response: Response
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${credentials.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })
-    } finally {
-      clearTimeout(timeoutId)
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`[GPT Image] API 请求失败 (${response.status}):`, errorText)
-      return {
-        toolCallId: toolCall.id,
-        content: `Images API 请求失败 (${response.status}): ${errorText.slice(0, 200)}`,
-        isError: true,
-      }
-    }
-
-    const data = (await response.json()) as ImagesApiResponse
-
-    if (data.error) {
-      return {
-        toolCallId: toolCall.id,
-        content: `Images API 错误: ${data.error.message ?? data.error.code ?? '未知错误'}`,
-        isError: true,
-      }
-    }
-
-    const items = data.data ?? []
-    if (items.length === 0) {
-      return {
-        toolCallId: toolCall.id,
-        content: '未生成任何图片',
-        isError: true,
-      }
-    }
-
-    // 保存生成的图片为附件
-    const generatedAttachments: FileAttachment[] = []
-    for (const item of items) {
-      if (item.b64_json) {
-        const result = saveAttachment({
-          conversationId: context.conversationId,
-          filename: `gpt-image-${randomUUID().slice(0, 8)}.png`,
-          mediaType: 'image/png',
-          data: item.b64_json,
-        })
-        generatedAttachments.push(result.attachment)
-      } else if (item.url) {
-        // 兼容返回 URL 的端点：下载后保存
-        const downloadResponse = await fetch(item.url)
-        if (!downloadResponse.ok) {
-          console.warn(`[GPT Image] 下载生成图失败 (${downloadResponse.status}): ${item.url}`)
-          continue
-        }
-        const buffer = Buffer.from(await downloadResponse.arrayBuffer())
-        const result = saveAttachment({
-          conversationId: context.conversationId,
-          filename: `gpt-image-${randomUUID().slice(0, 8)}.png`,
-          mediaType: 'image/png',
-          data: buffer.toString('base64'),
-        })
-        generatedAttachments.push(result.attachment)
-      }
-    }
-
-    if (generatedAttachments.length === 0) {
-      return {
-        toolCallId: toolCall.id,
-        content: '生成结果中缺少图片数据（b64_json / url 均为空）',
-        isError: true,
-      }
-    }
-
-    const imageCount = generatedAttachments.length
-    const resultText = `图片已成功生成（${imageCount} 张）`
-
-    return {
-      toolCallId: toolCall.id,
-      content: resultText,
-      generatedAttachments,
-    }
+    context.signal?.throwIfAborted()
+    const generatedAttachments = result.images.map((image) => saveAttachment({
+      conversationId: context.conversationId,
+      filename: `gpt-image-${randomUUID().slice(0, 8)}${image.mimeType === 'image/jpeg' ? '.jpg' : '.png'}`,
+      mediaType: image.mimeType, data: image.data,
+    }).attachment)
+    return { toolCallId: toolCall.id, content: `图片已成功生成（${generatedAttachments.length} 张）${result.text.length ? '\n\n' + result.text.join('\n') : ''}`,
+      generatedAttachments, imageGeneration: result.metadata }
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    console.error(`[GPT Image] 执行失败:`, error)
-    return {
-      toolCallId: toolCall.id,
-      content: `图片生成失败: ${msg}`,
-      isError: true,
-    }
+    return { toolCallId: toolCall.id, content: `图片生成失败: ${error instanceof Error ? error.message : '未知错误'}`, isError: true }
   }
 }

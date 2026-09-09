@@ -1,3 +1,5 @@
+import { parseAgentImageCommand } from './agent-image-command'
+import { prepareImageGenerationConfigs, resolveRequestImageGeneration } from './image-generation-request'
 /**
  * AI 聊天流式服务（Electron 编排层）
  *
@@ -200,11 +202,23 @@ export async function sendMessage(
   input: ChatSendInput,
   webContents: WebContents,
 ): Promise<void> {
+  let imageGeneration: import('@domi/shared').ImageGenerationSelection | undefined
+  try {
+    imageGeneration = resolveRequestImageGeneration(input.imageGeneration)
+  } catch (error) {
+    webContents.send(CHAT_IPC_CHANNELS.STREAM_ERROR, {
+      conversationId: input.conversationId,
+      error: error instanceof Error ? error.message : '生图配置无效',
+    })
+    return
+  }
   const {
     conversationId, userMessage, channelId,
     modelId, systemMessage, contextLength, contextDividers, attachments,
     thinkingEnabled, enabledToolIds,
   } = input
+
+  const imageGenerationConfigs = prepareImageGenerationConfigs(imageGeneration)
 
   // 1. 查找渠道
   const channels = listChannels()
@@ -247,6 +261,7 @@ export async function sendMessage(
   const userMsg: ChatMessage = {
     id: randomUUID(),
     role: 'user',
+    imageGeneration,
     content: userMessage,
     createdAt: Date.now(),
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
@@ -302,9 +317,13 @@ export async function sendMessage(
     const adapter = getAdapter(channel.provider)
 
     // 8. 从工具注册表获取启用的工具
-    const { tools, systemPromptAppend } = getEnabledTools(enabledToolIds)
+    const enabledTools = getEnabledTools(enabledToolIds, imageGeneration)
+    const tools = enabledTools.tools
+    const systemPromptAppend = (enabledTools.systemPromptAppend ?? '') + (input.imageGeneration || parseAgentImageCommand(input.userMessage).matched
+      ? `
+用户已开启图片生成。请使用提供的生图工具实际生成或编辑图片，不要只输出提示词。用户的渠道、模型和参数已由宿主固定；只有工具返回图片且没有错误时才能报告完成。`
+      : '')
 
-    // 注入工具系统提示词
     const effectiveSystemMessage = systemPromptAppend && systemMessage
       ? systemMessage + systemPromptAppend
       : systemPromptAppend
@@ -393,6 +412,9 @@ export async function sendMessage(
         webContents,
         conversationId,
         currentAttachments: attachments,
+        imageGeneration,
+        imageGenerationConfigs,
+        signal: controller.signal,
         previousUserAttachments: lastUserMsg?.attachments,
         previousAssistantAttachments: lastAssistantMsg?.attachments,
       })
@@ -406,6 +428,7 @@ export async function sendMessage(
             toolName: tc.name,
             type: 'result',
             result: tr.content,
+            imageGeneration: tr.imageGeneration,
             isError: tr.isError,
             input: tc.arguments,
           })

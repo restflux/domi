@@ -8,7 +8,7 @@
  */
 
 import type { BuiltinMcpServerSummary } from '@domi/shared'
-import { getToolCredentials } from '../chat-tool-config'
+import { isImageGenerationAvailable } from '../image-generation/config'
 import { getBuiltinMcpDefinitions, type BuiltinMcpDefinition } from './baseline'
 import { isBuiltinMcpDefaultDisabled, isBuiltinMcpUserEnabled } from './settings'
 
@@ -23,6 +23,12 @@ function resolveAvailability(
   // 基础设施型（如 domi-cloud）：登录后始终注入，不受用户开关影响
   if (item.toggleable === false) {
     return { enabled: true, available: true }
+  }
+
+  // 生图是原生能力，旧 MCP 开关仅用于历史兼容，不再作为使用前提。
+  if (item.id === 'nano-banana' || item.id === 'gpt-image') {
+    const available = isImageGenerationAvailable(item.id)
+    return { enabled: available, available, availabilityReason: available ? undefined : '请在图片生成设置中选择渠道和模型' }
   }
 
   const userEnabled = isBuiltinMcpUserEnabled(item.id)
@@ -45,25 +51,6 @@ function resolveAvailability(
     }
   }
 
-  if (item.id === 'nano-banana') {
-    const credentials = getToolCredentials('nano-banana')
-    const available = !!credentials.apiKey
-    return {
-      enabled: true,
-      available,
-      availabilityReason: available ? undefined : '需要配置 Gemini API Key',
-    }
-  }
-
-  if (item.id === 'gpt-image') {
-    const credentials = getToolCredentials('gpt-image')
-    const available = !!credentials.apiKey
-    return {
-      enabled: true,
-      available,
-      availabilityReason: available ? undefined : '需要配置 OpenAI API Key',
-    }
-  }
 
   return { enabled: true, available: true }
 }

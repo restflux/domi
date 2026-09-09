@@ -458,6 +458,7 @@ export function AgentSkillsView(): React.ReactElement {
               onOpen={(name, entry) => { setEditingMcp({ name, entry }); setMcpSheetOpen(true) }}
               onOpenGlobal={(sourcePath) => window.electronAPI.systemOpenFile(sourcePath)}
               onOpenBuiltin={setSelectedBuiltinMcp}
+              onOpenImageSettings={() => { setToolSettingsFocus(null); setSettingsTab('tools'); setSettingsOpen(true) }}
               onToggle={data.toggleMcp}
               onToggleBuiltin={data.toggleBuiltinMcp}
               onRequestDelete={setPendingDeleteMcpName}
@@ -693,13 +694,14 @@ interface McpTabProps {
   onOpen: (name: string, entry: McpServerEntry) => void
   onOpenGlobal: (sourcePath: string) => void
   onOpenBuiltin: (server: BuiltinMcpServerSummary) => void
+  onOpenImageSettings: () => void
   onToggle: (name: string, enabled: boolean) => void
   onToggleBuiltin: (id: string, enabled: boolean) => void
   onRequestDelete: (name: string) => void
   onAdd: () => void
 }
 
-function McpTab({ userEntries, globalEntries, builtinServers, total, onOpen, onOpenGlobal, onOpenBuiltin, onToggle, onToggleBuiltin, onRequestDelete, onAdd }: McpTabProps): React.ReactElement {
+function McpTab({ userEntries, globalEntries, builtinServers, total, onOpen, onOpenGlobal, onOpenBuiltin, onOpenImageSettings, onToggle, onToggleBuiltin, onRequestDelete, onAdd }: McpTabProps): React.ReactElement {
   if (total === 0) {
     return (
       <EmptyState
@@ -763,7 +765,17 @@ function McpTab({ userEntries, globalEntries, builtinServers, total, onOpen, onO
       )}
 
       {builtinServers.length > 0 && (
-        <McpSection title="Domi 内置" count={builtinServers.length}>
+        <McpSection title="Domi 内置" count={builtinServers.length + (builtinServers.some(isLegacyImageMcp) ? 1 : 0)}>
+          {builtinServers.some(isLegacyImageMcp) && <McpCard
+            name="图片生成"
+            entry={{ type: 'stdio', command: 'Chat / Work 输入框', enabled: true, isBuiltin: true }}
+            description="复用已有渠道生成和编辑图片。在输入框开启生图，或输入 /image 选择模型。"
+            targetLabel="渠道设置 / 图片生成"
+            statusLabel="无需 MCP"
+            statusTone="success"
+            readOnly
+            onOpen={onOpenImageSettings}
+          />}
           {builtinServers.map((server) => (
             <McpCard
               key={server.id}
@@ -774,7 +786,7 @@ function McpTab({ userEntries, globalEntries, builtinServers, total, onOpen, onO
                 enabled: server.enabled,
                 isBuiltin: true,
               }}
-              description={server.description}
+              description={isLegacyImageMcp(server) ? '历史兼容工具；日常图片生成使用输入框生图选择，无需开启 MCP。' : server.description}
               targetLabel={server.availabilityReason ?? 'Domi 运行时注入'}
               statusLabel={getBuiltinMcpStatus(server).label}
               statusTone={getBuiltinMcpStatus(server).tone}
@@ -789,7 +801,12 @@ function McpTab({ userEntries, globalEntries, builtinServers, total, onOpen, onO
   )
 }
 
+function isLegacyImageMcp(server: BuiltinMcpServerSummary): boolean {
+  return server.id === 'gpt-image' || server.id === 'nano-banana'
+}
+
 function getBuiltinMcpStatus(server: BuiltinMcpServerSummary): { label: string; tone: 'success' | 'warning' | 'muted' } {
+  if (isLegacyImageMcp(server)) return { label: '历史兼容', tone: 'muted' }
   if (!server.enabled) return { label: '已关闭', tone: 'muted' }
   if (server.available) return { label: '可用', tone: 'success' }
   return { label: '需配置', tone: 'warning' }

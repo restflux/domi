@@ -115,7 +115,8 @@ export async function routeAgentSubmission(
   input: AgentSubmitOrEnqueueInput,
   options: AgentSubmissionRoutingOptions,
 ): Promise<AgentSubmitOrEnqueueResult> {
-  if (input.dispatch === 'now' && options.isActive(input.sessionId)) {
+  // 生图工具捕获本轮选择，不能让下一条请求继承上一轮的渠道闭包。
+  if (!input.imageGeneration && input.dispatch === 'now' && options.isActive(input.sessionId)) {
     try {
       await options.inject(input)
       return { disposition: 'injected' }

@@ -33,7 +33,10 @@ export class AgentDeferredMessageQueue {
     if (this.dispatching.get(sessionId) === queueMessageId) return false
     const queue = this.queues.get(sessionId) ?? []
     if (queue.some((entry) => entry.queueMessageId === queueMessageId)) return false
-    queue.push(input)
+    queue.push({
+      ...input,
+      ...(input.imageGeneration && { imageGeneration: { ...input.imageGeneration } }),
+    })
     this.queues.set(sessionId, queue)
     this.tryDispatch(sessionId)
     return true

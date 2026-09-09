@@ -92,6 +92,7 @@ export function assertWorktreeContinuationRunEnvelope(input: AgentSendInput): vo
   // 这些字段必须完全缺席，而不只是“看起来为空”。IPC 输入不受 TypeScript 运行时约束，
   // 因此也要拒绝伪造的非数组/非字符串值，避免其在后续 prompt 组装中被意外解释。
   const forbiddenFields: Array<keyof AgentSendInput> = [
+    'imageGeneration',
     'nextTurnAsides',
     'additionalDirectories',
     'customTools',

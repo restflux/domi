@@ -63,6 +63,8 @@ export interface ToolCall {
 
 /** 工具执行结果（传回给模型的下一轮请求） */
 export interface ToolResult {
+  /** 图片生成的实际参数，供结果展示和持久化。 */
+  imageGeneration?: import('@domi/shared').ImageGenerationResultMetadata
   /** 对应的工具调用 ID */
   toolCallId: string
   /** 执行结果内容 */

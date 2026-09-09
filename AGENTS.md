@@ -438,6 +438,13 @@ React UI 更新与 JSONL 持久化
 - Pi Extension trust 不继承项目、Skill 或 MCP 信任；renderer 不得提交任意路径直接授权。
 - `@domi/*` 是 Domi 的 canonical workspace package identity；`DomiPermissionMode`、`DomiEvent` 等 Domi 自有类型使用当前产品命名。只有 `SDKMessage`、`sdkSessionId` 和显式旧数据导入字段等真实持久化/协议兼容名可以保留历史命名。
 
+### 原生图片生成
+
+- `main/lib/image-generation/` 统一解析渠道/旧配置与 OpenAI Images、Gemini 请求；Chat/Work 只保留工具和附件桥接。
+- 生图模型独立于主对话模型；`ImageGenerationSelection` 只持久化渠道引用、模型和参数，不包含凭据。普通 API 渠道显式配置图片协议，OAuth/订阅不可自动复用。
+- 显式选择随请求固定并进入独立 deferred run，重试/队列不能继承另一条请求的模型；旧工具名保留供历史消息与权限门禁识别，基础使用不要求打开 MCP。
+- 不将 `/models` 成功表述成生图可用；不自动付费试生成、不静默跨渠道回退。默认保存会话附件，workspace 输出仍遵守原有路径授权。
+
 ### 共享类型（`@domi/shared`）
 
 - `AgentEvent`：Agent 事件（text / tool_start / tool_result / done / error）

@@ -1,3 +1,5 @@
+import { imageGenerationSelectionsAtom } from '@/atoms/image-generation-atoms'
+import { ImageGenerationSelector } from '@/components/ai-elements/ImageGenerationSelector'
 /**
  * ChatInput - 输入区域
  *
@@ -72,6 +74,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ conversationId, streaming, pendingAttachments, onSetPendingAttachments, onSend, onStop, onClearContext }: ChatInputProps): React.ReactElement {
+  const imageSelections = useAtomValue(imageGenerationSelectionsAtom)
   const sendWithCmdEnter = useAtomValue(sendWithCmdEnterAtom)
   // 从 Map atom 读写草稿
   const draftsMap = useAtomValue(conversationDraftsAtom)
@@ -371,10 +374,11 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
       ),
     },
     { key: 'speech', node: <SpeechButton className={inputToolbarButtonClass} /> },
+    { key: 'image-generation', menuOnly: !imageSelections[`chat:${conversationId}`], node: <ImageGenerationSelector scope={`chat:${conversationId}`} inputText={content} /> },
     { key: 'tools', node: <ToolSelectorPopover /> },
     { key: 'context', node: <ContextSettingsPopover /> },
     { key: 'clear', node: <ClearContextButton onClick={onClearContext} /> },
-  ], [handleOpenFileDialog, thinkingEnabled, setThinkingEnabled, onClearContext])
+  ], [handleOpenFileDialog, thinkingEnabled, setThinkingEnabled, onClearContext, conversationId, content, imageSelections])
 
   const trailingNode = streaming ? (
     <Tooltip>

@@ -33,6 +33,7 @@ export interface GptImageToolDetails {
 export type GptImageOutputMode = 'session' | 'workspace'
 
 export interface GptImageGenerateOptions {
+  signal?: AbortSignal
   size?: string
   referenceImagePaths?: string[]
   cwd?: string
@@ -69,7 +70,7 @@ export function buildPiGptImageTool(
         Type.Literal('session'), Type.Literal('workspace'),
       ], { description: 'session saves only to conversation attachments (default); workspace also saves under generated-images in the current Session Target.' })),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, signal) {
       const args = params as {
         prompt: string
         referenceImagePaths?: string[]
@@ -83,6 +84,7 @@ export function buildPiGptImageTool(
           throw new Error('当前会话没有可写入的 Session Target，无法保存工作区图片')
         }
         const result = await generate(args.prompt, sessionId, {
+          ...(signal ? { signal } : {}),
           size: args.size,
           referenceImagePaths: args.referenceImagePaths,
           ...(agentCwd ? { cwd: agentCwd } : {}),

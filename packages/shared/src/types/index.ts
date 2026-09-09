@@ -74,3 +74,5 @@ export * from './agent-island'
 export * from './usage'
 
 export * from "./side-chat"
+
+export * from './image-generation.ts'

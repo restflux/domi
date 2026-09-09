@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { buildPiGptImageTool } from './gpt-image-agent-tool'
 
+import type { Channel, ImageGenerationSelection } from '@domi/shared'
+let selectedChannel: Channel | undefined
+let defaultSelection: ImageGenerationSelection | undefined
+mock.module('../channel-manager', () => ({ getChannelById: () => selectedChannel, decryptApiKey: () => 'channel-key' }))
+mock.module('../settings-service', () => ({ getSettings: () => ({ imageGeneration: defaultSelection }), updateSettings: () => undefined }))
+
 // 可变的模拟凭据：验证 Agent 注入仅依赖凭据、不依赖工具设置页开关
 let mockedCredentials: Record<string, string> = {}
 
@@ -144,5 +150,47 @@ describe('buildPiGptImageTools（Agent 注入条件：仅凭能力中心开关+�
     mockedCredentials = {}
 
     expect(buildPiGptImageTools(sdk, 'session-gpt-image')).toEqual([])
+  })
+})
+
+
+describe('GPT Image 本轮选择快照', () => {
+  test('Given 用户选择模型和质量 When 模型提供替代参数并修改原对象 Then 闭包保持用户选择且取消信号透传', async () => {
+    const originalFetch = globalThis.fetch
+    const selection: ImageGenerationSelection = { channelId: 'image-channel', modelId: 'gpt-image-2.5-flare', quality: 'max', size: '1024x1024', numberOfImages: 1 }
+    selectedChannel = { id: 'image-channel', name: '图片', provider: 'openai', enabled: true, baseUrl: 'https://images.example.com/v1', apiKey: 'encrypted', models: [], createdAt: 0, updatedAt: 0, imageGeneration: { protocol: 'openai-images', models: ['gpt-image-2.5-flare'] } }
+    const sdk = { defineTool: (definition: unknown) => definition } as unknown as typeof import('@earendil-works/pi-coding-agent')
+    try {
+      const tool = buildPiGptImageTools(sdk, 'snapshot-session', undefined, selection)[0]!
+      selection.modelId = 'changed-model'
+      let body: Record<string, unknown> = {}
+      let requestSignal: AbortSignal | null | undefined
+      globalThis.fetch = (async (_url, init) => {
+        body = JSON.parse(String(init?.body)); requestSignal = init?.signal
+        return Response.json({ data: [{ b64_json: 'image' }] })
+      }) as typeof fetch
+      const controller = new AbortController()
+      const result = await tool.execute('call', { prompt: 'a cat', model: 'override', quality: 'low', size: '1536x1024', numberOfImages: 4 }, controller.signal, undefined, {} as never)
+      expect(body).toMatchObject({ model: 'gpt-image-2.5-flare', quality: 'max', size: '1024x1024', n: 1 })
+      expect(result.details).toMatchObject({ model: 'gpt-image-2.5-flare', channelId: 'image-channel', quality: 'max', imageCount: 1, outputMode: 'session' })
+      expect(JSON.stringify(result)).not.toContain('channel-key')
+      controller.abort()
+      expect(requestSignal?.aborted).toBe(true)
+    } finally { globalThis.fetch = originalFetch; selectedChannel = undefined; defaultSelection = undefined }
+  })
+  test('Given 创建工具时无默认选择 When 默认设置随后变更 Then 已创建工具仍只用原旧凭据', async () => {
+    mockedCredentials = { apiKey: 'legacy-key' }
+    const originalFetch = globalThis.fetch
+    const sdk = { defineTool: (definition: unknown) => definition } as unknown as typeof import('@earendil-works/pi-coding-agent')
+    try {
+      const tool = buildPiGptImageTools(sdk, 'legacy-snapshot')[0]!
+      defaultSelection = { channelId: 'missing', modelId: 'different-model' }
+      globalThis.fetch = (async (_url, init) => {
+        expect(JSON.parse(String(init?.body)).model).toBe('gpt-image-2')
+        return Response.json({ data: [{ b64_json: 'image' }] })
+      }) as typeof fetch
+      const result = await tool.execute('call', { prompt: 'a cat' }, undefined, undefined, {} as never)
+      expect(result.details).toMatchObject({ model: 'gpt-image-2' })
+    } finally { globalThis.fetch = originalFetch; defaultSelection = undefined; mockedCredentials = {} }
   })
 })

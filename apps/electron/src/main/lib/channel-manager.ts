@@ -36,6 +36,7 @@ import {
   serializeCodexCredentials,
   isCodexCredentialExpired,
 } from '@domi/shared'
+import { validateImageGenerationChannel } from './image-generation/config-core'
 import { refreshCodexOAuth } from './codex-oauth-service'
 import { parseCodexPlanQuotaResponse } from './codex-plan-quota'
 import { listCodexModels, refreshPiChannelModelCatalog } from './adapters/pi-model-registry'
@@ -370,6 +371,7 @@ export function createChannel(input: ChannelCreateInput): Channel {
     models: input.models,
     enabled: input.enabled,
     finishReasonMode: input.finishReasonMode ?? 'auto',
+    imageGeneration: input.imageGeneration === null ? null : validateImageGenerationChannel(input),
     createdAt: now,
     updatedAt: now,
     credentialVersion: randomUUID(),
@@ -418,6 +420,8 @@ export function updateChannel(
       : existing.credentialVersion ?? randomUUID(),
   }
 
+  const imageGeneration = input.imageGeneration === undefined ? existing.imageGeneration : input.imageGeneration
+  updated.imageGeneration = imageGeneration === null ? null : validateImageGenerationChannel({ ...updated, imageGeneration })
   config.channels[index] = updated
   writeConfig(config)
 

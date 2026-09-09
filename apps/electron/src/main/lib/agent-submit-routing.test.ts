@@ -19,6 +19,22 @@ const input: AgentSubmitOrEnqueueInput = {
 }
 
 describe('Agent submit-or-enqueue routing', () => {
+  test('显式生图选择进入独立 run，不注入已有模型闭包', async () => {
+    const events: string[] = []
+    const selection = { channelId: 'images', modelId: 'gpt-image-2.5-flare' }
+    const result = await routeAgentSubmission({ ...input, imageGeneration: selection }, {
+      isActive: () => true,
+      inject: async () => { events.push('injected') },
+      enqueue: (submission) => {
+        expect(submission.imageGeneration).toEqual(selection)
+        events.push('queued')
+        return true
+      },
+    })
+    expect(result).toEqual({ disposition: 'queued' })
+    expect(events).toEqual(['queued'])
+  })
+
   test('classifies only an ended active query as safe to hand off to the deferred queue', () => {
     expect(isStaleActiveQueueError(Object.assign(new Error('会话未运行，无法追加消息'), { code: 'agent.query.not_active' }))).toBeTrue()
     expect(isStaleActiveQueueError(new Error('无活跃消息通道可注入队列消息'))).toBeTrue()

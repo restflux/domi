@@ -20,6 +20,9 @@ import { getChatToolsConfig } from './chat-tool-config'
 
 /** 工具执行上下文 */
 export interface ToolExecutionContext {
+  imageGenerationConfigs?: import('./image-generation-request').PreparedImageGenerationConfigs
+  imageGeneration?: import('@domi/shared').ImageGenerationSelection
+  signal?: AbortSignal
   /** webContents 用于推送工具活动事件 */
   webContents: WebContents
   /** 对话 ID */
@@ -56,7 +59,10 @@ export async function executeToolCalls(
       result = await executeAgentRecommendTool(tc)
     } else if (isNanoBananaToolCall(tc.name)) {
       const nanoBananaContext: NanoBananaContext = {
+        preparedConfig: context.imageGenerationConfigs?.['nano-banana'],
         conversationId: context.conversationId,
+        imageGeneration: context.imageGeneration,
+        signal: context.signal,
         currentAttachments: context.currentAttachments,
         previousUserAttachments: context.previousUserAttachments,
         previousAssistantAttachments: context.previousAssistantAttachments,
@@ -64,7 +70,10 @@ export async function executeToolCalls(
       result = await executeNanoBananaTool(tc, nanoBananaContext)
     } else if (isGptImageToolCall(tc.name)) {
       const gptImageContext: GptImageContext = {
+        preparedConfig: context.imageGenerationConfigs?.['gpt-image'],
         conversationId: context.conversationId,
+        imageGeneration: context.imageGeneration,
+        signal: context.signal,
         currentAttachments: context.currentAttachments,
         previousUserAttachments: context.previousUserAttachments,
         previousAssistantAttachments: context.previousAssistantAttachments,
@@ -96,6 +105,7 @@ export async function executeToolCalls(
         toolName: tc.name,
         toolCallId: tc.id,
         result: result.content,
+        imageGeneration: result.imageGeneration,
         isError: result.isError,
         input: tc.arguments,
       },

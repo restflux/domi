@@ -60,7 +60,7 @@
       "id": "gpt-image",
       "name": "gpt_image",
       "displayName": "GPT Image 生图",
-      "description": "通过 OpenAI Images API（模型 gpt-image-2）为 Agent 提供图片生成和编辑能力。",
+      "description": "通过已配置的渠道或兼容配置使用 GPT Image 生成和编辑图片。",
       "category": "media",
       "kind": "internal",
       "deletable": false,

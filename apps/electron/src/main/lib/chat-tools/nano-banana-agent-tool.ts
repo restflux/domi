@@ -33,6 +33,7 @@ export interface NanoBananaToolDetails {
 }
 
 export interface NanoBananaGenerateOptions {
+  signal?: AbortSignal
   aspectRatio?: string
   imageSize?: string
   referenceImagePaths?: string[]
@@ -71,7 +72,7 @@ export function buildPiNanoBananaTool(
         Type.Literal('session'), Type.Literal('workspace'),
       ], { description: 'session saves only to conversation attachments (default); workspace also saves under generated-images in the current Session Target.' })),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, signal) {
       const args = params as {
         prompt: string
         referenceImagePaths?: string[]
@@ -86,6 +87,7 @@ export function buildPiNanoBananaTool(
           throw new Error('当前会话没有可写入的 Session Target，无法保存工作区图片')
         }
         const result = await generate(args.prompt, sessionId, {
+          ...(signal ? { signal } : {}),
           aspectRatio: args.aspectRatio,
           imageSize: args.imageSize,
           referenceImagePaths: args.referenceImagePaths,

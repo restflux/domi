@@ -7,9 +7,10 @@
  */
 
 import type { ToolCall, ToolResult, ToolDefinition } from '@domi/core'
-import type { ChatToolMeta, FileAttachment } from '@domi/shared'
+import type { ChatToolMeta, FileAttachment, ImageGenerationSelection } from '@domi/shared'
 import { randomUUID } from 'node:crypto'
-import { getToolCredentials } from '../chat-tool-config'
+import { resolveImageGenerationConfig, isImageGenerationAvailable } from '../image-generation/config'
+import { generateImages, clearImageGenerationHistory, type GenerationMetadata } from '../image-generation/service'
 import { saveAttachment, readAttachmentAsBase64, isImageAttachment } from '../attachment-service'
 
 // ===== Gemini API 类型（REST API 使用 camelCase） =====
@@ -30,32 +31,14 @@ interface GeminiPart {
   thought?: boolean
 }
 
-interface GeminiContent {
-  role: 'user' | 'model'
-  parts: GeminiPart[]
-}
-
-interface GeminiCandidate {
-  content: {
-    parts: GeminiPart[]
-    role: string
-  }
-}
-
-interface GeminiResponse {
-  candidates?: GeminiCandidate[]
-  error?: { message: string; code: number }
-}
-
-// ===== 多轮对话历史 =====
-
-/** 每个 conversationId 对应的 Gemini 对话历史 */
-const conversationHistory = new Map<string, GeminiContent[]>()
-
 // ===== 工具执行上下文 =====
 
 /** Nano Banana 工具执行所需的额外上下文 */
 export interface NanoBananaContext {
+  /** 主进程本次请求的内存快照，不持久化。null 表示发送时不可用。 */
+  preparedConfig?: import('../image-generation/config').ImageGenerationConfig | null
+  imageGeneration?: ImageGenerationSelection
+  signal?: AbortSignal
   /** 对话 ID（用于保存附件和管理对话历史） */
   conversationId: string
   /** 当前用户消息的附件列表 */
@@ -68,8 +51,6 @@ export interface NanoBananaContext {
 
 // ===== 默认配置 =====
 
-const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com'
-const DEFAULT_MODEL = 'gemini-3.1-flash-image-preview'
 
 // ===== 工具元数据 =====
 
@@ -151,8 +132,7 @@ export const NANO_BANANA_TOOL_DEFINITIONS: ToolDefinition[] = [
  * 检查 Nano Banana 工具是否可用（API Key 已配置）
  */
 export function isNanoBananaAvailable(): boolean {
-  const credentials = getToolCredentials('nano-banana')
-  return !!credentials.apiKey
+  return isImageGenerationAvailable('nano-banana')
 }
 
 // ===== 工具执行 =====
@@ -200,221 +180,37 @@ function collectReferenceImages(context: NanoBananaContext): GeminiPart[] {
   return parts
 }
 
-/**
- * Gemini 多轮对话中，模型响应包含 thoughtSignature 后，
- * 后续所有 user 消息的 text part 也必须携带 thoughtSignature。
- * 使用 Gemini 官方提供的跳过验证占位符。
- * @see https://ai.google.dev/gemini-api/docs/thought-signatures
- */
-const DUMMY_THOUGHT_SIGNATURE = 'skip_thought_signature_validator'
-
-/** 检查对话历史中是否存在 thoughtSignature */
-function historyHasThoughtSignature(history: GeminiContent[]): boolean {
-  return history.some((c) =>
-    c.parts.some((p) => p.thoughtSignature || p.thought_signature),
-  )
+export interface NanoBananaExecutionResult extends ToolResult {
+  imageGeneration?: GenerationMetadata
 }
 
-/**
- * 构建 Gemini API 请求体
- */
-function buildGeminiRequest(
-  prompt: string,
-  referenceImageParts: GeminiPart[],
-  history: GeminiContent[],
-  options: {
-    aspectRatio?: string
-    imageSize?: string
-    numberOfImages?: number
-  },
-): Record<string, unknown> {
-  // 多轮对话中 model 响应含 thoughtSignature 时，新 user 的 text part 也必须带签名
-  const needsSignature = history.length > 0 && historyHasThoughtSignature(history)
-
-  const userParts: GeminiPart[] = [
-    ...referenceImageParts,
-    {
-      text: prompt,
-      ...(needsSignature && { thoughtSignature: DUMMY_THOUGHT_SIGNATURE }),
-    },
-  ]
-
-  // 合并历史 + 当前用户消息
-  const contents: GeminiContent[] = [
-    ...history,
-    { role: 'user', parts: userParts },
-  ]
-
-  const generationConfig: Record<string, unknown> = {
-    responseModalities: ['TEXT', 'IMAGE'],
-  }
-
-  // 图片配置
-  const imageConfig: Record<string, unknown> = {}
-  if (options.aspectRatio && options.aspectRatio !== '1:1') {
-    imageConfig.aspectRatio = options.aspectRatio
-  }
-  if (options.imageSize && options.imageSize !== 'auto') {
-    imageConfig.imageSize = options.imageSize
-  }
-  // NOTE: numberOfImages is kept in schema for future API support but not forwarded.
-  if (Object.keys(imageConfig).length > 0) {
-    generationConfig.imageConfig = imageConfig
-  }
-
-  return { contents, generationConfig }
-}
-
-/**
- * 执行 Nano Banana 工具调用
- */
-export async function executeNanoBananaTool(
-  toolCall: ToolCall,
-  context: NanoBananaContext,
-): Promise<ToolResult> {
-  const credentials = getToolCredentials('nano-banana')
-
-  if (!credentials.apiKey) {
-    return {
-      toolCallId: toolCall.id,
-      content: 'Nano Banana 未配置 API Key',
-      isError: true,
-    }
-  }
-
+export async function executeNanoBananaTool(toolCall: ToolCall, context: NanoBananaContext): Promise<NanoBananaExecutionResult> {
   try {
-    const prompt = toolCall.arguments.prompt as string
-    const aspectRatio = toolCall.arguments.aspectRatio as string | undefined
-    const imageSize = toolCall.arguments.imageSize as string | undefined
-    const useReferenceImages = toolCall.arguments.useReferenceImages === 'true'
-    const numberOfImages = typeof toolCall.arguments.numberOfImages === 'number'
-      ? Math.min(Math.max(Math.round(toolCall.arguments.numberOfImages), 1), 4)
-      : 1
-
-    if (!prompt) {
-      return {
-        toolCallId: toolCall.id,
-        content: '参数缺失: prompt',
-        isError: true,
-      }
-    }
-
-    const baseUrl = credentials.baseUrl?.trim() || DEFAULT_BASE_URL
-    const model = credentials.model?.trim() || DEFAULT_MODEL
-
-    // 收集参考图
-    const referenceImageParts = useReferenceImages ? collectReferenceImages(context) : []
-
-    // 获取对话历史
-    const history = conversationHistory.get(context.conversationId) ?? []
-
-    // 构建请求
-    const requestBody = buildGeminiRequest(prompt, referenceImageParts, history, {
-      aspectRatio,
-      imageSize,
-      numberOfImages,
+    if (context.preparedConfig === null) throw new Error('本次请求没有可用的生图配置，请重新选择后发送')
+    const config = context.preparedConfig ?? resolveImageGenerationConfig('nano-banana', context.imageGeneration)
+    const prompt = typeof toolCall.arguments.prompt === 'string' ? toolCall.arguments.prompt : ''
+    const useReferences = toolCall.arguments.useReferenceImages === 'true' || toolCall.arguments.useReferenceImages === true
+    const references = useReferences ? collectReferenceImages(context).flatMap((part) => part.inlineData ? [part.inlineData] : []) : []
+    const result = await generateImages(config, prompt, context.conversationId, references, {
+      size: typeof toolCall.arguments.size === 'string' ? toolCall.arguments.size : undefined,
+      aspectRatio: typeof toolCall.arguments.aspectRatio === 'string' ? toolCall.arguments.aspectRatio : undefined,
+      imageSize: typeof toolCall.arguments.imageSize === 'string' ? toolCall.arguments.imageSize : undefined,
+      numberOfImages: typeof toolCall.arguments.numberOfImages === 'number' ? toolCall.arguments.numberOfImages : undefined,
+      signal: context.signal,
     })
-
-    const url = `${baseUrl}/v1beta/models/${model}:generateContent?key=${credentials.apiKey}`
-
-    console.log(`[Nano Banana] 调用 Gemini API: model=${model}, prompt="${prompt.slice(0, 50)}..."`)
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`[Nano Banana] API 请求失败 (${response.status}):`, errorText)
-      return {
-        toolCallId: toolCall.id,
-        content: `Gemini API 请求失败 (${response.status}): ${errorText.slice(0, 200)}`,
-        isError: true,
-      }
-    }
-
-    const data = (await response.json()) as GeminiResponse
-
-    if (data.error) {
-      return {
-        toolCallId: toolCall.id,
-        content: `Gemini API 错误: ${data.error.message}`,
-        isError: true,
-      }
-    }
-
-    const candidate = data.candidates?.[0]
-    if (!candidate) {
-      return {
-        toolCallId: toolCall.id,
-        content: '未生成任何内容',
-        isError: true,
-      }
-    }
-
-    const parts = candidate.content.parts
-    console.log(`[Nano Banana] 响应包含 ${parts.length} 个 parts，类型:`, parts.map((p) => p.inlineData ? `image(${p.inlineData.mimeType})` : `text(${(p.text ?? '').slice(0, 30)})`))
-    const generatedAttachments: FileAttachment[] = []
-    const textParts: string[] = []
-
-    // 解析响应：提取图片和文本（跳过 thought parts，它们是推理过程图，不作为输出）
-    for (const part of parts) {
-      if (part.thought) continue
-      if (part.inlineData) {
-        // 保存生成的图片为附件
-        const ext = part.inlineData.mimeType === 'image/jpeg' ? '.jpg' : '.png'
-        const result = saveAttachment({
-          conversationId: context.conversationId,
-          filename: `nano-banana-${randomUUID().slice(0, 8)}${ext}`,
-          mediaType: part.inlineData.mimeType,
-          data: part.inlineData.data,
-        })
-        generatedAttachments.push(result.attachment)
-      } else if (part.text) {
-        textParts.push(part.text)
-      }
-    }
-
-    // 更新对话历史（用于多轮连续修改）
-    // 注意：必须原样保留 model 响应中的 parts（含 thoughtSignature），否则多轮编辑会报错
-    const userContent: GeminiContent = {
-      role: 'user',
-      parts: [...referenceImageParts, { text: prompt }],
-    }
-    const modelContent: GeminiContent = {
-      role: 'model',
-      parts, // 直接使用原始响应 parts，保留 thoughtSignature 等元数据
-    }
-    const updatedHistory = [...history, userContent, modelContent]
-    conversationHistory.set(context.conversationId, updatedHistory)
-
-    // 构建返回结果
-    const imageCount = generatedAttachments.length
-    const resultText = imageCount > 0
-      ? `图片已成功生成（${imageCount} 张）${textParts.length > 0 ? `\n\n${textParts.join('\n')}` : ''}`
-      : textParts.join('\n') || '未生成图片内容'
-
-    return {
-      toolCallId: toolCall.id,
-      content: resultText,
-      generatedAttachments: generatedAttachments.length > 0 ? generatedAttachments : undefined,
-    }
+    context.signal?.throwIfAborted()
+    const generatedAttachments = result.images.map((image) => saveAttachment({
+      conversationId: context.conversationId,
+      filename: `nano-banana-${randomUUID().slice(0, 8)}${image.mimeType === 'image/jpeg' ? '.jpg' : '.png'}`,
+      mediaType: image.mimeType, data: image.data,
+    }).attachment)
+    return { toolCallId: toolCall.id, content: `图片已成功生成（${generatedAttachments.length} 张）${result.text.length ? '\n\n' + result.text.join('\n') : ''}`,
+      generatedAttachments, imageGeneration: result.metadata }
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    console.error(`[Nano Banana] 执行失败:`, error)
-    return {
-      toolCallId: toolCall.id,
-      content: `图片生成失败: ${msg}`,
-      isError: true,
-    }
+    return { toolCallId: toolCall.id, content: `图片生成失败: ${error instanceof Error ? error.message : '未知错误'}`, isError: true }
   }
 }
 
-/**
- * 清除对话的生图历史（对话删除时调用）
- */
 export function clearNanoBananaHistory(conversationId: string): void {
-  conversationHistory.delete(conversationId)
+  clearImageGenerationHistory(conversationId)
 }

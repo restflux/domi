@@ -280,6 +280,7 @@ export function isActivityGroup(item: ActivityGroup | ToolActivity): item is Act
 
 /** 待自动发送的 Agent 提示（从设置页"对话完成配置"触发） */
 export interface AgentPendingPrompt {
+  imageGeneration?: import('@domi/shared').ImageGenerationSelection
   sessionId: string
   message: string
   additionalDirectories?: string[]

@@ -1,3 +1,4 @@
+import { ImageGenerationInfo } from '../ai-elements/ImageGenerationInfo'
 import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * ChatMessageItem - 单条消息渲染

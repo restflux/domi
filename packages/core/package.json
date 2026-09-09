@@ -1,6 +1,6 @@
 {
   "name": "@domi/core",
-  "version": "0.2.17",
+  "version": "0.3.0",
   "license": "AGPL-3.0-only",
   "description": "Provider adapters, highlighting and core utilities for Domi",
   "type": "module",

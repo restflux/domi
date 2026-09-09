@@ -6,7 +6,7 @@ export function registerBuiltinImageSlashCommand(): void {
     id: 'image',
     aliases: ['img', 'draw'],
     label: '生成图片',
-    description: '输入描述后调用当前可用的生图工具生成图片',
+    description: '选择生图渠道和模型，输入描述后生成图片',
     group: 'domi',
     behavior: 'insert',
     insertText: '/image ',

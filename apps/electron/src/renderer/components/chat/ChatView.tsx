@@ -1,3 +1,7 @@
+import { toast } from 'sonner'
+import { imageGenerationSelectionsAtom, imageGenerationChannelsAtom, imageGenerationDefaultAtom, parseImageCommand, resolveImageSelection } from '@/atoms/image-generation-atoms'
+import { persistImageSelection } from '@/lib/image-generation-settings'
+import type { ImageGenerationSelection } from '@domi/shared'
 /**
  * ChatView - 主聊天视图容器（参数化版本）
  *
@@ -235,9 +239,25 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       consumePendingAttachments?: boolean
       messageCountBeforeSend?: number
       contextDividersOverride?: string[]
+      imageGeneration?: ImageGenerationSelection | null
     },
   ): Promise<void> => {
     if (!selectedModel) return
+    const scope = `chat:${conversationId}`
+    const command = parseImageCommand(content)
+    const preferredImage = store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom)
+    const selection = options && 'imageGeneration' in options ? options.imageGeneration : command.requested
+      ? resolveImageSelection(store.get(imageGenerationChannelsAtom), store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom))
+      : store.get(imageGenerationSelectionsAtom)[scope]
+    if (command.requested) {
+      if (!selection && preferredImage) { toast.error('所选生图渠道或模型已不可用，请重新选择'); return }
+
+      store.set(imageGenerationSelectionsAtom, (current) => ({ ...current, [scope]: selection ?? null }))
+      void persistImageSelection(scope, selection ?? null).catch(console.error)
+      if (!command.text.trim()) return
+      content = selection ? command.text : content
+    }
+    const imageGeneration = selection ? { ...selection } : undefined
 
     const consumePending = options?.consumePendingAttachments ?? true
 
@@ -347,6 +367,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     const input: ChatSendInput = {
       conversationId,
       userMessage: finalContent,
+      imageGeneration,
       messageHistory: [], // 后端已改为从磁盘读取完整历史，无需前端传入
       channelId: selectedModel.channelId,
       modelId: selectedModel.modelId,
@@ -365,6 +386,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
         id: `temp-${Date.now()}`,
         role: 'user',
         content: finalContent,
+        imageGeneration,
         createdAt: Date.now(),
         attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
       },
@@ -503,12 +525,13 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   }, [conversationId, contextDividers, inlineEditingMessageId, syncContextDividers])
 
   /** 重新发送：从该用户消息分叉后，直接重发 */
-  const handleResendMessage = React.useCallback(async (message: { id: string; content: string }): Promise<void> => {
+  const handleResendMessage = React.useCallback(async (message: { id: string; content: string; imageGeneration?: ImageGenerationSelection }): Promise<void> => {
     if (isStreaming) return
 
     try {
       const truncated = await truncateFromMessage(message.id, true)
       await handleSend(message.content, {
+        imageGeneration: message.imageGeneration ?? null,
         attachments: truncated.targetAttachments,
         consumePendingAttachments: false,
         messageCountBeforeSend: truncated.messageCountBeforeSend,

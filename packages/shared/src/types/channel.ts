@@ -330,6 +330,8 @@ export const QWEN_TOKEN_PLAN_INDIVIDUAL_PRESET_MODELS: readonly ChannelModel[] =
  * 存储在 ~/.domi/channels.json 中，apiKey 字段为加密后的 base64 字符串
  */
 export interface Channel {
+  /** 显式生图配置；null 表示关闭。 */
+  imageGeneration?: import('./image-generation').ImageGenerationChannelConfig | null
   /** 渠道唯一标识 */
   id: string
   /** 渠道名称（用户自定义） */
@@ -361,6 +363,8 @@ export interface Channel {
  * 创建渠道时的输入数据（apiKey 为明文）
  */
 export interface ChannelCreateInput {
+  /** 显式生图配置；null 表示关闭。 */
+  imageGeneration?: import('./image-generation').ImageGenerationChannelConfig | null
   name: string
   provider: ProviderType
   baseUrl: string
@@ -376,6 +380,8 @@ export interface ChannelCreateInput {
  * 更新渠道时的输入数据（所有字段可选）
  */
 export interface ChannelUpdateInput {
+  /** 显式生图配置；null 表示关闭。 */
+  imageGeneration?: import('./image-generation').ImageGenerationChannelConfig | null
   name?: string
   provider?: ProviderType
   baseUrl?: string

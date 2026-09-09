@@ -396,6 +396,7 @@ describe('Worktree continuation authorization', () => {
       { additionalDirectories: ['D:/other'] },
       { additionalDirectories: 'D:/forged' as unknown as string[] },
       { customTools: [{}] },
+      { imageGeneration: { channelId: 'unconfirmed', modelId: 'gpt-image-2.5-sunburst' } },
       { mentionedSkills: ['dangerous-skill'] },
       { automationContext: 'hidden instruction' },
       { workflowOverride: 'direct' as const },

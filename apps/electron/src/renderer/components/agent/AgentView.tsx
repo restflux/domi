@@ -1,3 +1,7 @@
+import { ImageGenerationSelector } from '@/components/ai-elements/ImageGenerationSelector'
+import type { ImageGenerationSelection } from '@domi/shared'
+import { persistImageSelection } from '@/lib/image-generation-settings'
+import { imageGenerationSelectionsAtom, imageGenerationChannelsAtom, imageGenerationDefaultAtom, parseImageCommand, resolveImageSelection } from '@/atoms/image-generation-atoms'
 import { openSideChatPanelAtom, sideChatHandoffAtomFamily } from '@/atoms/side-chat-atoms'
 import { BrandLogo } from '@/components/ui/brand-logo'
 /**
@@ -306,9 +310,11 @@ function createUserSDKMessage(
   uuid?: string,
   createdAt = Date.now(),
   nextTurnAsides: readonly AgentNextTurnAside[] = [],
+  imageGeneration?: ImageGenerationSelection,
 ): SDKMessage {
   const message: OptimisticSDKUserMessage = {
     type: 'user',
+    _imageGeneration: imageGeneration,
     uuid,
     message: {
       content: [{ type: 'text', text }],
@@ -602,6 +608,7 @@ function AgentThinkingPopover({
 }
 
 export function AgentView({ sessionId }: { sessionId: string }): React.ReactElement {
+  const imageSelections = useAtomValue(imageGenerationSelectionsAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const themeStyle = useAtomValue(themeStyleAtom)
   const useModernComposerRail = interfaceVariant !== 'classic' && themeStyle !== 'terminal-dark'
@@ -1280,6 +1287,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       queueMessageId: message.id,
       queueKind,
       userMessage: sdkText,
+      imageGeneration: message.imageGeneration,
       rawUserMessage: rawText,
       userMessageUuid: message.id,
       channelId: agentChannelId,
@@ -1299,7 +1307,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
     if (result.disposition === 'injected') {
       if (!isNativePiQueue) {
-        appendLiveUserMessage(createUserSDKMessage(rawText, message.id, Date.now(), message.nextTurnAsides))
+        appendLiveUserMessage(createUserSDKMessage(rawText, message.id, Date.now(), message.nextTurnAsides, message.imageGeneration))
       }
       return
     }
@@ -1324,6 +1332,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     channelId: string,
     queuedAdditionalDirectories: string[] = [],
     nextTurnAsides: AgentNextTurnAside[] = [],
+    imageGeneration?: ImageGenerationSelection,
   ): Promise<void> => {
     const streamStartedAt = Date.now()
     const additionalDirectoriesForRun = createBaseAdditionalDirectories()
@@ -1358,12 +1367,13 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return map
     })
 
-    appendOptimisticPersistedMessage(createUserSDKMessage(text, undefined, streamStartedAt, nextTurnAsides))
+    appendOptimisticPersistedMessage(createUserSDKMessage(text, undefined, streamStartedAt, nextTurnAsides, imageGeneration))
 
     try {
       await window.electronAPI.sendAgentMessage({
         sessionId,
         userMessage: text,
+        imageGeneration,
         ...(nextTurnAsides.length > 0 && { nextTurnAsides }),
         channelId,
         modelId: agentModelId || undefined,
@@ -1431,7 +1441,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return
     }
 
-    await startQueuedMessageRun(payload.rawText, payload.mentions, agentChannelId, message.additionalDirectories, message.nextTurnAsides)
+    await startQueuedMessageRun(payload.rawText, payload.mentions, agentChannelId, message.additionalDirectories, message.nextTurnAsides, message.imageGeneration)
   }, [
     agentChannelId,
     backgroundWaiting,
@@ -1612,6 +1622,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     // 快照当前上下文
     const snapshot = {
       message: pendingPrompt.message,
+      imageGeneration: pendingPrompt.imageGeneration,
       channelId: agentChannelId,
       modelId: agentModelId || undefined,
       workspaceId: currentWorkspaceId || undefined,
@@ -1657,6 +1668,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         message: {
           content: [{ type: 'text', text: snapshot.message }],
         },
+        _imageGeneration: snapshot.imageGeneration,
         parent_tool_use_id: null,
         _createdAt: Date.now(),
       } as unknown as SDKMessage
@@ -1666,6 +1678,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       const input: AgentSendInput = {
         sessionId,
         userMessage: snapshot.message,
+        imageGeneration: snapshot.imageGeneration,
         channelId: snapshot.channelId,
         modelId: snapshot.modelId,
         workspaceId: snapshot.workspaceId,
@@ -2512,7 +2525,21 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       throw new Error('会话尚未准备好发送，请稍后重试。')
     }
     const cleanInput = isWorktreeContinuation || isSideChatHandoff
-    const text = (overrideText ?? inputContent).trim()
+    const scope = `work:${sessionId}`
+    const command = parseImageCommand((overrideText ?? inputContent).trim())
+    const preferredImage = store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom)
+    const selectedImage = cleanInput ? null : command.requested
+      ? resolveImageSelection(store.get(imageGenerationChannelsAtom), store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom))
+      : store.get(imageGenerationSelectionsAtom)[scope]
+    const imageGeneration = selectedImage ? { ...selectedImage } : undefined
+    if (command.requested && !cleanInput) {
+      if (!selectedImage && preferredImage) { toast.error('所选生图渠道或模型已不可用，请重新选择'); return }
+
+      store.set(imageGenerationSelectionsAtom, (current) => ({ ...current, [scope]: selectedImage ?? null }))
+      void persistImageSelection(scope, selectedImage ?? null).catch(console.error)
+      if (!command.text.trim()) { setInputContent(''); setInputHtmlContent(''); return }
+    }
+    const text = cleanInput || (command.requested && !selectedImage) ? (overrideText ?? inputContent).trim() : command.text
     // 一次性 Worktree continuation 必须逐字使用宿主返回的 canonical message，
     // 不读取 composer suggestion、附件、附言、引用或 mention。
     const effectiveText = isWorktreeContinuation ? text : (text || suggestion || '')
@@ -2622,6 +2649,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         Date.now(),
         quotedSelection,
         {
+          imageGeneration,
           kind,
           ...(attachmentContext ? {
             fileReferenceBlock: attachmentContext.referenceBlock,
@@ -2690,6 +2718,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       const quotedSelection = cleanInput ? null : consumeQuotedSelection()
       const backgroundQueueKind: AgentQueueMessageKind = requestedQueueKind
       const message = createAgentQueuedMessage(effectiveText, crypto.randomUUID(), Date.now(), quotedSelection, {
+        imageGeneration,
         ...(attachmentContext ? {
           fileReferenceBlock: attachmentContext.referenceBlock,
           attachments: attachmentContext.attachments,
@@ -2831,11 +2860,13 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
     // 乐观更新：附言作为展示元数据挂在用户消息上，不混入正文与树摘要。
     const tempUserSDKMsg = createUserSDKMessage(finalMessage, undefined, Date.now(), nextTurnAsides)
+    if (tempUserSDKMsg.type === 'user') tempUserSDKMsg._imageGeneration = imageGeneration
     appendOptimisticPersistedMessage(tempUserSDKMsg)
 
     const input: AgentSendInput = {
       sessionId,
       userMessage: finalMessage,
+      imageGeneration,
       ...(nextTurnAsides.length > 0 && { nextTurnAsides }),
       channelId: agentChannelId,
       modelId: agentModelId || undefined,
@@ -3399,6 +3430,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     window.electronAPI.sendAgentMessage({
       sessionId,
       userMessage: lastUserMessage,
+      imageGeneration: [...persistedSDKMessages].reverse().filter((message): message is SDKUserMessage => message.type === 'user').find((message) => getUserTextFromSDKMessage(message) !== null)?._imageGeneration,
       channelId: agentChannelId,
       modelId: agentModelId || undefined,
       workspaceId: currentWorkspaceId || undefined,
@@ -3428,12 +3460,13 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       setPendingPrompt({
         sessionId: meta.id,
         message: intent.prompt,
+        imageGeneration: [...persistedSDKMessages].reverse().filter((message): message is SDKUserMessage => message.type === 'user').find((message) => getUserTextFromSDKMessage(message) !== null)?._imageGeneration,
         mentionedSessionIds: intent.mentionedSessionIds,
       })
     } catch (error) {
       console.error('[AgentView] 在新会话中重试失败:', error)
     }
-  }, [sessionId, agentChannelId, agentModelId, currentWorkspaceId, openSession, setAgentSessions, setDraftSessionIds, setPendingPrompt])
+  }, [sessionId, agentChannelId, agentModelId, currentWorkspaceId, openSession, setAgentSessions, setDraftSessionIds, setPendingPrompt, persistedSDKMessages])
 
   const [forkToWorktreeTargetUuid, setForkToWorktreeTargetUuid] = React.useState<string | null>(null)
   const [forkingSession, setForkingSession] = React.useState(false)
@@ -3820,6 +3853,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         uuid: message.id,
         kind: message.kind,
         userMessage: payload.sdkText,
+        imageGeneration: message.imageGeneration,
         rawUserMessage: payload.rawText,
         ...(message.nextTurnAsides?.length ? { nextTurnAsides: message.nextTurnAsides } : {}),
         ...(payload.mentions.mentionedSkills.length > 0 && { mentionedSkills: payload.mentions.mentionedSkills }),
@@ -3843,6 +3877,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   }, [buildQueueReplayInputs, sessionId, setQueuedMessages])
 
   const restoreQueuedMessageToEditor = React.useCallback((message: AgentQueuedMessage): void => {
+    const imageSelection = message.imageGeneration ? { ...message.imageGeneration } : null
+    store.set(imageGenerationSelectionsAtom, (current) => ({ ...current, [`work:${sessionId}`]: imageSelection }))
+    void persistImageSelection(`work:${sessionId}`, imageSelection).catch(console.error)
     if (message.quotedSelection) {
       setQuotedSelectionMap((prev) => {
         const map = new Map(prev)
@@ -3861,7 +3898,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     } else {
       setInputHtmlContent('')
     }
-  }, [inputContent, inputHtmlContent, restoreQueuedAttachmentsToPending, sessionId, setInputContent, setInputHtmlContent, setQuotedSelectionMap])
+  }, [inputContent, inputHtmlContent, restoreQueuedAttachmentsToPending, sessionId, setInputContent, setInputHtmlContent, setQuotedSelectionMap, store])
 
   const handleAdjustQueuedDirection = React.useCallback((messageId: string): void => {
     const previous = queuedMessages
@@ -4809,7 +4846,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
 
             {/* Footer 工具栏 — 容器变窄时尾部按钮自动折叠进「更多」Popover */}
-            <InputToolbarOverflow items={inputToolbarItems} trailing={inputTrailingNode} />
+            <InputToolbarOverflow items={[...inputToolbarItems, { key: 'image-generation', menuOnly: !imageSelections[`work:${sessionId}`], node: <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} /> }]} trailing={inputTrailingNode} />
           </div>
           </div>
         </div>

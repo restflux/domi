@@ -34,15 +34,15 @@ interface BuiltinMcpConfigInfo {
 function getConfigInfo(server: BuiltinMcpServerSummary): BuiltinMcpConfigInfo {
   if (server.id === 'nano-banana') {
     return {
-      source: 'AI 工具 / Nano Banana',
-      description: '配置 Gemini API Key、API 地址、模型并开启本开关后，Agent 会话即可注入生图 MCP。',
+      source: 'AI 工具 / 图片生成（历史兼容）',
+      description: '日常生图请在输入框选择生图渠道，无需开启 MCP。此入口仅保留历史 Nano Banana 工具配置。',
       actionLabel: '配置生图',
     }
   }
   if (server.id === 'gpt-image') {
     return {
-      source: 'AI 工具 / GPT Image',
-      description: '配置 OpenAI 兼容端点 API Key、API 地址、模型并开启本开关后，Agent 会话即可注入 GPT Image 生图 MCP。',
+      source: 'AI 工具 / 图片生成（历史兼容）',
+      description: '日常生图请在输入框选择生图渠道，无需开启 MCP。此入口仅保留历史 GPT Image 工具配置。',
       actionLabel: '配置生图',
     }
   }

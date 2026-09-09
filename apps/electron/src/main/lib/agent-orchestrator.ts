@@ -1,3 +1,5 @@
+import { resolveRequestImageGeneration } from './image-generation-request'
+import { getImageGenerationToolId } from './image-generation/config'
 /**
  * AgentOrchestrator — Agent 编排层
  *
@@ -843,6 +845,7 @@ export class AgentOrchestrator {
     createdAt = Date.now(),
     nextTurnAsides: readonly AgentNextTurnAside[] = [],
     presetUuid?: string,
+    imageGeneration?: import('@domi/shared').ImageGenerationSelection,
   ): string {
     const uuid = presetUuid ?? randomUUID()
     const userSDKMsg: SDKMessage = {
@@ -853,6 +856,7 @@ export class AgentOrchestrator {
       },
       parent_tool_use_id: null,
       _createdAt: createdAt,
+      ...(imageGeneration && { _imageGeneration: imageGeneration }),
       ...(nextTurnAsides.length > 0 && { _asides: nextTurnAsides }),
     } as unknown as SDKMessage
     appendSDKMessages(sessionId, [userSDKMsg])
@@ -900,6 +904,11 @@ export class AgentOrchestrator {
    * 通过 EventBus 分发 AgentEvent，通过 callbacks 发送控制信号。
    */
   async sendMessage(input: AgentSendInput, callbacks: SessionCallbacks): Promise<void> {
+    const explicitImageRequest = Boolean(input.imageGeneration)
+    // 在所有异步准备之前固定选择；宿主续跑事务不继承用户生图默认。
+    if (!input.worktreeContinuationAuthorizationToken) {
+      input = { ...input, imageGeneration: resolveRequestImageGeneration(input.imageGeneration) }
+    }
     const { sessionId, userMessage, rawUserMessage, userMessageUuid, nextTurnAsides, channelId, modelId, workspaceId: requestedWorkspaceId, additionalDirectories, customTools, executionPolicyOverride, workflowOverride, permissionModeOverride, mentionedSkills, mentionedMcpServers, mentionedSessionIds, mentionedTodoIds, mentionedCalendarEventIds, automationContext, retryOfErrorUuid, worktreeContinuationAuthorizationToken } = input
     const normalizedNextTurnAsides = normalizeAgentNextTurnAsides(nextTurnAsides)
     const stderrChunks: string[] = []
@@ -941,6 +950,7 @@ export class AgentOrchestrator {
         streamStartedAt,
         normalizedNextTurnAsides,
         userMessageUuid,
+        input.imageGeneration,
       )
       userMessagePersisted = true
       callbacks.onRunStarted?.({ startedAt: streamStartedAt })
@@ -1545,6 +1555,9 @@ export class AgentOrchestrator {
         // Exact file uploads are copied into the session workbench, already covered above.
         attachedDirectories: sessionMeta?.visionRelayAttachedDirectories ?? [],
       })
+      const selectedImageToolName = input.imageGeneration
+        ? (getImageGenerationToolId(input.imageGeneration) === 'gpt-image' ? 'mcp__gpt_image__imagegen' : 'mcp__nano_banana__generate_image')
+        : undefined
       const piSdk = await import('@earendil-works/pi-coding-agent')
       const triggeredBy = sessionMeta?.sourceDelegationId || (sessionMeta?.delegationDepth ?? 0) > 0
         ? 'delegation' as const
@@ -1554,6 +1567,7 @@ export class AgentOrchestrator {
       const builtinToolResult = sideChatParentSessionId
         ? { tools: [], toolAnnotations: {}, collaborationAvailable: false }
         : await buildPiBuiltinTools(piSdk, {
+        imageGeneration: input.imageGeneration,
         sessionId,
         channelId,
         modelId: selectedModelId,
@@ -1647,7 +1661,7 @@ export class AgentOrchestrator {
         console.log(`[Agent 编排] 注入 referenced_planning: ${mentionedTodoIds?.length ?? 0} todos, ${mentionedCalendarEventIds?.length ?? 0} calendar events`)
       }
 
-      const imageCommand = parseAgentImageCommand(userMessage)
+      const imageCommand = parseAgentImageCommand(explicitImageRequest ? `/image ${userMessage}` : userMessage)
       if (imageCommand.matched) {
         enrichedMessage = buildAgentImageCommandPrompt({
           command: imageCommand,
@@ -2208,12 +2222,13 @@ export class AgentOrchestrator {
         }),
         ...(maxTurns != null && { maxTurns }),
         permissionMode: promptPermissionMode,
-        authorizeToolCall: (toolName, toolInput, options) => authorizePiExecution({
-          type: 'tool',
-          toolName,
-          input: toolInput,
-          options,
-        }),
+        authorizeToolCall: (toolName, toolInput, options) => {
+          // 用户明确选定的生图路由也约束同名外部 MCP，不能偷偷换供应商。
+          if (selectedImageToolName && toolName !== selectedImageToolName && collectAvailableAgentImageToolNames([toolName]).length) {
+            return Promise.resolve({ behavior: 'deny' as const, message: '本次已选择生图模型，请使用对应的内置生图工具，不得改用其他渠道。' })
+          }
+          return authorizePiExecution({ type: 'tool', toolName, input: toolInput, options })
+        },
         getWorkflow: () => this.sessionWorkflows.get(sessionId) ?? initialWorkflow,
         protectedTarget: deliveredFollowupOnly,
         handleAskUserQuestion: (toolInput, signal) => authorizePiExecution({

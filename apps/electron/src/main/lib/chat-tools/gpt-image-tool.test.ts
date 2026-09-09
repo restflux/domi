@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test'
 
+mock.module('../channel-manager', () => ({ getChannelById: () => undefined, decryptApiKey: () => '' }))
+mock.module('../settings-service', () => ({ getSettings: () => ({}), updateSettings: () => undefined }))
+
 // 可变的模拟凭据：测试中可切换「已配置 / 未配置」状态
 let mockedCredentials: Record<string, string> = { apiKey: 'test-key' }
 
@@ -100,6 +103,28 @@ describe('GPT Image 请求构造（与 Codex image_generation.imagegen 对齐）
 })
 
 describe('GPT Image Chat 工具执行', () => {
+  test('发送时固定的模型不受随后全局设置变化影响', async () => {
+    mockedCredentials = { apiKey: 'new-key', model: 'another-model' }
+    const fetchMock = mock(async () => new Response(JSON.stringify({ data: [{ b64_json: 'aW1hZ2U=' }] })))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const result = await executeGptImageTool({ id: 'snapshot', name: 'imagegen', arguments: { prompt: 'cat' } }, {
+      ...baseContext,
+      preparedConfig: { apiKey: 'snapshot-key', model: 'gpt-image-2.5-flare', baseUrl: 'https://example.com/v1', protocol: 'openai-images', quality: 'max' },
+    })
+    expect(result.isError).not.toBe(true)
+    expect(result.imageGeneration?.model).toBe('gpt-image-2.5-flare')
+    expect(JSON.stringify(result)).not.toContain('snapshot-key')
+    mockedCredentials = { apiKey: 'test-key' }
+  })
+  test('发送时无可用配置时不能在工具执行中悄悄启用新凭据', async () => {
+    mockedCredentials = { apiKey: 'new-key' }
+    const fetchMock = mock(async () => { throw new Error('不应发起网络') })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const result = await executeGptImageTool({ id: 'unavailable', name: 'imagegen', arguments: { prompt: 'cat' } }, { ...baseContext, preparedConfig: null })
+    expect(result.isError).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
+    mockedCredentials = { apiKey: 'test-key' }
+  })
   test('Given 文生图调用 When 执行 Then POST generations 且 b64_json 保存为附件', async () => {
     mockedCredentials = { apiKey: 'test-key' }
     const fetchMock = mock(async () => {

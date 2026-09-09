@@ -6,6 +6,7 @@
  */
 
 import * as React from 'react'
+import { ImageGenerationSelector } from '@/components/ai-elements/ImageGenerationSelector'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import { ExternalLink, Eye, EyeOff, Loader2, CheckCircle2, XCircle, Trash2, KeyRound } from 'lucide-react'
@@ -790,6 +791,7 @@ function CustomToolsSection(): React.ReactElement | null {
 
 export function ToolSettings(): React.ReactElement {
   const [focusedTool, setFocusedTool] = useAtom(toolSettingsFocusAtom)
+  const [legacyImageOpen, setLegacyImageOpen] = React.useState(false)
   const memoryRef = React.useRef<HTMLDivElement>(null)
   const webSearchRef = React.useRef<HTMLDivElement>(null)
   const nanoBananaRef = React.useRef<HTMLDivElement>(null)
@@ -798,6 +800,7 @@ export function ToolSettings(): React.ReactElement {
 
   React.useEffect(() => {
     if (!focusedTool) return
+    if (focusedTool === 'nano-banana' || focusedTool === 'gpt-image') setLegacyImageOpen(true)
     const refs: Record<ToolSettingsFocus, React.RefObject<HTMLDivElement>> = {
       memory: memoryRef,
       'web-search': webSearchRef,
@@ -818,15 +821,16 @@ export function ToolSettings(): React.ReactElement {
         <WebSearchSettings />
       </div>
 
-      {/* Nano Banana 生图工具 */}
-      <div ref={nanoBananaRef}>
-        <NanoBananaSettings />
-      </div>
-
-      {/* GPT Image 生图工具 */}
-      <div ref={gptImageRef}>
-        <GptImageSettings />
-      </div>
+      <SettingsSection title="图片生成" description="选择已有渠道与默认生图模型。Chat 与 Work 共用，无需启用 MCP。">
+        <ImageGenerationSelector scope="default" defaultSettings />
+        <details open={legacyImageOpen} onToggle={(event) => setLegacyImageOpen(event.currentTarget.open)} className="mt-3">
+          <summary className="cursor-pointer text-sm text-muted-foreground">历史兼容设置（独立工具凭据）</summary>
+          <div className="mt-4 space-y-6">
+            <div ref={nanoBananaRef}><NanoBananaSettings /></div>
+            <div ref={gptImageRef}><GptImageSettings /></div>
+          </div>
+        </details>
+      </SettingsSection>
 
       {/* 自定义工具 */}
       <div ref={customToolsRef}>
