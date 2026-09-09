@@ -86,6 +86,8 @@ bun run dist:win:release   # 配置代码签名后的正式发布
 
 `dist:win:fast` 只用于本地验证；公开的未签名安装包必须使用 `dist:win:unsigned`，并在 Release Notes 中明确说明未签名状态与 SmartScreen 风险。详见[发布文档](./docs/releasing.md)。
 
+版本按变更语义定级，以一次交付或发布为单位统一递增，不按每个提交递增：修复与小幅优化升 patch，新增功能与实质性增强升 minor；`0.x` 阶段的不兼容变更升 minor 并说明迁移影响，进入 `1.0.0` 需明确的稳定性决策，之后不兼容变更升 major。纯文档、测试或不影响产物的维护不升应用版本。同一交付按最高影响级别定级，根项目与 Electron 应用版本保持一致；内部包与默认 Skills 遵循各自版本契约。详见[版本定级与递增](./docs/releasing.md#版本定级与递增)。
+
 ## 用 Domi 完成编程任务
 
 ### 先研究，或直接执行

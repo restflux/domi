@@ -15,6 +15,25 @@ Domi 的首个二进制发布范围是 Windows x64 与 Linux x64。macOS 配置�
 
 Windows 工作流支持 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD` Repository Secrets。CI 始终使用 `dist:win:release` 的标准 executable edit 与正式压缩；两项 Secrets 都已配置时继续完成 Authenticode 签名，未配置时 electron-builder 跳过签名。`dist:win:unsigned` 保留给本机缺少 Windows symlink 权限时生成等价的未签名公开发布包。签名状态与 GitHub 的 Pre-release 标记相互独立；未签名 Release Notes 必须保留 SmartScreen 提示。
 
+## 版本定级与递增
+
+版本使用 `major.minor.patch`，按变更语义选择递增级别，不按提交数量或数字位数自动进位。
+
+| 变更类型 | 递增规则 | 示例 |
+| --- | --- | --- |
+| Bug 修复、小幅优化、不改变功能语义的调整 | patch +1 | `0.20.23 → 0.20.24` |
+| 新增用户可见功能、实质性功能增强 | minor +1，patch 归零 | `0.20.23 → 0.21.0` |
+| `0.x` 阶段的不兼容变更 | minor +1，并说明兼容性与迁移影响 | `0.20.23 → 0.21.0` |
+| 产品与兼容性契约正式稳定 | 明确决策进入 `1.0.0` | 不自动触发 |
+| `1.x` 及以后的不兼容变更 | major +1，minor 与 patch 归零 | `1.4.3 → 2.0.0` |
+| 纯文档、测试或不影响产物的维护 | 不递增应用版本 | 保持不变 |
+
+以一次交付或发布为单位统一递增：按该单位开始前的版本和全部变更中的最高影响级别确定目标版本。中间提交、checkpoint、验收后的修正不重复加号；如果范围扩大，从同一基线重新定级，而不是在已递增版本上连续加号。例如，基线为 `0.20.23` 的交付先修复问题、后新增功能，最终目标为 `0.21.0`，不是继续累加 patch。
+
+根 `package.json` 与 `apps/electron/package.json` 的应用版本保持一致。内部 workspace 包按自身变更影响定级，无关包不跟随应用升版。修改默认 Skills 内容时，仍必须独立递增对应 `SKILL.md` frontmatter 的 `version`（patch +1），以保证老用户获得更新；该要求不依赖应用是否升版。
+
+版本检查脚本只校验格式、应用版本一致性及 tag 匹配，不会自动判断变更级别或递增版本。发布前应人工确认定级与本次变更相符；递增版本本身不会创建 tag 或发布 Release。
+
 ## 发布前提
 
 1. 目标提交已经合入并推送到 `origin/main`；不得从只存在于本机的提交发布。
