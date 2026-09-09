@@ -1,7 +1,8 @@
+import { mergeAgentMessageTimeline } from '@/lib/agent-message-timeline'
 import * as React from 'react'
 import { toast } from 'sonner'
 import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai'
-import { agentChannelIdAtom, agentModelIdAtom, agentSidePanelOpenAtom } from '@/atoms/agent-atoms'
+import { agentChannelIdAtom, agentModelIdAtom, agentSidePanelOpenAtom, agentLiveMessagesAtomFamily, agentSessionStreamingStateAtomFamily, agentStreamErrorsAtom } from '@/atoms/agent-atoms'
 import { agentSideChatMapAtom, currentConversationIdAtom } from '@/atoms/chat-atoms'
 import { appModeAtom } from '@/atoms/app-mode'
 import { sideChatDraftAtomFamily, sideChatHandoffAtomFamily, sideChatViewAtomFamily, sideChatOperationAtomFamily } from '@/atoms/side-chat-atoms'
@@ -47,13 +48,18 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
       isSending: () => store.get(operationAtom).sending,
     })
   }, [parentSessionId, setView, panelOpen, appMode, store, operationAtom])
-  const messages = sideChatTextMessages(view?.messages ?? [])
+  const childId = view?.sessionId ?? ''
+  const liveMessages = useAtomValue(agentLiveMessagesAtomFamily(childId))
+  const streamState = useAtomValue(agentSessionStreamingStateAtomFamily(childId))
+  const streamErrors = useAtomValue(agentStreamErrorsAtom)
+  const running = Boolean(streamState?.running || view?.isRunning)
+  const messages = React.useMemo(() => sideChatTextMessages(mergeAgentMessageTimeline(view?.messages ?? [], liveMessages)), [view?.messages, liveMessages])
   React.useEffect(() => {
     if (followBottom.current) bottom.current?.scrollIntoView({ block: 'end' })
-  }, [view?.messages])
+  }, [view?.messages, liveMessages])
   const model = draft.model ?? (view?.channelId && view.modelId ? { channelId: view.channelId, modelId: view.modelId } : channelId && modelId ? { channelId, modelId } : null)
   const send = async (): Promise<void> => {
-    if (store.get(operationAtom).sending || view?.isRunning || !draft.text.trim() || !view) return
+    if (store.get(operationAtom).sending || running || !draft.text.trim() || !view) return
     store.set(operationAtom, (current) => ({ sending: true, revision: current.revision + 1 }))
     setError('')
     followBottom.current = true
@@ -96,13 +102,13 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
         {messages.map((message) => (
           <SideChatMessage key={message.id} role={message.role} text={message.text}
             modelId={message.modelId}
-            handoffDisabled={!handoff || handoffPending || Boolean(view?.isRunning)}
+            handoffDisabled={!handoff || handoffPending || running}
             onHandoff={(text) => void passToMain(text)} onError={(cause) => setError(String(cause))} />
         ))}
-        {view?.isRunning && <div role="status"><MessageLoading /></div>}
+        {running && <div role="status"><MessageLoading /></div>}
         <div ref={bottom} />
       </div>
-      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      {(error || streamErrors.get(childId)) && <p role="alert" className="text-xs text-destructive">{error || streamErrors.get(childId)}</p>}
       <div className="shrink-0 rounded-xl border border-border/60 bg-background/50 shadow-sm focus-within:border-ring/40">
         {draft.quotedText && (
           <div className="m-2 flex items-start gap-2 rounded-lg bg-muted/60 p-2 text-xs">
@@ -124,7 +130,7 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
               ...current, model: { channelId: option.channelId, modelId: option.modelId },
             }))} />
           </div>
-          {view?.isRunning ? (
+          {running ? (
             <Button size="icon" variant="ghost" className={inputToolbarDangerButtonClass} aria-label="停止" title="停止" onClick={() => {
               void window.electronAPI.stopSideChat(parentSessionId).catch((cause: unknown) => setError(String(cause)))
             }}><Square className="size-4" /></Button>

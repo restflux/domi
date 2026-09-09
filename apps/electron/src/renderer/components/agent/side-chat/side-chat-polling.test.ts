@@ -10,6 +10,18 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 10))
 
 describe('侧聊面板轮询生命周期', () => {
+  test('完成交接或新发送后，旧请求报错不覆盖当前反馈', async () => {
+    let rejectRequest: (cause: Error) => void = () => {}
+    const request = new Promise<SideChatView>((_resolve, reject) => { rejectRequest = reject })
+    let revision = 0
+    const errors: unknown[] = []
+    const close = startSideChatPolling({ open: () => request, get: async () => view, onView: () => {}, onError: error => errors.push(error), revision: () => revision, isSending: () => false, intervalMs: 1000 })
+    revision++
+    rejectRequest(new Error('旧请求失败'))
+    await tick()
+    close()
+    expect(errors).toEqual([])
+  })
   test('关闭面板丢弃迟到响应，不继续轮询也不停止宿主会话', async () => {
     const pending = deferred<SideChatView>()
     let reads = 0

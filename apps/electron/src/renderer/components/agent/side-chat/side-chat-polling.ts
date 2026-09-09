@@ -21,7 +21,7 @@ export function startSideChatPolling(options: SideChatPollingOptions): () => voi
       opened = next !== null
       if (!disposed && revision === options.revision() && !options.isSending()) options.onView(next)
     } catch (error) {
-      if (!disposed) options.onError(error)
+      if (!disposed && revision === options.revision() && !options.isSending()) options.onError(error)
     } finally {
       if (!disposed) timer = setTimeout(() => void poll(), options.intervalMs ?? 1200)
     }

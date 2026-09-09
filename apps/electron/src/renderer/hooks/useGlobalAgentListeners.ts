@@ -1,3 +1,4 @@
+import { retainCompletedSideChatAtom } from '@/atoms/side-chat-atoms'
 /**
  * useGlobalAgentListeners — 全局 Agent IPC 监听器
  *
@@ -1276,6 +1277,7 @@ export function useGlobalAgentListeners(): void {
           // 可见会话仍等待 AgentView 拉取历史后再切换，避免「实时消息已清 → 持久化消息未到」的空档。
           const streamingStates = store.get(agentStreamingStatesAtom)
           const liveMessages = store.get(liveMessagesMapAtom)
+          store.set(retainCompletedSideChatAtom, { sessionId: data.sessionId, startedAt: data.startedAt })
           const releasedRuntimeState = releaseCompletedAgentSessionRuntimeState(
             streamingStates,
             liveMessages,

@@ -76,7 +76,7 @@ export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false
         {onSideChat && (
           <DropdownMenuItem className="gap-2.5 py-1.5" onSelect={() => { pendingSideChatRef.current = true }}>
             <MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
-            <span className="text-xs font-medium leading-4">侧聊</span>
+            <span className="text-xs font-medium leading-4">打开侧边聊天</span>
           </DropdownMenuItem>
         )}
         {MENU_ITEMS.map(({ char, label, icon: Icon }) => (

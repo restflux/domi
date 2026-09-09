@@ -148,7 +148,7 @@ function ActiveRightSidePanel({
       closeable: true,
     })),
     ...(previewFile ? [{ id: 'preview' as const, tool: 'preview' as const, label: getPreviewTitle(previewFile.filePath) ?? '预览', closeable: true }] : []),
-    ...((sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) ? [{ id: 'side-chat' as const, tool: 'side-chat' as const, label: '侧聊', closeable: true }] : []),
+    ...((sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) ? [{ id: 'side-chat' as const, tool: 'side-chat' as const, label: '侧边聊天', closeable: true }] : []),
   ]
   const activeTabId = resolveAvailableTabId(state, tabs)
   const activeTool = toolFromRightWorkspaceTab(activeTabId)

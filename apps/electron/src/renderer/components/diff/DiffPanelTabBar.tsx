@@ -160,13 +160,13 @@ export function DiffPanelTabBar({
                 onClick={() => onTabChange('chat')}
                 className="min-w-0 flex-1 self-stretch px-2 text-left"
               >
-                <span className="block truncate text-center">侧聊</span>
+                <span className="block truncate text-center">侧边聊天</span>
               </button>
               {onCloseChat && (
                 <button
                   type="button"
                   className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                  aria-label="关闭侧聊 Tab"
+                  aria-label="关闭侧边聊天 Tab"
                   onClick={onCloseChat}
                 >
                   <X className="size-3" />
