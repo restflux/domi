@@ -77,8 +77,8 @@ export function createWorktreeReviewNotice(sessionId: string, target: SessionTar
     changed_files: review.changedFiles,
     suggested_commit_message: review.suggestedCommitMessage,
     message: target.delivery.state === 'preview_active'
-      ? 'Worktree 已同步为可撤回的 Local Preview。'
-      : 'Worktree 已准备好同步到 Local 验收。',
+      ? '修改已应用到当前项目供预览，可撤回；检查通过后可“确认保存”。'
+      : '修改已准备好，可点击“预览修改”在当前项目中检查。',
     _createdAt: Date.now(),
   } as unknown as SDKMessage
 }

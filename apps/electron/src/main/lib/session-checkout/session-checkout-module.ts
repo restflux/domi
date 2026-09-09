@@ -1911,7 +1911,7 @@ export function createSessionCheckoutModule(
           reviewId: operationId,
           iteration,
           preparedAt: startedAt,
-          summary: 'Worktree 修改已通过 ApplyWorktree 同步到 Local 验收',
+          summary: '修改已应用到当前项目供预览，可撤回；检查通过后可“确认保存”',
           validationStatus: 'not_run' as const,
           tests: [],
           changedFiles: [...planResult.plan.changedFiles],

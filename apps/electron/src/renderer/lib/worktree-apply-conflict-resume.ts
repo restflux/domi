@@ -108,7 +108,7 @@ ${files}
 4. 运行与冲突文件相关的聚焦测试和受影响 workspace typecheck；
 5. merge 完成后，把上述 Local HEAD 视为重新验收的有效交付基线：ReadyForReview 的 changed files、details、summary 和建议 Commit Message 只能描述“该 Local HEAD → 当前 Worktree 最终快照”的净增量；不得把已经存在于该 Local HEAD 的功能、文件或提交重新写进本次验收与 Commit Message。原始 Session Base 只用于 checkpoint ancestry 和完整历史校验；
 6. 验证通过后重新调用 ReadyForReview，并将其作为本轮最后一个、单独的工具调用，生成基于当前 Worktree 新快照的验收卡；
-7. 不要再次调用 ApplyWorktree，也不要调用 FinishWorktree。旧 Apply 批准已被安全消费，必须让用户从新的“同步到 Local 验收”卡重新发起；
+7. 不要再次调用 ApplyWorktree，也不要调用 FinishWorktree。旧 Apply 批准已被安全消费，必须让用户从新的验收卡点击“预览修改”重新发起；
 8. 若无法无歧义解决，明确列出冲突意图和阻塞点，不要修改 Local。`
 }
 

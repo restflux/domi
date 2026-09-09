@@ -571,7 +571,7 @@ export function WorktreeReviewCard({
       const result = await operate({ action: 'checkpoint', commitMessage: value })
       if (result?.status === 'checkpointed') {
         toast.success(`阶段 ${result.checkpoint.sequence} 已保存`, {
-          description: 'Local 未更新；现在可直接同步到 Local 验收，也可以继续修改。',
+          description: '当前项目未更新；现在可点击“预览修改”，也可以继续修改。',
         })
       }
     } finally {

@@ -107,6 +107,7 @@ describe('Agent Worktree Review', () => {
       review_id: 'review-1',
       details_markdown: '## 变更说明\n\n完成 [路径] 的修改。',
       changed_files: ['src/a.ts'],
+      message: '修改已准备好，可点击“预览修改”在当前项目中检查。',
     })
     expect(JSON.stringify(persisted[0])).not.toContain('localRoot')
   })
