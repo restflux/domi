@@ -1,3 +1,4 @@
+import { ImageGenerationRun } from '../image-generation/run'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import type { ImageGenerationSelection } from '@domi/shared'
 import { isImageGenerationAvailable, resolveImageGenerationSelection, resolveImageGenerationConfig } from '../image-generation/config'
@@ -13,13 +14,14 @@ export function buildPiNanoBananaTools(
   sessionId: string,
   agentCwd?: string,
   selection?: ImageGenerationSelection,
+  run = new ImageGenerationRun(),
 ): ToolDefinition[] {
   const selected = resolveImageGenerationSelection(selection)
   if (selected) resolveImageGenerationConfig('nano-banana', selected)
   else if (!isImageGenerationAvailable('nano-banana')) return []
   const legacyConfig = selected ? undefined : resolveImageGenerationConfig('nano-banana')
   return [buildPiNanoBananaTool(sdk, sessionId, agentCwd,
-    (prompt, id, options) => generateAgentImages('nano-banana', selected, prompt, id, options, legacyConfig))]
+    (prompt, id, options) => generateAgentImages('nano-banana', selected, prompt, id, { ...options, run }, legacyConfig))]
 }
 
 export function clearNanoBananaAgentHistory(sessionId: string): void {

@@ -1,3 +1,4 @@
+import { ImageGenerationRun } from './image-generation/run'
 import { parseAgentImageCommand } from './agent-image-command'
 import { prepareImageGenerationConfigs, resolveRequestImageGeneration } from './image-generation-request'
 /**
@@ -275,6 +276,7 @@ export async function sendMessage(
 
   // 6. 创建 AbortController
   const controller = new AbortController()
+  const imageGenerationRun = new ImageGenerationRun()
   activeControllers.set(conversationId, controller)
 
   // 在 try 外累积流式内容，abort 时 catch 块仍可访问
@@ -414,6 +416,7 @@ export async function sendMessage(
         currentAttachments: attachments,
         imageGeneration,
         imageGenerationConfigs,
+        imageGenerationRun,
         signal: controller.signal,
         previousUserAttachments: lastUserMsg?.attachments,
         previousAssistantAttachments: lastAssistantMsg?.attachments,
@@ -612,6 +615,7 @@ export async function sendMessage(
     // 错误路径：尽力落盘已收到的用量
     flushUsageRecord()
   } finally {
+    imageGenerationRun.dispose()
     activeControllers.delete(conversationId)
   }
 }

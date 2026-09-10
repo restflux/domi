@@ -1,3 +1,4 @@
+import { ImageGenerationRun } from '../image-generation/run'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import type { ImageGenerationSelection } from '@domi/shared'
 import { isImageGenerationAvailable, resolveImageGenerationSelection, resolveImageGenerationConfig } from '../image-generation/config'
@@ -12,11 +13,12 @@ export function buildPiGptImageTools(
   sessionId: string,
   agentCwd?: string,
   selection?: ImageGenerationSelection,
+  run = new ImageGenerationRun(),
 ): ToolDefinition[] {
   const selected = resolveImageGenerationSelection(selection)
   if (selected) resolveImageGenerationConfig('gpt-image', selected)
   else if (!isImageGenerationAvailable('gpt-image')) return []
   const legacyConfig = selected ? undefined : resolveImageGenerationConfig('gpt-image')
   return [buildPiGptImageTool(sdk, sessionId, agentCwd,
-    (prompt, id, options) => generateAgentImages('gpt-image', selected, prompt, id, options, legacyConfig))]
+    (prompt, id, options) => generateAgentImages('gpt-image', selected, prompt, id, { ...options, run }, legacyConfig))]
 }

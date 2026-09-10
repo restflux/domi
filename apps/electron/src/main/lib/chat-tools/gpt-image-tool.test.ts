@@ -37,6 +37,7 @@ mock.module('../attachment-service', () => ({
 let buildImagesRequest: typeof import('./gpt-image-tool').buildImagesRequest
 let executeGptImageTool: typeof import('./gpt-image-tool').executeGptImageTool
 import type { GptImageContext } from './gpt-image-tool'
+import { ImageGenerationRun } from '../image-generation/run'
 
 beforeAll(async () => {
   ;({ buildImagesRequest, executeGptImageTool } = await import('./gpt-image-tool'))
@@ -51,6 +52,42 @@ afterAll(() => {
 const baseContext: GptImageContext = {
   conversationId: 'conv-1',
 }
+
+test('Chat两种工具共享运行锁，跨工具重复调用不会再次生成', async () => {
+  const { executeNanoBananaTool } = await import('./nano-banana-tool')
+  const context = { ...baseContext, imageGenerationRun: new ImageGenerationRun() }
+  mockedCredentials = { apiKey: 'test-key' }
+  let requests = 0
+  globalThis.fetch = (async () => { requests++; throw new Error('secret URL') }) as unknown as typeof fetch
+  const first = await executeGptImageTool({ id: 'one', name: 'imagegen', arguments: { prompt: 'cat' } }, context)
+  const second = await executeNanoBananaTool({ id: 'two', name: 'generate_image', arguments: { prompt: 'cat, changed' } }, context)
+  expect(first.isError).toBe(true)
+  expect(first.content).toContain('服务端可能仍在处理')
+  expect(second.isError).toBe(true)
+  expect(second.content).toContain('上一次生图结果尚未确认')
+  expect(requests).toBe(1)
+})
+
+test('Chat下载失败后再调用只取回旧结果，交付成功后允许下一张', async () => {
+  mockedCredentials = { apiKey: 'test-key' }
+  const context = { ...baseContext, imageGenerationRun: new ImageGenerationRun() }
+  let posts = 0
+  let downloads = 0
+  globalThis.fetch = (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    if (init?.method === 'POST') { posts++; return Response.json({ data: [{ url: 'https://example.com/image?secret' }] }) }
+    if (++downloads === 1) throw new Error('secret URL')
+    return new Response('image')
+  }) as unknown as typeof fetch
+  const call = { id: 'one', name: 'imagegen', arguments: { prompt: 'cat' } }
+  expect((await executeGptImageTool(call, context)).isError).toBe(true)
+  const recovered = await executeGptImageTool({ ...call, id: 'two' }, context)
+  expect(recovered.isError).toBeFalsy()
+  expect(recovered.content).toContain('未重新生成')
+  expect(recovered.generatedAttachments).toHaveLength(1)
+  expect(posts).toBe(1)
+  await executeGptImageTool({ ...call, id: 'three' }, context)
+  expect(posts).toBe(2)
+})
 
 describe('GPT Image 请求构造（与 Codex image_generation.imagegen 对齐）', () => {
   test('Given 无参考图 When buildImagesRequest Then 走 images/generations 且带 auto 默认参数', () => {

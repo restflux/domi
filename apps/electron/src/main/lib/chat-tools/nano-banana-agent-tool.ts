@@ -1,3 +1,4 @@
+import { ImageTaskError } from '../image-generation/run'
 import { Type } from 'typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import type { AgentToolResult } from '@earendil-works/pi-agent-core'
@@ -59,7 +60,7 @@ export function buildPiNanoBananaTool(
     name: 'mcp__nano_banana__generate_image',
     label: 'Nano Banana 生图',
     description: 'Generate or edit images using Gemini Image Generation. Use this tool whenever the user asks to create, regenerate, redraw, or edit an image. Supports reference images and iterative multi-turn editing.',
-    promptSnippet: 'Nano Banana: for an explicit image generation or editing request, call mcp__nano_banana__generate_image directly. Do not stop after merely planning the image call. Default outputMode to session so the result stays in conversation attachments and remains usable in Research or delivered follow-ups. Use workspace only when the user explicitly needs a project file. Do not claim completion unless the tool returns at least one image and isError is not true.',
+    promptSnippet: 'Nano Banana: for an explicit image generation or editing request, call mcp__nano_banana__generate_image directly. Do not stop after merely planning the image call. Default outputMode to session so the result stays in conversation attachments and remains usable in Research or delivered follow-ups. Use workspace only when the user explicitly needs a project file. If generation reports an unknown outcome, stop and ask the user to explicitly resend in a new run; never automatically regenerate. If only download failed, another call in this run retrieves the original result without applying new instructions. Do not claim completion unless the tool returns at least one image and isError is not true.',
     parameters: Type.Object({
       prompt: Type.String({ description: 'Detailed description of the image to generate or edit. English works best.' }),
       referenceImagePaths: Type.Optional(Type.Array(Type.String(), { description: 'Absolute or cwd-relative image paths used as editing references.' })),
@@ -118,7 +119,7 @@ export function buildPiNanoBananaTool(
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error)
         console.error('[Nano Banana Pi] 执行失败:', error)
-        throw new Error(`图片生成失败: ${msg}`, { cause: error })
+        throw new Error(error instanceof ImageTaskError ? msg : `图片生成失败: ${msg}`, { cause: error })
       }
     },
   })

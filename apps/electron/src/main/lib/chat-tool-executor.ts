@@ -23,6 +23,7 @@ export interface ToolExecutionContext {
   imageGenerationConfigs?: import('./image-generation-request').PreparedImageGenerationConfigs
   imageGeneration?: import('@domi/shared').ImageGenerationSelection
   signal?: AbortSignal
+  imageGenerationRun?: import('./image-generation/run').ImageGenerationRun
   /** webContents 用于推送工具活动事件 */
   webContents: WebContents
   /** 对话 ID */
@@ -63,6 +64,7 @@ export async function executeToolCalls(
         conversationId: context.conversationId,
         imageGeneration: context.imageGeneration,
         signal: context.signal,
+        imageGenerationRun: context.imageGenerationRun,
         currentAttachments: context.currentAttachments,
         previousUserAttachments: context.previousUserAttachments,
         previousAssistantAttachments: context.previousAssistantAttachments,
@@ -74,6 +76,7 @@ export async function executeToolCalls(
         conversationId: context.conversationId,
         imageGeneration: context.imageGeneration,
         signal: context.signal,
+        imageGenerationRun: context.imageGenerationRun,
         currentAttachments: context.currentAttachments,
         previousUserAttachments: context.previousUserAttachments,
         previousAssistantAttachments: context.previousAssistantAttachments,

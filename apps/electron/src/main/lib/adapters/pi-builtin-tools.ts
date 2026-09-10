@@ -1,3 +1,4 @@
+import { ImageGenerationRun } from '../image-generation/run'
 import { isImageGenerationAvailable, getImageGenerationToolId } from '../image-generation/config'
 /**
  * Pi Runtime 内置产品工具桥接层
@@ -96,6 +97,7 @@ type PiSdk = typeof import('@earendil-works/pi-coding-agent')
 // ===== 通用 =====
 
 export interface PiBuiltinToolsContext {
+  imageGenerationRun?: ImageGenerationRun
   imageGeneration?: import('@domi/shared').ImageGenerationSelection
   sessionId: string
   channelId: string
@@ -1160,6 +1162,7 @@ export async function buildPiBuiltinTools(
   sdk: PiSdk,
   ctx: PiBuiltinToolsContext,
 ): Promise<PiBuiltinToolsResult> {
+  const imageGenerationRun = ctx.imageGenerationRun ?? new ImageGenerationRun()
   const tools: ToolDefinition[] = []
 
   if (isWebSearchEnabledForAgent()) {
@@ -1180,7 +1183,7 @@ export async function buildPiBuiltinTools(
 
   if (ctx.imageGeneration ? getImageGenerationToolId(ctx.imageGeneration) === 'nano-banana' : isImageGenerationAvailable('nano-banana')) {
     try {
-      tools.push(...buildPiNanoBananaTools(sdk, ctx.sessionId, ctx.agentCwd, ctx.imageGeneration))
+      tools.push(...buildPiNanoBananaTools(sdk, ctx.sessionId, ctx.agentCwd, ctx.imageGeneration, imageGenerationRun))
     } catch (error) {
       console.error('[Pi 桥接] 注入 Nano Banana 工具失败:', error)
     }
@@ -1188,7 +1191,7 @@ export async function buildPiBuiltinTools(
 
   if (ctx.imageGeneration ? getImageGenerationToolId(ctx.imageGeneration) === 'gpt-image' : isImageGenerationAvailable('gpt-image')) {
     try {
-      tools.push(...buildPiGptImageTools(sdk, ctx.sessionId, ctx.agentCwd, ctx.imageGeneration))
+      tools.push(...buildPiGptImageTools(sdk, ctx.sessionId, ctx.agentCwd, ctx.imageGeneration, imageGenerationRun))
     } catch (error) {
       console.error('[Pi 桥接] 注入 GPT Image 工具失败:', error)
     }

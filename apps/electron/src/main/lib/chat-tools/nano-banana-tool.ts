@@ -39,6 +39,7 @@ export interface NanoBananaContext {
   preparedConfig?: import('../image-generation/config').ImageGenerationConfig | null
   imageGeneration?: ImageGenerationSelection
   signal?: AbortSignal
+  imageGenerationRun?: import('../image-generation/run').ImageGenerationRun
   /** 对话 ID（用于保存附件和管理对话历史） */
   conversationId: string
   /** 当前用户消息的附件列表 */
@@ -197,6 +198,7 @@ export async function executeNanoBananaTool(toolCall: ToolCall, context: NanoBan
       imageSize: typeof toolCall.arguments.imageSize === 'string' ? toolCall.arguments.imageSize : undefined,
       numberOfImages: typeof toolCall.arguments.numberOfImages === 'number' ? toolCall.arguments.numberOfImages : undefined,
       signal: context.signal,
+      run: context.imageGenerationRun,
     })
     context.signal?.throwIfAborted()
     const generatedAttachments = result.images.map((image) => saveAttachment({
@@ -204,10 +206,11 @@ export async function executeNanoBananaTool(toolCall: ToolCall, context: NanoBan
       filename: `nano-banana-${randomUUID().slice(0, 8)}${image.mimeType === 'image/jpeg' ? '.jpg' : '.png'}`,
       mediaType: image.mimeType, data: image.data,
     }).attachment)
+    context.imageGenerationRun?.acknowledgeResult()
     return { toolCallId: toolCall.id, content: `图片已成功生成（${generatedAttachments.length} 张）${result.text.length ? '\n\n' + result.text.join('\n') : ''}`,
       generatedAttachments, imageGeneration: result.metadata }
   } catch (error) {
-    return { toolCallId: toolCall.id, content: `图片生成失败: ${error instanceof Error ? error.message : '未知错误'}`, isError: true }
+    return { toolCallId: toolCall.id, content: `图片任务未完成: ${error instanceof Error ? error.message : '未知错误'}`, isError: true }
   }
 }
 

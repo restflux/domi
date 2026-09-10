@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { buildPiGptImageTool } from './gpt-image-agent-tool'
+import { ImageGenerationRun } from '../image-generation/run'
 
 import type { Channel, ImageGenerationSelection } from '@domi/shared'
 let selectedChannel: Channel | undefined
@@ -47,6 +48,23 @@ beforeAll(async () => {
 
 afterAll(() => {
   mockedCredentials = {}
+})
+
+test('Work的GPT与Nano共享运行锁，换tool_call_id和提示词不能绕过', async () => {
+  const { buildPiNanoBananaTools } = await import('./nano-banana-mcp')
+  const sdk = { defineTool: (definition: unknown) => definition } as unknown as typeof import('@earendil-works/pi-coding-agent')
+  mockedCredentials = { apiKey: 'test-key' }
+  const run = new ImageGenerationRun()
+  const gpt = buildPiGptImageTools(sdk, 'cross-tool', undefined, undefined, run)[0]!
+  const nano = buildPiNanoBananaTools(sdk, 'cross-tool', undefined, undefined, run)[0]!
+  const original = globalThis.fetch
+  let requests = 0
+  globalThis.fetch = (async () => { requests++; throw new Error('secret URL') }) as unknown as typeof fetch
+  try {
+    await expect(gpt.execute('one', { prompt: 'cat' }, undefined, undefined, {} as never)).rejects.toThrow('服务端可能仍在处理')
+    await expect(nano.execute('two', { prompt: 'cat with changes' }, undefined, undefined, {} as never)).rejects.toThrow('上一次生图结果尚未确认')
+    expect(requests).toBe(1)
+  } finally { globalThis.fetch = original; run.dispose() }
 })
 
 describe('GPT Image Pi custom tool', () => {

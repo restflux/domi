@@ -53,5 +53,6 @@ export async function generateAgentImages(toolId: ImageGenerationToolId, selecti
   const parameterInfo = [result.metadata.model, result.metadata.size, result.metadata.quality, result.metadata.aspectRatio, result.metadata.imageSize].filter((value) => value && value !== 'auto').join(' · ')
   const pathInfo = workspacePaths.length ? `\n图片已保存到工作目录:\n${workspacePaths.map((path) => `- ${path}`).join('\n')}` : ''
   content.push({ type: 'text', text: `图片已生成（${result.images.length} 张） · ${parameterInfo}${pathInfo}\n${[...result.text, ...attachmentMarkers].join('\n')}` })
+  options.run?.acknowledgeResult()
   return { content, ...result.metadata, outputMode: options.outputMode ?? 'session', workspacePaths }
 }

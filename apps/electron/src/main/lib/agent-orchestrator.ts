@@ -1,3 +1,4 @@
+import { ImageGenerationRun } from './image-generation/run'
 import { resolveRequestImageGeneration } from './image-generation-request'
 import { getImageGenerationToolId } from './image-generation/config'
 /**
@@ -989,7 +990,9 @@ export class AgentOrchestrator {
     this.activeChromeDevtoolsSessions.delete(sessionId)
     this.activeImageToolNames.delete(sessionId)
 
+    const imageGenerationRun = new ImageGenerationRun()
     const releaseActiveRun = (): void => {
+      imageGenerationRun.dispose()
       if (worktreeContinuationAuthorizationToken !== undefined) {
         worktreeContinuationAuthorizationRegistry.clearSession(sessionId)
       }
@@ -1568,6 +1571,7 @@ export class AgentOrchestrator {
         ? { tools: [], toolAnnotations: {}, collaborationAvailable: false }
         : await buildPiBuiltinTools(piSdk, {
         imageGeneration: input.imageGeneration,
+        imageGenerationRun,
         sessionId,
         channelId,
         modelId: selectedModelId,
