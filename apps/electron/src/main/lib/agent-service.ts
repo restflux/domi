@@ -1,4 +1,4 @@
-import { parseAgentImageCommand } from './agent-image-command'
+import { parseAgentImageRequest } from './agent-image-command'
 import { resolveImageGenerationSelection } from './image-generation/config'
 /**
  * Agent 服务层（IPC 薄层）
@@ -765,7 +765,7 @@ export async function submitOrEnqueueAgentMessage(
   webContents: WebContents,
 ): Promise<AgentSubmitOrEnqueueResult> {
   // 进入队列前解析默认值，之后设置变化不能影响这条请求。
-  if (input.imageGeneration || parseAgentImageCommand(input.userMessage).matched) {
+  if (input.imageGeneration || parseAgentImageRequest(input.userMessage).matched) {
     input = { ...input, imageGeneration: resolveImageGenerationSelection(input.imageGeneration) }
   }
   registerWebContents(input.sessionId, webContents)

@@ -61,7 +61,7 @@ import { assertAgentPlanCommandMayBeQueued, parseAgentPlanCommand, resolveAgentP
 import {
   buildAgentImageCommandPrompt,
   collectAvailableAgentImageToolNames,
-  parseAgentImageCommand,
+  parseAgentImageRequest,
 } from './agent-image-command'
 import { getSettings } from './settings-service'
 import { buildSystemPrompt, buildDynamicContext } from './agent-prompt-builder'
@@ -1661,14 +1661,17 @@ export class AgentOrchestrator {
         console.log(`[Agent 编排] 注入 referenced_planning: ${mentionedTodoIds?.length ?? 0} todos, ${mentionedCalendarEventIds?.length ?? 0} calendar events`)
       }
 
-      const imageCommand = parseAgentImageCommand(explicitImageRequest ? `/image ${userMessage}` : userMessage)
+      const detectedImageRequest = parseAgentImageRequest(userMessage)
+      const imageCommand = detectedImageRequest.matched || !explicitImageRequest
+        ? detectedImageRequest
+        : parseAgentImageRequest(`/image ${userMessage}`)
       if (imageCommand.matched) {
         enrichedMessage = buildAgentImageCommandPrompt({
           command: imageCommand,
           enrichedMessage,
           availableToolNames: availableImageToolNames,
         })
-        console.log(`[Agent 编排] 识别生图快捷命令: /${imageCommand.command}, 可用工具 ${availableImageToolNames.length} 个`)
+        console.log(`[Agent 编排] 识别生图请求: ${imageCommand.source ?? imageCommand.command}, 可用工具 ${availableImageToolNames.length} 个`)
       }
 
       const contextualMessage = `${dynamicCtx}\n\n${enrichedMessage}`
@@ -3851,7 +3854,7 @@ export class AgentOrchestrator {
     if (referencedPlanningBlock) enrichedText = `${referencedPlanningBlock}\n\n${enrichedText}`
 
     const displayText = rawText ?? text
-    const imageCommand = parseAgentImageCommand(displayText)
+    const imageCommand = parseAgentImageRequest(displayText)
     if (imageCommand.matched) {
       const availableImageToolNames = this.activeImageToolNames.get(sessionId)
       enrichedText = buildAgentImageCommandPrompt({
@@ -3859,7 +3862,7 @@ export class AgentOrchestrator {
         enrichedMessage: enrichedText,
         availableToolNames: availableImageToolNames,
       })
-      console.log(`[Agent 编排] 队列识别生图快捷命令: /${imageCommand.command}, 可用工具 ${availableImageToolNames?.length ?? '初始化中'}`)
+      console.log(`[Agent 编排] 队列识别生图请求: ${imageCommand.source ?? imageCommand.command}, 可用工具 ${availableImageToolNames?.length ?? '初始化中'}`)
     }
 
     const uuid = presetUuid || randomUUID()
