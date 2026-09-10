@@ -388,6 +388,10 @@ describe('Session Target 提示词', () => {
     expect(prompt).toContain('不得拼接阶段 Commit Message')
     expect(prompt).toContain('用户当前对话的主要语言')
     expect(prompt).toContain('简洁标题 + 空行 + 2–5 条')
+    expect(prompt).toContain('标题必须遵循 Conventional Commits')
+    expect(prompt).toContain('type 必填、scope 可选')
+    expect(prompt).toContain('禁止省略前缀或一律补成 fix')
+    expect(prompt).toContain('正文 details 中的建议 Commit Message 与工具参数必须一致')
     expect(prompt).toContain('可编辑的“提交并清理”确认')
   })
 

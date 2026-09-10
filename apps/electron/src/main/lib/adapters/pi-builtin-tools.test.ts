@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 import { PI_APPLY_WORKTREE_CONFLICT_GUIDANCE } from './pi-apply-worktree-guidance.ts'
 import { PI_FINISH_WORKTREE_GUIDANCE } from './pi-finish-worktree-guidance.ts'
@@ -6,6 +7,21 @@ import { buildPiGitPushSessionTrustTools, shouldExposeGitPushSessionTrust } from
 import { shouldExposeTerminalTools } from './pi-terminal-tools-policy.ts'
 
 describe('Pi builtin tool capability metadata', () => {
+  test('Given 验收或直接提交 When 读取生成要求 Then 标题必须包含根据净 diff 选择的类型前缀', () => {
+    // 只读取注册元数据，避免为指引测试启动 Electron 服务。
+    const source = readFileSync(new URL('./pi-builtin-tools.ts', import.meta.url), 'utf8')
+    const readyFields = source.split('\n').filter(line =>
+      line.includes("description: 'Mark the current owner managed Worktree")
+      || line.includes("promptSnippet: 'ReadyForReview:"))
+    expect(readyFields).toHaveLength(2)
+    for (const text of [...readyFields, PI_FINISH_WORKTREE_GUIDANCE.description, PI_FINISH_WORKTREE_GUIDANCE.promptSnippet]) {
+      expect(text).toContain('type is required and scope is optional')
+      expect(text).toContain('actual net diff')
+      expect(text).toContain('never omit the prefix or blindly default to fix')
+      expect(text).toContain('identical to the tool parameter')
+    }
+  })
+
   test('visible terminal tools are limited to direct interactive user sessions', () => {
     expect(shouldExposeTerminalTools({ triggeredBy: 'user' })).toBe(true)
     expect(shouldExposeTerminalTools({ triggeredBy: 'automation' })).toBe(false)
