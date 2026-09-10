@@ -5,10 +5,13 @@ interface SessionFixture {
   title: string
   workspaceId?: string
   channelId?: string
+  modelId?: string
+  updatedAt?: number
 }
 
 const sessions: SessionFixture[] = []
 const sentMessages: string[] = []
+const emittedEvents: { sessionId: string; payload: unknown }[] = []
 let createdSessionIndex = 0
 
 interface CapturedHeadlessCallbacks {
@@ -48,6 +51,12 @@ mock.module('./agent-session-manager', () => ({
     sessions.unshift(session)
     return session
   },
+  updateAgentSessionMeta: (sessionId: string, updates: Partial<SessionFixture>) => {
+    const session = sessions.find((item) => item.id === sessionId)
+    if (!session) throw new Error('会话不存在')
+    Object.assign(session, updates, { updatedAt: 123 })
+    return session
+  },
   listAgentSessions: () => sessions,
   getAgentSessionMeta: (sessionId: string) => sessions.find((session) => session.id === sessionId),
 }))
@@ -67,6 +76,7 @@ mock.module('./agent-service', () => ({
     headlessCallbackRuns.push(callbacks)
   },
   agentEventBus: {
+    emit: (sessionId: string, payload: unknown) => { emittedEvents.push({ sessionId, payload }) },
     on: (handler: (sessionId: string, payload: CapturedAgentPayload) => void) => {
       agentEventHandler = handler
       return () => {
@@ -109,10 +119,10 @@ mock.module('./bridge-attachment-utils', () => ({
 }))
 
 mock.module('./bridge-model-utils', () => ({
-  listSwitchableChannels: () => [],
-  getEnabledModels: () => [],
-  resolveChannelByIndex: () => undefined,
-  resolveModelByIndex: () => undefined,
+  listSwitchableChannels: () => [{ id: 'channel-5', name: '渠道五' }],
+  getEnabledModels: () => [{ id: 'model-9', name: '模型九' }],
+  resolveChannelByIndex: (index: number) => index === 5 ? { id: 'channel-5', name: '渠道五' } : undefined,
+  resolveModelByIndex: (_channel: unknown, index: number) => index === 9 ? { id: 'model-9', name: '模型九' } : undefined,
   describeBindingModel: () => ({
     channelName: '测试渠道',
     modelName: '测试模型',
@@ -131,6 +141,7 @@ describe('BridgeCommandHandler 最终交付与会话边界', () => {
       channelId: 'channel-1',
     })
     sentMessages.length = 0
+    emittedEvents.length = 0
     createdSessionIndex = 0
     headlessCallbacks = undefined
     headlessCallbackRuns.length = 0
@@ -173,6 +184,38 @@ describe('BridgeCommandHandler 最终交付与会话边界', () => {
       pendingDeliveryTtlMs: options.pendingDeliveryTtlMs ?? 100,
     })
   }
+
+  test('微信 /model 5 9 同时持久化会话选择并通知桌面，不启动新运行', async () => {
+    const handler = createHandler([])
+    await handler.handleIncomingMessage('chat-1', '/model 5 9')
+    expect(sessions[0]).toMatchObject({ channelId: 'channel-5', modelId: 'model-9' })
+    expect(emittedEvents).toEqual([{
+      sessionId: sessions[0]!.id,
+      payload: { kind: 'domi_event', event: {
+        type: 'model_selection_changed', channelId: 'channel-5', modelId: 'model-9', updatedAt: 123,
+      } },
+    }])
+    expect(headlessCallbackRuns).toHaveLength(0)
+    expect(sentMessages.at(-1)).toBe('✅ 已切换模型: 渠道五 / 模型九')
+  })
+
+  test('已有微信绑定切换模型时更新原会话，不创建替代会话', async () => {
+    const handler = createHandler([])
+    await handler.handleIncomingMessage('chat-1', '/switch existing-session-1')
+    await handler.handleIncomingMessage('chat-1', '/model 5 9')
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]).toMatchObject({ id: 'existing-session-1', channelId: 'channel-5', modelId: 'model-9' })
+    expect(emittedEvents[0]?.sessionId).toBe('existing-session-1')
+    expect(headlessCallbackRuns).toHaveLength(0)
+  })
+
+  test('无效模型命令不改写会话配置或广播选择', async () => {
+    const handler = createHandler([])
+    await handler.handleIncomingMessage('chat-1', '/model 5 99')
+    expect(emittedEvents).toHaveLength(0)
+    expect(sessions[0]?.channelId).toBe('channel-1')
+    expect(headlessCallbackRuns).toHaveLength(0)
+  })
 
   async function flushDelivery(): Promise<void> {
     await Promise.resolve()

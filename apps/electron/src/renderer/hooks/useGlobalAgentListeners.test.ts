@@ -1,6 +1,37 @@
 import { describe, expect, test } from 'bun:test'
 import type { AgentContextBreakdown, AgentStreamPayload, SDKAssistantMessage } from '@domi/shared'
-import { payloadToLegacyEvents } from './useGlobalAgentListeners.ts'
+import { createStore } from 'jotai'
+import { agentSessionsAtom, agentSessionChannelMapAtom, agentSessionModelMapAtom, agentChannelIdAtom, agentModelIdAtom, agentStreamingStatesAtom } from '@/atoms/agent-atoms'
+import { applyAgentModelSelection, payloadToLegacyEvents } from './useGlobalAgentListeners.ts'
+
+describe('远端模型选择同步', () => {
+  test('同步底部读取的会话元数据及缓存，不改变全局默认、其他会话或正在运行的模型', () => {
+    const store = createStore()
+    const otherSession = { id: 'other', title: '其他会话', createdAt: 1, updatedAt: 1, channelId: 'other-channel', modelId: 'other-model' }
+    store.set(agentSessionsAtom, [
+      { id: 'wechat', title: '微信会话', createdAt: 1, updatedAt: 1, channelId: 'old-channel', modelId: 'old-model' },
+      otherSession,
+    ])
+    store.set(agentChannelIdAtom, 'default-channel')
+    store.set(agentModelIdAtom, 'default-model')
+    store.set(agentSessionChannelMapAtom, new Map([['wechat', 'old-channel'], ['other', 'other-channel']]))
+    store.set(agentSessionModelMapAtom, new Map([['wechat', 'old-model'], ['other', 'other-model']]))
+    const runningState = { running: true, toolActivities: [], model: 'running-model', startedAt: 1 }
+    store.set(agentStreamingStatesAtom, new Map([['wechat', runningState]]))
+
+    applyAgentModelSelection(store, 'wechat', {
+      type: 'model_selection_changed', channelId: 'channel-5', modelId: 'model-9', updatedAt: 2,
+    })
+
+    expect(store.get(agentSessionsAtom)[0]).toMatchObject({ channelId: 'channel-5', modelId: 'model-9', updatedAt: 2 })
+    expect(store.get(agentSessionsAtom)[1]).toBe(otherSession)
+    expect(store.get(agentSessionChannelMapAtom)).toEqual(new Map([['wechat', 'channel-5'], ['other', 'other-channel']]))
+    expect(store.get(agentSessionModelMapAtom)).toEqual(new Map([['wechat', 'model-9'], ['other', 'other-model']]))
+    expect(store.get(agentChannelIdAtom)).toBe('default-channel')
+    expect(store.get(agentModelIdAtom)).toBe('default-model')
+    expect(store.get(agentStreamingStatesAtom).get('wechat')).toBe(runningState)
+  })
+})
 
 describe('payloadToLegacyEvents execution scope', () => {
   test('temporary execution events preserve the exact run token for generation-aware renderer cleanup', () => {

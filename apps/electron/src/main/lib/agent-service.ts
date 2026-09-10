@@ -319,6 +319,16 @@ export function setAgentStreamForegroundSession(
 }
 
 eventBus.use((sessionId, payload, next) => {
+  // 选择变更可发生在空闲会话，此时没有运行期的 sessionWebContents 映射。
+  if (payload.kind === 'domi_event' && payload.event.type === 'model_selection_changed') {
+    for (const window of BrowserWindow.getAllWindows().filter(isMainRendererWindow)) {
+      if (!window.webContents.isDestroyed()) {
+        window.webContents.send(AGENT_IPC_CHANNELS.STREAM_EVENT, { sessionId, payload } satisfies AgentStreamEvent)
+      }
+    }
+    next()
+    return
+  }
   const wc = sessionWebContents.get(sessionId)
   if (wc && !wc.isDestroyed()) {
     if (payload.kind === 'sdk_delta') {

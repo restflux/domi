@@ -11,7 +11,7 @@ import { BrowserWindow } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type { AgentStreamPayload } from '@domi/shared'
 import { AGENT_IPC_CHANNELS } from '@domi/shared'
-import { createAgentSession, listAgentSessions, getAgentSessionMeta } from './agent-session-manager'
+import { createAgentSession, listAgentSessions, getAgentSessionMeta, updateAgentSessionMeta } from './agent-session-manager'
 import {
   listAgentWorkspacesByUpdatedAt,
   getAgentWorkspace,
@@ -855,13 +855,23 @@ export class BridgeCommandHandler {
       }
     }
 
+    const session = updateAgentSessionMeta(binding.sessionId, { channelId: channel.id, modelId: model.id })
     binding.channelId = channel.id
     binding.modelId = model.id
     this.saveBindings()
+    agentEventBus.emit(binding.sessionId, {
+      kind: 'domi_event',
+      event: {
+        type: 'model_selection_changed',
+        channelId: channel.id,
+        modelId: model.id,
+        updatedAt: session.updatedAt,
+      },
+    })
 
     await this.send(
       chatId,
-      `✅ 已切换模型: ${channel.name} / ${model.name}\n（注：重启应用后会恢复默认渠道设置）`,
+      `✅ 已切换模型: ${channel.name} / ${model.name}`,
       contextData,
     )
   }

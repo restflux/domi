@@ -492,6 +492,19 @@ export function payloadToLegacyEvents(payload: AgentStreamPayload): AgentEvent[]
   }
 }
 
+/** 远端模型选择只修改下一轮配置，不触碰当前运行和历史消息的模型标记。 */
+export function applyAgentModelSelection(
+  store: ReturnType<typeof useStore>,
+  sessionId: string,
+  selection: Extract<DomiEvent, { type: 'model_selection_changed' }>,
+): void {
+  store.set(agentSessionsAtom, (sessions) => sessions.map((session) => session.id === sessionId
+    ? { ...session, channelId: selection.channelId, modelId: selection.modelId, updatedAt: Math.max(session.updatedAt, selection.updatedAt) }
+    : session))
+  store.set(agentSessionChannelMapAtom, (prev) => new Map(prev).set(sessionId, selection.channelId))
+  store.set(agentSessionModelMapAtom, (prev) => new Map(prev).set(sessionId, selection.modelId))
+}
+
 export function useGlobalAgentListeners(): void {
   const store = useStore()
 
@@ -644,7 +657,11 @@ export function useGlobalAgentListeners(): void {
           updatedAt: event.startedAt,
         }
         store.set(agentSessionsAtom, (prev) => upsertAgentSession(prev, upserted))
-        const activationModelId = activation.modelId
+        const activationChannelId = upserted.channelId
+        if (activationChannelId) {
+          store.set(agentSessionChannelMapAtom, (prev) => new Map(prev).set(event.sessionId, activationChannelId))
+        }
+        const activationModelId = upserted.modelId ?? activation.modelId
         if (activationModelId) {
           store.set(agentSessionModelMapAtom, (prev) => {
             const map = new Map(prev)
@@ -705,6 +722,10 @@ export function useGlobalAgentListeners(): void {
         // main 已保证非 delta 控制事件的 IPC 顺序；renderer 侧也必须先提交本帧积压，
         // 让 final/retry/permission 等状态始终观察到此前完整 preview。
         if (payload.kind !== 'sdk_delta') deltaFrameBatcher.flushSession(sessionId)
+
+        if (payload.kind === 'domi_event' && payload.event.type === 'model_selection_changed') {
+          applyAgentModelSelection(store, sessionId, payload.event)
+        }
 
         if (payload.kind === 'domi_event' && payload.event.type === 'external_run_started') {
           activateExternalAgentRun(payload.event)

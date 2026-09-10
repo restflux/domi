@@ -682,6 +682,7 @@ export type DomiEvent =
   | { type: 'context_breakdown'; breakdown: AgentContextBreakdown }
   | { type: 'permission_mode_changed'; mode: DomiPermissionMode }
   | { type: 'title_updated'; title: string }
+  | { type: 'model_selection_changed'; channelId: string; modelId: string; updatedAt: number }
   | { type: 'external_run_started'; source: AgentExternalRunSource; sessionId: string; title?: string; workspaceId?: string; modelId?: string; startedAt: number; originSessionId?: string; activationToken?: string; session?: AgentSessionMeta }
   | { type: 'run_resumed'; sessionId: string }
   // 协作子会话阻塞事件上浮
