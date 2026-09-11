@@ -1,23 +1,10 @@
 import { BrandLogo } from '@/components/ui/brand-logo'
-/**
- * ModelSelector - 模型选择器（Dialog + Command 搜索）
- *
- * 现代化设计：
- * - 大尺寸 Dialog，宽敞易读
- * - 按渠道分组，灰色背景供应商标题行
- * - 选中项左侧绿色竖条高亮
- * - 触发按钮：模型 logo + 模型名 + Chevron
- */
+/** 按渠道折叠的模型选择浮层；主聊天、Work 与侧聊共享展示，选择状态由调用方管理。 */
 
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, Cpu, Search } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Check, ChevronDown, Cpu, Search } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Tooltip,
   TooltipContent,
@@ -35,56 +22,11 @@ import { useConversationIdOptional } from '@/contexts/session-context'
 import { getModelLogo, getChannelLogo, DefaultLogo } from '@/lib/model-logo'
 import { handleOptionalDialogCloseAutoFocus } from '@/lib/dialog-focus'
 import { cn } from '@/lib/utils'
-import type { Channel, ModelOption, ProviderType } from '@domi/shared'
+import type { ModelOption, ProviderType } from '@domi/shared'
 import { ChannelPlanQuotaBadge } from './ChannelPlanQuotaBadge'
 
-/** 从渠道列表构建扁平化的模型选项 */
-export function buildModelOptions(
-  channels: Channel[],
-  filterChannelId?: string,
-  filterChannelIds?: string[],
-  excludedProviders?: readonly ProviderType[],
-  allowedModelKeys?: readonly string[],
-): ModelOption[] {
-  const options: ModelOption[] = []
-  const allowed = allowedModelKeys ? new Set(allowedModelKeys) : undefined
-
-  for (const channel of channels) {
-    if (!channel.enabled) continue
-    if (filterChannelId && channel.id !== filterChannelId) continue
-    if (filterChannelIds && !filterChannelIds.includes(channel.id)) continue
-    if (excludedProviders?.includes(channel.provider)) continue
-
-    for (const model of channel.models) {
-      if (!model.enabled) continue
-      if (allowed && !allowed.has(`${channel.id}\u0000${model.id}`)) continue
-
-      options.push({
-        channelId: channel.id,
-        channelName: channel.name,
-        modelId: model.id,
-        modelName: model.name,
-        provider: channel.provider,
-      })
-    }
-  }
-
-  return options
-}
-
-/** 按渠道分组模型选项 */
-function groupByChannel(options: ModelOption[]): Map<string, ModelOption[]> {
-  const groups = new Map<string, ModelOption[]>()
-
-  for (const option of options) {
-    const key = option.channelId
-    const group = groups.get(key) ?? []
-    group.push(option)
-    groups.set(key, group)
-  }
-
-  return groups
-}
+import { buildModelOptions, groupByChannel, getModelPickerGroups, nextModelHighlight } from './model-selector-options'
+export { buildModelOptions } from './model-selector-options'
 
 /** ModelSelector 可选属性 */
 interface ModelSelectorProps {
@@ -104,9 +46,11 @@ interface ModelSelectorProps {
   allowedModelKeys?: readonly string[]
   /** 是否使用全局 modelSelectorOpenAtom 控制打开状态（用于外部拉起，如错误提示按钮） */
   useSharedOpenState?: boolean
-  /** 仅挂载模型 Dialog，由外部组合控件负责触发。 */
-  hideTrigger?: boolean
-  /** Dialog 任意关闭路径完成后恢复指定焦点；未传时保留 Radix 默认行为。 */
+  /** Work 可将模型行作为触发器，在父卡片附近打开独立列表。 */
+  trigger?: React.ReactElement
+  side?: React.ComponentProps<typeof PopoverContent>['side']
+  align?: React.ComponentProps<typeof PopoverContent>['align']
+  /**浮层任意关闭路径完成后恢复指定焦点；未传时保留 Radix 默认行为。 */
   restoreFocusOnClose?: () => void
 }
 
@@ -119,7 +63,9 @@ export function ModelSelector({
   excludedProviders,
   allowedModelKeys,
   useSharedOpenState = false,
-  hideTrigger = false,
+  trigger,
+  side = 'top',
+  align = 'end',
   restoreFocusOnClose,
 }: ModelSelectorProps = {}): React.ReactElement {
   const [conversationModel, setConversationModel] = useConversationModelOptional()
@@ -134,15 +80,18 @@ export function ModelSelector({
   const open = useSharedOpenState ? sharedOpen : localOpen
   const setOpen = useSharedOpenState ? setSharedOpen : setLocalOpen
   const [search, setSearch] = React.useState('')
+  const [expandedChannel, setExpandedChannel] = React.useState<string | null>(null)
+  const searchRef = React.useRef<HTMLInputElement>(null)
 
   // 外部模型优先 → per-conversation 模型
   const selectedModel = externalSelectedModel !== undefined ? externalSelectedModel : conversationModel
 
-  // 每次打开 Dialog 时刷新渠道列表，确保最新
+  // 每次打开浮层时刷新渠道列表，确保最新
   React.useEffect(() => {
     if (open) {
       window.electronAPI.listChannels().then(setChannels).catch(console.error)
       setSearch('')
+      setExpandedChannel(selectedModel?.channelId ?? null)
     }
   }, [open, setChannels])
 
@@ -152,35 +101,10 @@ export function ModelSelector({
   )
   const grouped = React.useMemo(() => groupByChannel(modelOptions), [modelOptions])
 
-  // 搜索过滤
-  const filteredGrouped = React.useMemo(() => {
-    if (!search.trim()) return grouped
-
-    const query = search.toLowerCase()
-    const filtered = new Map<string, ModelOption[]>()
-
-    for (const [channelId, options] of grouped.entries()) {
-      const matchedOptions = options.filter(
-        (o) =>
-          o.modelName.toLowerCase().includes(query) ||
-          o.channelName.toLowerCase().includes(query)
-      )
-      if (matchedOptions.length > 0) {
-        filtered.set(channelId, matchedOptions)
-      }
-    }
-
-    return filtered
-  }, [grouped, search])
-
-  // 扁平化过滤后的模型列表，用于键盘导航
-  const flatOptions = React.useMemo(() => {
-    const result: ModelOption[] = []
-    for (const options of filteredGrouped.values()) {
-      result.push(...options)
-    }
-    return result
-  }, [filteredGrouped])
+  const { groups: filteredGrouped, visibleOptions: flatOptions } = React.useMemo(
+    () => getModelPickerGroups(grouped, search, expandedChannel),
+    [grouped, search, expandedChannel],
+  )
 
   // 键盘高亮索引
   const [highlightIndex, setHighlightIndex] = React.useState(-1)
@@ -189,7 +113,7 @@ export function ModelSelector({
   // 搜索变化时重置高亮
   React.useEffect(() => {
     setHighlightIndex(-1)
-  }, [search])
+  }, [search, expandedChannel, open])
 
   // 高亮项变化时滚动到可见区域
   React.useEffect(() => {
@@ -198,17 +122,17 @@ export function ModelSelector({
     el?.scrollIntoView({ block: 'nearest' })
   }, [highlightIndex])
 
-  // 打开 Dialog 后是否已自动滚动到当前选中项（仅首次，避免搜索过滤时反复滚动）
+  // 打开浮层后是否已自动滚动到当前选中项（仅首次，避免搜索过滤时反复滚动）
   const didAutoScrollRef = React.useRef(false)
 
-  // 打开 Dialog 时重置自动滚动标记
+  // 打开浮层时重置自动滚动标记
   React.useEffect(() => {
     if (open) didAutoScrollRef.current = false
   }, [open])
 
   // 模型列表就绪后，自动滚动到当前选中的模型（channels 为异步刷新，依赖 flatOptions 等待就绪）
   React.useEffect(() => {
-    if (!open || didAutoScrollRef.current || !selectedModel) return
+    if (!open || search.trim() || didAutoScrollRef.current || !selectedModel) return
     if (flatOptions.length === 0) return
 
     const index = flatOptions.findIndex(
@@ -217,12 +141,13 @@ export function ModelSelector({
     if (index < 0) return
 
     didAutoScrollRef.current = true
-    // 下一帧再滚动，确保 Dialog 内容完成挂载
+    // 下一帧再滚动，确保浮层内容完成挂载
     const raf = requestAnimationFrame(() => {
+      setHighlightIndex(index)
       itemRefs.current.get(index)?.scrollIntoView({ block: 'nearest' })
     })
     return () => cancelAnimationFrame(raf)
-  }, [open, flatOptions, selectedModel])
+  }, [open, flatOptions, selectedModel, search])
 
   // 查找当前选中的模型信息
   const currentModelInfo = React.useMemo(() => {
@@ -267,14 +192,14 @@ export function ModelSelector({
 
   /** 搜索框键盘导航 */
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (flatOptions.length === 0) return
+    if (e.nativeEvent.isComposing || flatOptions.length === 0) return
 
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setHighlightIndex((prev) => (prev < flatOptions.length - 1 ? prev + 1 : 0))
+      setHighlightIndex((prev) => nextModelHighlight(prev, flatOptions.length, 'down'))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setHighlightIndex((prev) => (prev > 0 ? prev - 1 : flatOptions.length - 1))
+      setHighlightIndex((prev) => nextModelHighlight(prev, flatOptions.length, 'up'))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const target = flatOptions[highlightIndex >= 0 ? highlightIndex : 0]
@@ -282,7 +207,7 @@ export function ModelSelector({
     }
   }
 
-  if (channelsLoaded && modelOptions.length === 0 && !hideTrigger) {
+  if (channelsLoaded && modelOptions.length === 0 && !trigger) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2 py-1">
         <Cpu className="size-3.5" />
@@ -292,14 +217,20 @@ export function ModelSelector({
   }
 
   return (
-    <>
-      {/* 触发按钮；组合型输入栏控件可只挂载下方 Dialog。 */}
-      {!hideTrigger && (
+    <Popover open={open} onOpenChange={setOpen}>
+      {/* 自定义触发器也保持为独立 Popover，关闭列表不关闭父设置卡片。 */}
+      {trigger ? (
         <Tooltip open={open || !displayModelInfo ? false : undefined}>
           <TooltipTrigger asChild>
+            <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top">渠道：{displayModelInfo?.channelName}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <Tooltip open={open || !displayModelInfo ? false : undefined}>
+          <TooltipTrigger asChild><PopoverTrigger asChild>
             <button
               type="button"
-              onClick={() => setOpen(true)}
               className="model-selector-trigger flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
               {displayModelInfo ? (
@@ -318,38 +249,49 @@ export function ModelSelector({
               </span>
               <ChevronDown className="size-3" />
             </button>
-          </TooltipTrigger>
+          </PopoverTrigger></TooltipTrigger>
           <TooltipContent side="top">渠道：{displayModelInfo?.channelName}</TooltipContent>
         </Tooltip>
       )}
 
-      {/* 模型选择 Dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          className="p-0 gap-0 max-w-lg"
+      {/* 模型选择浮层*/}
+        <PopoverContent
+          side={side}
+          align={align}
+          sideOffset={8}
+          collisionPadding={12}
+          aria-label="选择模型"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            searchRef.current?.focus()
+          }}
+          className="p-0 w-[360px] max-w-[min(calc(100vw-24px),var(--radix-popover-content-available-width))] max-h-[var(--radix-popover-content-available-height)] flex flex-col overflow-hidden"
           aria-describedby={undefined}
-          onCloseAutoFocus={(event) => handleOptionalDialogCloseAutoFocus(event, restoreFocusOnClose)}
+          onCloseAutoFocus={(event) => {
+            handleOptionalDialogCloseAutoFocus(event, restoreFocusOnClose)
+          }}
         >
-          <DialogHeader className="sr-only">
-            <DialogTitle>选择模型</DialogTitle>
-          </DialogHeader>
-
           {/* 搜索栏 */}
-          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border/60">
+          <div className="flex shrink-0 items-center gap-2.5 px-4 py-3 border-b border-border/60">
             <Search className="size-5 text-muted-foreground/60 flex-shrink-0" />
             <input
+              ref={searchRef}
+              aria-label="搜索模型"
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                if (!e.target.value.trim()) setExpandedChannel(selectedModel?.channelId ?? null)
+              }}
               onKeyDown={handleSearchKeyDown}
               placeholder="搜索模型..."
-              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
               autoFocus
             />
           </div>
 
           {/* 模型列表 */}
-          <div className="max-h-[420px] overflow-y-auto scrollbar-thin">
+          <div className="min-h-0 max-h-[360px] overflow-y-auto scrollbar-thin">
             {filteredGrouped.size === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
                 未找到模型
@@ -360,12 +302,22 @@ export function ModelSelector({
                 return Array.from(filteredGrouped.entries()).map(([channelId, options]) => {
                 const first = options[0]
                 if (!first) return null
+                const expanded = Boolean(search.trim()) || channelId === expandedChannel
                 const channel = channels.find((c) => c.id === channelId)
 
                 return (
                   <div key={channelId}>
-                    {/* 供应商标题行 - 灰色背景 */}
-                    <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 border-b border-border/30">
+                    {/* 渠道标题保持可见，避免同名模型失去归属信息。 */}
+                    <div className="sticky top-0 z-10 flex items-center bg-popover">
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      aria-disabled={Boolean(search.trim())}
+                      onClick={() => {
+                        if (!search.trim()) setExpandedChannel(expandedChannel === channelId ? null : channelId)
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left hover:bg-accent"
+                    >
                       <BrandLogo
                         src={channel ? getChannelLogo(channel) : DefaultLogo}
                         alt={first.channelName}
@@ -374,11 +326,14 @@ export function ModelSelector({
                       <span className="min-w-0 truncate text-sm font-medium text-muted-foreground">
                         {first.channelName}
                       </span>
+                      <span className="ml-auto text-xs text-muted-foreground">{options.length}</span>
+                      <ChevronDown className={cn("size-3 shrink-0", !expanded && "-rotate-90")} />
+                    </button>
                       {channel ? <ChannelPlanQuotaBadge channel={channel} /> : null}
                     </div>
 
                     {/* 该渠道下的模型列表 */}
-                    {options.map((option) => {
+                    {expanded && options.map((option) => {
                       const isSelected =
                         selectedModel?.channelId === option.channelId &&
                         selectedModel?.modelId === option.modelId
@@ -393,13 +348,15 @@ export function ModelSelector({
                             else itemRefs.current.delete(currentFlatIndex)
                           }}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={() => handleSelect(option)}
-                          onMouseEnter={() => setHighlightIndex(currentFlatIndex)}
+                          onPointerMove={() => setHighlightIndex(-1)}
+                          onPointerLeave={() => setHighlightIndex(-1)}
                           className={cn(
-                            'flex items-center gap-3 w-[calc(100%-1rem)] px-4 py-1.5 mx-2 rounded-lg text-left transition-colors',
+                            'scroll-mt-10 flex items-center gap-3 w-[calc(100%-1rem)] px-4 py-1.5 mx-2 rounded-lg text-left transition-colors',
                             'hover:bg-accent',
                             isHighlighted && 'bg-accent',
-                            isSelected && 'bg-foreground/10 border-l-3 border-l-primary'
+                            isSelected && 'bg-foreground/10'
                           )}
                         >
                           <BrandLogo
@@ -413,6 +370,7 @@ export function ModelSelector({
                           )}>
                             {option.modelName}
                           </span>
+                          {isSelected && <Check aria-hidden="true" className="size-4 shrink-0 text-primary" />}
                         </button>
                       )
                     })}
@@ -422,8 +380,7 @@ export function ModelSelector({
               })()
             )}
           </div>
-        </DialogContent>
-      </Dialog>
-    </>
+        </PopoverContent>
+    </Popover>
   )
 }

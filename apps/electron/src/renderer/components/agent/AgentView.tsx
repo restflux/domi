@@ -434,7 +434,9 @@ interface AgentThinkingPopoverProps {
   modelName: string
   modelLogo?: string
   channelName?: string
-  onOpenModelSelector: () => void
+  selectedModel: { channelId: string; modelId: string } | null
+  onModelSelect: (option: import('@domi/shared').ModelOption) => void
+  restoreFocusOnClose: () => void
   onToggle: () => void
   codexConfig?: CodexThinkingConfig
 }
@@ -444,11 +446,18 @@ function AgentThinkingPopover({
   modelName,
   modelLogo,
   channelName,
-  onOpenModelSelector,
+  selectedModel,
+  onModelSelect,
+  restoreFocusOnClose,
   onToggle,
   codexConfig,
 }: AgentThinkingPopoverProps): React.ReactElement {
   const [open, setOpen] = React.useState(false)
+  const [modelListOpen, setModelListOpen] = useAtom(modelSelectorOpenAtom)
+  // 外部“选择模型”入口仍可打开父卡片及其子列表。
+  React.useEffect(() => {
+    if (modelListOpen) setOpen(true)
+  }, [modelListOpen])
   const isCodex = Boolean(codexConfig)
   const thinkingLevels = codexConfig?.levels ?? OPENAI_STANDARD_THINKING_LEVELS
   const normalizedLevel = normalizeOpenAIThinkingLevel(
@@ -470,20 +479,20 @@ function AgentThinkingPopover({
       : 'Off'
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen)
-        if (!nextOpen) setDraftSliderPosition(null)
-      }}
-    >
+    <Popover open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen)
+      if (!nextOpen) {
+        setModelListOpen(false)
+        setDraftSliderPosition(null)
+      }
+    }}>
       <Tooltip open={open || !channelName ? false : undefined}>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <Button
               type="button"
               variant="ghost"
-              aria-label={`${modelName}，推理强度：${triggerLabel}`}
+              aria-label={`${channelName ?? ''} ${modelName}，推理强度：${triggerLabel}`}
               className={cn(
                 'model-effort-trigger flex h-[26px] min-w-0 max-w-[min(200px,42vw)] shrink items-center gap-1 rounded-full px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
                 isEnabled && 'text-foreground',
@@ -497,7 +506,7 @@ function AgentThinkingPopover({
               )}
               <span className="min-w-0 truncate">{modelName}</span>
               <span className="shrink-0 text-muted-foreground">{triggerLabel}</span>
-              <ChevronDown className={cn('size-3 shrink-0 transition-transform duration-150', open && 'rotate-180')} />
+              <ChevronDown className="size-3 shrink-0" />
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
@@ -507,23 +516,34 @@ function AgentThinkingPopover({
         side="top"
         align="end"
         sideOffset={8}
+        collisionPadding={12}
+        aria-label="模型与推理设置"
         className="w-[290px] overflow-hidden rounded-xl border-border/60 bg-popover/95 p-0 shadow-xl backdrop-blur-xl"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onCloseAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={(event) => {
+          if (modelListOpen) event.preventDefault()
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          restoreFocusOnClose()
+        }}
       >
-        <div className="flex flex-col">
+        <ModelSelector
+          externalSelectedModel={selectedModel}
+          onModelSelect={onModelSelect}
+          useSharedOpenState
+          side="top"
+          align="end"
+          trigger={
           <button
             type="button"
-            className="flex h-10 min-w-0 items-center gap-3 px-3 text-left transition-colors hover:bg-accent/70"
-            onClick={() => {
-              setOpen(false)
-              onOpenModelSelector()
-            }}
+            className="flex h-10 w-full min-w-0 items-center gap-3 px-3 text-left transition-colors hover:bg-accent/70"
           >
             <span className="shrink-0 text-xs text-muted-foreground">模型</span>
             <span className="ml-auto min-w-0 truncate text-right text-xs font-medium text-foreground">{modelName}</span>
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
+          }
+        />
           <div className="border-t border-border/60 px-3 py-3">
             {codexConfig ? (
               <>
@@ -601,7 +621,6 @@ function AgentThinkingPopover({
               </div>
             )}
           </div>
-        </div>
       </PopoverContent>
     </Popover>
   )
@@ -4461,20 +4480,14 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           channelUpdatedAt={planQuotaChannelUpdatedAt}
           onCompact={handleCompact}
         />
-        <ModelSelector
-          filterChannelIds={undefined}
-          externalSelectedModel={externalSelectedModel}
-          onModelSelect={handleModelSelect}
-          useSharedOpenState
-          hideTrigger
-          restoreFocusOnClose={restoreComposerFocus}
-        />
         <AgentThinkingPopover
           agentThinking={agentThinking}
           modelName={composerModelName}
           modelLogo={composerModelLogo}
           channelName={composerChannelName}
-          onOpenModelSelector={() => store.set(modelSelectorOpenAtom, true)}
+          selectedModel={externalSelectedModel}
+          onModelSelect={handleModelSelect}
+          restoreFocusOnClose={restoreComposerFocus}
           onToggle={() => {
             const next = agentThinking?.type === 'adaptive'
               ? { type: 'disabled' as const }
