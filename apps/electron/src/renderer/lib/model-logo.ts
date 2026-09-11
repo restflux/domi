@@ -12,6 +12,7 @@ import grokLogo from '@lobehub/icons-static-svg/icons/grok.svg'
 import kimiLogo from '@lobehub/icons-static-svg/icons/kimi.svg'
 import doubaoLogo from '@lobehub/icons-static-svg/icons/doubao-color.svg'
 import zhipuLogo from '@lobehub/icons-static-svg/icons/zhipu-color.svg'
+import zaiLogo from '@lobehub/icons-static-svg/icons/zai.svg'
 import metaLogo from '@lobehub/icons-static-svg/icons/meta-color.svg'
 import mistralLogo from '@lobehub/icons-static-svg/icons/mistral-color.svg'
 import yiLogo from '@lobehub/icons-static-svg/icons/yi-color.svg'
@@ -40,6 +41,7 @@ const BRAND_LOGOS: Record<ModelBrand, string> = {
   kimi: kimiLogo,
   doubao: doubaoLogo,
   zhipu: zhipuLogo,
+  zai: zaiLogo,
   meta: metaLogo,
   mistral: mistralLogo,
   yi: yiLogo,
@@ -60,7 +62,7 @@ const BRAND_LOGOS: Record<ModelBrand, string> = {
 
 /** 单色 SVG 在 img 中不继承页面颜色，交给 BrandLogo 在深色主题反相为白色。 */
 export const MONOCHROME_LOGOS: ReadonlySet<string> = new Set([
-  openaiLogo, grokLogo, kimiLogo, xiaomiLogo, opencodeLogo,
+  openaiLogo, grokLogo, kimiLogo, xiaomiLogo, opencodeLogo, zaiLogo,
 ])
 
 export function getModelLogoById(modelId: string): string | undefined {

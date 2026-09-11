@@ -60,7 +60,7 @@ Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 - License: MIT, as declared by the package manifest and bundled README
 - Copyright: © 2023 LobeHub, as stated in the bundled README
 - License text: `third-party-licenses/MIT-LobeHub-icons.txt`
-- Usage: model and channel brand SVGs in `apps/electron/src/renderer/lib/model-logo.ts`; SVG artwork is unmodified, monochrome icons are inverted in dark mode.
+- Usage: model and channel brand SVGs in `apps/electron/src/renderer/lib/model-logo.ts`, including `zai.svg` for GLM and `hunyuan-color.svg` for Tencent Hy / Hunyuan; SVG artwork is unmodified, monochrome icons are inverted in dark mode.
 - Brand names and logos remain trademarks of their respective owners; the MIT code license does not grant trademark rights or imply endorsement.
 - The default Domi mark and existing composite Gemini / generic embedding icons retain their existing provenance; they are not LobeHub assets.
 

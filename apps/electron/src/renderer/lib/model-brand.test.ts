@@ -9,8 +9,8 @@ describe('模型品牌按家族匹配，不依赖固定版本', () => {
     ['gemini-7-flash', 'gemini'], ['gemma4', 'gemma'], ['veo-5', 'gemini'],
     ['qwen4-235b', 'qwen'], ['qwq-32b', 'qwen'], ['qvq-max', 'qwen'], ['wan2.8', 'qwen'],
     ['grok-9', 'grok'], ['kimi-k5', 'kimi'], ['moonshot-v2', 'kimi'],
-    ['doubao-seed-3', 'doubao'], ['seed-4', 'doubao'], ['glm-9', 'zhipu'],
-    ['chatglm4', 'zhipu'], ['cogview-5', 'zhipu'], ['zhipu-next', 'zhipu'],
+    ['doubao-seed-3', 'doubao'], ['seed-4', 'doubao'], ['glm-9', 'zai'],
+    ['chatglm4', 'zai'], ['cogview-5', 'zhipu'], ['zhipu-next', 'zhipu'],
     ['llama-6', 'meta'], ['mistral-large-3', 'mistral'], ['mixtral-8x22b', 'mistral'],
     ['codestral-2701', 'mistral'], ['ministral-8b', 'mistral'], ['magistral-medium', 'mistral'],
     ['pixtral-large', 'mistral'], ['devstral-next', 'mistral'], ['yi-2', 'yi'],
@@ -29,10 +29,17 @@ describe('模型品牌按家族匹配，不依赖固定版本', () => {
     ['OpenAI/GPT-6-ASTRA', 'openai'], ['anthropic/claude-opus-5', 'claude'],
     ['google/gemma4', 'gemma'], ['Qwen/Qwen4-32B', 'qwen'],
     ['deepseek-ai/DeepSeek-V4', 'deepseek'], ['meta-llama/Llama-5', 'meta'],
-    ['z-ai/glm-5', 'zhipu'], ['mistralai/devstral-3', 'mistral'],
+    ['z-ai/glm-5', 'zai'], ['mistralai/devstral-3', 'mistral'],
+    ['zai-org/GLM-5.2', 'zai'], ['THUDM/chatglm4', 'zai'],
+    ['zai-org/CogView-4', 'zhipu'], ['ByteDance-Seed/Seed-OSS-36B-Instruct', 'doubao'],
+    ['tencent/Hy4-preview', 'hunyuan'],
   ] as const)('明确发布者命名空间 %s → %s', (id, brand) => expect(resolveModelBrand(id)).toBe(brand))
 
-  test.each(['', 'custom-smart', 'my-gpt-6', 'notclaude', 'workflow-o1', 'footstep',
+  test.each(['Hy3', 'hy3-preview', 'Hy4-preview', 'Hy4 preview', ' HUNYUAN-turbo '])
+  ('混元正式名和 Hy 缩写 %s → hunyuan', (id) => expect(resolveModelBrand(id)).toBe('hunyuan'))
+
+  test.each(['hy', 'hybrid', 'hy4foo', 'my-hy4', 'zai-org/gpt-6', 'bytedance-seed/glm-5',
+    'tencent/glm-5', 'WisdomRouter', 'ark-code-latest', 'ox-alpha-free', '', 'custom-smart', 'my-gpt-6', 'notclaude', 'workflow-o1', 'footstep',
     'yiwen', 'commandcenter', 'geminix', 'seedling', 'google/gpt-6',
     'unknown/gpt-6', 'openai/custom-name', 'proxy/openai/gpt-6', 'https://openai.com/gpt-6'])
   ('未知别名或冲突命名 %s 不猜测品牌', (id) => expect(resolveModelBrand(id)).toBeUndefined())

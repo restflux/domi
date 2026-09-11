@@ -16,12 +16,14 @@ const MODEL_BRAND_RULES = [
   ['grok', /^grok(?=$|[-_.\d])/],
   ['kimi', /^(?:kimi|moonshot)(?=$|[-_.\d])/],
   ['doubao', /^(?:doubao|seed)(?=$|[-_.\d])/],
-  ['zhipu', /^(?:glm|chatglm|zhipu|cogview)(?=$|[-_.\d])/],
+  // GLM 使用 Z.ai 产品标志，智谱渠道及其他家族保留智谱标志。
+  ['zai', /^(?:glm|chatglm)(?=$|[-_.\d])/],
+  ['zhipu', /^(?:zhipu|cogview)(?=$|[-_.\d])/],
   ['meta', /^llama(?=$|[-_.\d])/],
   ['mistral', /^(?:mistral|mixtral|codestral|devstral|ministral|pixtral|magistral)(?=$|[-_.\d])/],
   ['yi', /^yi(?=$|[-_.\d])/],
   ['wenxin', /^(?:ernie|wenxin|tao)(?=$|[-_.\d])/],
-  ['hunyuan', /^hunyuan(?=$|[-_.\d])/],
+  ['hunyuan', /^(?:hunyuan(?=$|[-_.\d])|hy\d+(?=$|[-_.\s]))/],
   ['spark', /^(?:sparkdesk|spark|generalv)(?=$|[-_.\d])/],
   ['stepfun', /^(?:step|stepfun)(?=$|[-_.\d])/],
   ['minimax', /^minimax(?=$|[-_.\d])/],
@@ -36,11 +38,11 @@ const PUBLISHERS: Record<string, readonly ModelBrand[]> = {
   openai: ['openai', 'embedding'], anthropic: ['claude'], deepseek: ['deepseek'],
   'deepseek-ai': ['deepseek'], google: ['gemini', 'gemma'], qwen: ['qwen'],
   'qwen-ai': ['qwen'], 'x-ai': ['grok'], xai: ['grok'], moonshotai: ['kimi'],
-  'moonshot-ai': ['kimi'], zhipu: ['zhipu'], zai: ['zhipu'], 'z-ai': ['zhipu'],
-  thudm: ['zhipu'], 'meta-llama': ['meta'], meta: ['meta'], mistralai: ['mistral'],
+  'moonshot-ai': ['kimi'], zhipu: ['zhipu', 'zai'], zai: ['zhipu', 'zai'], 'z-ai': ['zhipu', 'zai'],
+  'zai-org': ['zhipu', 'zai'], thudm: ['zhipu', 'zai'], 'meta-llama': ['meta'], meta: ['meta'], mistralai: ['mistral'],
   '01-ai': ['yi'], baidu: ['wenxin'], tencent: ['hunyuan'], stepfun: ['stepfun'],
   'stepfun-ai': ['stepfun'], minimax: ['minimax'], 'minimaxai': ['minimax'],
-  xiaomi: ['xiaomi'], cohere: ['cohere'], bytedance: ['doubao'],
+  xiaomi: ['xiaomi'], cohere: ['cohere'], bytedance: ['doubao'], 'bytedance-seed': ['doubao'],
 }
 
 export function resolveModelBrand(modelId: string): ModelBrand | undefined {
