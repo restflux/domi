@@ -8,6 +8,7 @@ import type {
   AgentDelegationStatus,
 } from '@domi/shared'
 import type { SessionCheckoutApplyEngine } from './session-checkout-apply.ts'
+import type { SessionCheckoutQueueEvent } from './session-checkout-operation-queue.ts'
 
 export interface SessionCheckoutSessionRecord {
   id: string
@@ -298,6 +299,8 @@ export interface SessionCheckoutTimingEvent {
 }
 
 export interface SessionCheckoutDependencies {
+  /** 仅记录有界操作身份与耗时，不携带路径、对话或原始异常。 */
+  onQueueEvent?: (event: SessionCheckoutQueueEvent) => void | Promise<void>
   lookup: SessionCheckoutLookupPort
   git: SessionCheckoutGitPort
   files: SessionCheckoutFilesPort

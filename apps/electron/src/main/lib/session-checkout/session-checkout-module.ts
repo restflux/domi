@@ -23,6 +23,7 @@ import type {
   WorktreeCheckpointView,
 } from '@domi/shared'
 import { SessionCheckoutError } from './index.ts'
+import { SessionCheckoutOperationQueue, SESSION_CHECKOUT_QUEUE_WAIT_MS, waitForSessionCheckoutSignal } from './session-checkout-operation-queue.ts'
 import { collectSessionProjectArtifactPaths } from '../session-project-artifacts.ts'
 import { createManagedWorktreePathCandidates } from './managed-worktree-path.ts'
 import type {
@@ -134,33 +135,6 @@ function createStableDeliveredHandoffSnapshot(input: {
   }
 }
 
-/**
- * 单个 checkout 清理/维护操作的启动收敛超时。
- * Windows 上 Worktree 被外部进程（如残留 Agent 运行）占用时，git/fs 操作可能无限期挂起；
- * 启动收敛必须在有限时间内继续，不能因为一个损坏记录卡住整个应用启动。
- */
-const CHECKOUT_CLEANUP_TIMEOUT_MS = 30_000
-
-async function withCleanupTimeout<T>(
-  checkoutId: string,
-  operation: () => Promise<T>,
-): Promise<T | null> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      operation(),
-      new Promise<null>((resolve) => {
-        timeoutHandle = setTimeout(() => {
-          console.warn(`[session-checkout] ${checkoutId.slice(0, 8)} 清理超时（${CHECKOUT_CLEANUP_TIMEOUT_MS}ms），已跳过本次收敛`)  
-          resolve(null)
-        }, CHECKOUT_CLEANUP_TIMEOUT_MS)
-      }),
-    ])
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle)
-  }
-}
-
 function cleanupReasonForMessage(message: string): WorktreeCleanupReason {
   if (message.includes('协作会话')) return 'collaborator_active'
   if (message.includes('提交后出现了新修改')) return 'modified_after_finalize'
@@ -226,6 +200,7 @@ function resolvedPathsEqual(left: string, right: string): boolean {
 
 export function createSessionCheckoutModule(
   dependencies: SessionCheckoutDependencies,
+  options: { queueWaitTimeoutMs?: number } = {},
 ): SessionCheckoutModule {
   function emitTiming(event: Parameters<NonNullable<SessionCheckoutDependencies['onTimingEvent']>>[0]): void {
     if (!dependencies.onTimingEvent) return
@@ -1012,6 +987,7 @@ export function createSessionCheckoutModule(
   }
 
   interface BindingLockOptions {
+    operation: string
     allowConcurrentInspect?: boolean
     sessionIds?: readonly string[]
     targetKeys?: readonly string[]
@@ -1024,17 +1000,22 @@ export function createSessionCheckoutModule(
     finish(): void
   }
 
-  let bindingQueue: Promise<void> = Promise.resolve()
+  const queueWaitTimeoutMs = options.queueWaitTimeoutMs ?? SESSION_CHECKOUT_QUEUE_WAIT_MS
+  const bindingQueue = new SessionCheckoutOperationQueue({
+    waitTimeoutMs: queueWaitTimeoutMs,
+    onEvent: dependencies.onQueueEvent,
+  })
   let activeBindingOperation: BindingOperationMode | null = null
   let activeBindingOperationScope: BindingOperationScope | null = null
-  let activeBindingOperationDone: Promise<void> = Promise.resolve()
   let pendingMaintenanceOperations = 0
-  let maintenanceReady: Promise<void> | undefined
-  let signalMaintenanceReady = (): void => undefined
+  let signalBindingStateChanged = (): void => undefined
+  let bindingStateChanged = new Promise<void>((resolveChanged) => { signalBindingStateChanged = resolveChanged })
   const activeConcurrentInspects = new Set<ConcurrentInspect>()
 
-  function prepareMaintenanceReadySignal(): void {
-    maintenanceReady = new Promise<void>((resolveReady) => { signalMaintenanceReady = resolveReady })
+  function notifyBindingStateChanged(): void {
+    const notify = signalBindingStateChanged
+    bindingStateChanged = new Promise<void>((resolveChanged) => { signalBindingStateChanged = resolveChanged })
+    notify()
   }
 
   function targetKeyForBinding(binding: SessionBindingRecord | undefined): string | undefined {
@@ -1105,39 +1086,33 @@ export function createSessionCheckoutModule(
 
   async function withBindingLock<T>(
     operation: () => Promise<T>,
-    options: BindingLockOptions = {},
+    lockOptions: BindingLockOptions,
   ): Promise<T> {
-    const maintenance = options.allowConcurrentInspect === true
-    if (maintenance) {
-      pendingMaintenanceOperations += 1
-      if (pendingMaintenanceOperations === 1) prepareMaintenanceReadySignal()
-    }
-
-    const previous = bindingQueue
-    let release = (): void => undefined
-    bindingQueue = new Promise<void>((resolveLock) => { release = resolveLock })
-    await previous.catch(() => undefined)
-
-    let signalOperationDone = (): void => undefined
-    activeBindingOperationDone = new Promise<void>((resolveDone) => { signalOperationDone = resolveDone })
-    activeBindingOperationScope = createBindingOperationScope(options)
-    activeBindingOperation = maintenance ? 'maintenance' : 'exclusive'
-    if (maintenance) signalMaintenanceReady()
-    // 先公布即将执行的作用域，阻止新的冲突 inspect；只等待此前已启动且真正冲突的读取。
-    await waitForConflictingInspects(activeBindingOperationScope)
-
+    const maintenance = lockOptions.allowConcurrentInspect === true
+    if (maintenance) pendingMaintenanceOperations += 1
     try {
-      return await operation()
+      return await bindingQueue.run(lockOptions.operation, lockOptions.sessionIds?.[0], async () => {
+        try {
+          // 初始化、冲突读取等待和实际操作共享异常安全边界；失败不能毒化全局队列。
+          activeBindingOperationScope = createBindingOperationScope(lockOptions)
+          activeBindingOperation = maintenance ? 'maintenance' : 'exclusive'
+          notifyBindingStateChanged()
+          // 尚未开始写入时可放弃等待；底层只读任务无需取消，后续写入仍会重新检查冲突。
+          await waitForSessionCheckoutSignal(waitForConflictingInspects(activeBindingOperationScope), queueWaitTimeoutMs)
+          return await operation()
+        } finally {
+          // 只有真正执行的事务能释放 active 状态，排队超时的请求无权动它。
+          activeBindingOperationScope = null
+          activeBindingOperation = null
+          notifyBindingStateChanged()
+        }
+      })
     } finally {
       if (maintenance) {
         pendingMaintenanceOperations -= 1
-        if (pendingMaintenanceOperations > 0) prepareMaintenanceReadySignal()
-        else maintenanceReady = undefined
+        // 排队超时也必须唤醒读取者，不能留下永远等不到启动的 maintenance 信号。
+        notifyBindingStateChanged()
       }
-      activeBindingOperationScope = null
-      activeBindingOperation = null
-      signalOperationDone()
-      release()
     }
   }
 
@@ -1158,23 +1133,19 @@ export function createSessionCheckoutModule(
   }
 
   async function inspectAvailable(sessionId: string): Promise<SessionTargetView> {
+    const deadline = Date.now() + queueWaitTimeoutMs
     while (true) {
       if (activeBindingOperation === 'maintenance') return inspectConcurrently(sessionId)
       if (
         activeBindingOperation === 'exclusive'
         && !inspectConflictsWithActiveOperation(sessionId)
       ) return inspectConcurrently(sessionId)
-      if (activeBindingOperation !== null) {
-        const operationDone = activeBindingOperationDone
-        await operationDone.catch(() => undefined)
+      if (activeBindingOperation !== null || pendingMaintenanceOperations > 0) {
+        // 只终止当前只读等待，不释放底层事务；同一次检查的预算不随状态变化重新计时。
+        await waitForSessionCheckoutSignal(bindingStateChanged, deadline - Date.now())
         continue
       }
-      if (pendingMaintenanceOperations > 0 && maintenanceReady) {
-        // maintenance 可能排在当前交互操作之后；等它取得锁并公布并发读取边界。
-        await maintenanceReady
-        continue
-      }
-      return withBindingLock(() => inspectTarget(sessionId, true), { sessionIds: [sessionId] })
+      return withBindingLock(() => inspectTarget(sessionId, true), { operation: 'inspect', sessionIds: [sessionId] })
     }
   }
 
@@ -3955,22 +3926,30 @@ export function createSessionCheckoutModule(
     return validated.canonicalManagedRoot
   }
 
-  async function cleanupExpiredRetained(now = Date.now()): Promise<string[]> {
-    const expired = Object.values(dependencies.registry.read().managedCheckouts).filter((record) => (
-      record.phase === 'retained'
+  function isExpiredRetained(record: ManagedCheckoutRecord, now: number): boolean {
+    return record.phase === 'retained'
       && record.delivery.state === 'retained'
       && record.delivery.cleanup === 'scheduled'
       && record.delivery.expiresAt !== null
       && record.delivery.expiresAt <= now
-    ))
+  }
+
+  async function cleanupExpiredRetained(now = Date.now()): Promise<string[]> {
+    const expired = Object.values(dependencies.registry.read().managedCheckouts)
+      .filter((record) => isExpiredRetained(record, now))
     const cleaned: string[] = []
     for (const record of expired) {
       try {
-        // 到期保留清理同样受收敛超时保护，避免单个占用记录卡住后续启动。
-        const result = await withCleanupTimeout(record.checkoutId, () => cleanupFinalized(record))
-        if (result?.cleaned) cleaned.push(record.checkoutId)
+        // 按单个 checkout 取得队列位置，让用户请求能在两项后台维护之间执行。
+        const didClean = await withBindingLock(async () => {
+          const current = dependencies.registry.read().managedCheckouts[record.checkoutId]
+          if (!current || !isExpiredRetained(current, now)) return false
+          // race 超时不会取消底层删除，必须等清理真正结束后才能交出事务位置。
+          return (await cleanupFinalized(current)).cleaned
+        }, { operation: 'cleanupExpiredRetained', allowConcurrentInspect: true, targetKeys: [`isolated:${record.checkoutId}`] })
+        if (didClean) cleaned.push(record.checkoutId)
       } catch (error) {
-        console.warn(`[session-checkout] expired retained Worktree cleanup skipped: ${error instanceof Error ? error.message : String(error)}`)
+        console.warn(`[session-checkout] 到期保留清理未完成: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     return cleaned
@@ -4344,76 +4323,73 @@ export function createSessionCheckoutModule(
     readSessionChangedFiles,
     preflight: (sessionId, expectedRevision) => withBindingLock(
       () => preflightTarget(sessionId, expectedRevision),
-      { sessionIds: [sessionId] },
+      { operation: 'preflight', sessionIds: [sessionId] },
     ),
     runExclusiveSessionMutation: (sessionId, operation) => withBindingLock(async () => (
       operation(await inspectTarget(sessionId, true))
-    ), { sessionIds: [sessionId] }),
+    ), { operation: 'runExclusiveSessionMutation', sessionIds: [sessionId] }),
     bind: (sessionId, choice) => {
       const requestStartedAt = Date.now()
       return withBindingLock(
         () => bindTarget(sessionId, choice, undefined, 0, requestStartedAt),
-        { sessionIds: choice.kind === 'inherit' ? [sessionId, choice.parentSessionId] : [sessionId] },
+        { operation: 'bind', sessionIds: choice.kind === 'inherit' ? [sessionId, choice.parentSessionId] : [sessionId] },
       )
     },
     cloneIsolatedTarget: (sourceSessionId, childSessionId, expectedSourceRevision) => withBindingLock(
       () => cloneIsolatedTarget(sourceSessionId, childSessionId, expectedSourceRevision),
-      { sessionIds: [sourceSessionId, childSessionId] },
+      { operation: 'cloneIsolatedTarget', sessionIds: [sourceSessionId, childSessionId] },
     ),
     bindVerifiedIsolated: (sessionId, proof) => {
       const requestStartedAt = Date.now()
       return withBindingLock(
         () => bindTarget(sessionId, { kind: 'isolated' }, proof, 0, requestStartedAt),
-        { sessionIds: [sessionId] },
+        { operation: 'bindVerifiedIsolated', sessionIds: [sessionId] },
       )
     },
     beginNextIteration: (sessionId) => {
       const requestStartedAt = Date.now()
       return withBindingLock(
         () => bindTarget(sessionId, { kind: 'isolated' }, undefined, 0, requestStartedAt),
-        { sessionIds: [sessionId] },
+        { operation: 'beginNextIteration', sessionIds: [sessionId] },
       )
     },
     captureSessionHandoff: (sessionId, expectedRevision) => withBindingLock(
       () => captureSessionHandoff(sessionId, expectedRevision),
-      { sessionIds: [sessionId] },
+      { operation: 'captureSessionHandoff', sessionIds: [sessionId] },
     ),
     captureRecoveryHandoff: (sessionId, expectedRevision) => withBindingLock(
       () => captureRecoveryHandoff(sessionId, expectedRevision),
-      { sessionIds: [sessionId] },
+      { operation: 'captureRecoveryHandoff', sessionIds: [sessionId] },
     ),
     markReadyForReview: (sessionId, input) => withBindingLock(
       () => markReadyForReviewTarget(sessionId, input),
-      { sessionIds: [sessionId] },
+      { operation: 'markReadyForReview', sessionIds: [sessionId] },
     ),
     operate: (input) => withBindingLock(
       () => operateTarget(input),
-      { sessionIds: [input.sessionId] },
+      { operation: 'operate', sessionIds: [input.sessionId] },
     ),
     // 只读管理列表不占用全局 mutation lock；慢速目录诊断与用户操作互不阻塞。
     listManagedWorktrees,
     inspectManagedWorktreeCleanup,
-    bulkCleanupManagedWorktrees: (candidates) => withBindingLock(() => bulkCleanupManagedWorktrees(candidates)),
+    bulkCleanupManagedWorktrees: (candidates) => withBindingLock(() => bulkCleanupManagedWorktrees(candidates), { operation: 'bulkCleanupManagedWorktrees' }),
     manageManagedWorktree: (input) => withBindingLock(
       () => manageManagedWorktree(input),
-      { targetKeys: [`isolated:${input.checkoutId}`] },
+      { operation: 'manageManagedWorktree', targetKeys: [`isolated:${input.checkoutId}`] },
     ),
     resolveManagedRootForReveal: (checkoutId) => withBindingLock(
       () => resolveManagedRootForReveal(checkoutId),
-      { targetKeys: [`isolated:${checkoutId}`] },
+      { operation: 'resolveManagedRootForReveal', targetKeys: [`isolated:${checkoutId}`] },
     ),
-    cleanupExpiredRetained: (now) => withBindingLock(
-      () => cleanupExpiredRetained(now),
-      { allowConcurrentInspect: true },
-    ),
+    cleanupExpiredRetained,
     assertReleaseSession: (sessionId, intent) => withBindingLock(async () => {
       await assertReleaseSession(sessionId, intent)
-    }, { sessionIds: [sessionId] }),
+    }, { operation: 'assertReleaseSession', sessionIds: [sessionId] }),
     releaseSession: (sessionId, intent) => withBindingLock(
       () => releaseSession(sessionId, intent),
-      { sessionIds: [sessionId] },
+      { operation: 'releaseSession', sessionIds: [sessionId] },
     ),
-    reconcile: () => withBindingLock(reconcile, { allowConcurrentInspect: true }),
+    reconcile: () => withBindingLock(reconcile, { operation: 'reconcile', allowConcurrentInspect: true }),
     lease: async (sessionId): Promise<CheckoutLease> => {
       const session = requireSession(sessionId)
       if (session.delegationCheckoutReleasedAt !== undefined) {

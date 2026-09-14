@@ -44,6 +44,7 @@ interface TestContext {
   restart(): SessionCheckoutModule
   pauseNextGitInspect(expectedPath?: string): ManagedInspectPause
   failNextGitInspect(expectedPath?: string): void
+  failNextRegistryRead(): void
   pauseNextDirectoryMeasure(): DirectoryMeasurePause
   getRemoveWorktreeCallCount(): number
   getCreateWorktreeCallCount(): number
@@ -115,6 +116,7 @@ function getRepositoryTemplate(projectSubdirectory?: string): string {
 }
 
 function createContext(options: {
+  queueWaitTimeoutMs?: number
   projectSubdirectory?: string
   applyEngine?: SessionCheckoutApplyEngine
   crashAfterWorktreeCreate?: boolean
@@ -178,6 +180,15 @@ function createContext(options: {
       getUnboundTargetPolicy: () => 'unselected',
     },
   })
+  const readRegistry = dependencies.registry.read.bind(dependencies.registry)
+  let failRegistryRead = false
+  dependencies.registry.read = () => {
+    if (failRegistryRead) {
+      failRegistryRead = false
+      throw new Error('模拟 registry 暂时不可读')
+    }
+    return readRegistry()
+  }
   const inspectGit = dependencies.git.inspect
   let nextInspectPause: {
     expectedPath?: string
@@ -275,12 +286,13 @@ function createContext(options: {
     configDir,
     projectRoot,
     repositoryRoot,
-    module: createSessionCheckoutModule(dependencies),
+    module: createSessionCheckoutModule(dependencies, { queueWaitTimeoutMs: options.queueWaitTimeoutMs }),
     restart: () => createSessionCheckoutModule(createNodeSessionCheckoutDependencies({
       configDir,
       lookup: dependencies.lookup,
       onTimingEvent: recordTiming,
     })),
+    failNextRegistryRead: () => { failRegistryRead = true },
     pauseNextGitInspect: (expectedPath) => {
       let signalStarted = (): void => undefined
       let resume = (): void => undefined
@@ -350,6 +362,20 @@ function createContext(options: {
 
 // 每个用例拥有独立目录与模块实例；项目测试命令用 --max-concurrency=4 限制 Windows Git 压力。
 describe.concurrent('SessionCheckoutModule', () => {
+  test('Given 锁初始化读取失败 When 后续会话绑定 Then 无需重启即可恢复队列', async () => {
+    const context = createContext()
+    context.failNextRegistryRead()
+    await expect(context.module.bind('session-1', { kind: 'local' })).rejects.toThrow('模拟 registry 暂时不可读')
+
+    const next = context.module.bind('session-1', { kind: 'local' })
+    const result = await Promise.race([
+      next.then(() => 'completed'),
+      Bun.sleep(2_000).then(() => 'blocked'),
+    ])
+    expect(result).toBe('completed')
+    expect((await next).checkout.kind).toBe('local')
+  })
+
   test('Given a host rewind owns the exclusive session mutation lock When bind starts Then checkout mutation waits until rewind releases', async () => {
     const context = createContext()
     await context.module.bind('session-1', { kind: 'local' })
@@ -375,6 +401,34 @@ describe.concurrent('SessionCheckoutModule', () => {
     release()
     expect(await exclusive).toBe('local')
     expect((await bind).checkout.kind).toBe('local')
+  })
+
+  test('Given 同目标事务仍在运行 When inspect 和排队维护等待超时 Then 可重试且不能提前释放事务', async () => {
+    const context = createContext({ queueWaitTimeoutMs: 50 })
+    await context.module.bind('session-1', { kind: 'local' })
+    let release = (): void => undefined
+    let signalStarted = (): void => undefined
+    const started = new Promise<void>((resolve) => { signalStarted = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const mutation = context.module.runExclusiveSessionMutation('session-1', async () => {
+      signalStarted()
+      await gate
+      throw new Error('模拟运行中的操作失败')
+    })
+    const mutationOutcome = mutation.catch((error: unknown) => error)
+    await started
+    try {
+      await Promise.all([
+        expect(context.module.inspect('session-1')).rejects.toThrow('等待超时'),
+        expect(context.module.reconcile()).rejects.toThrow('等待超时'),
+      ])
+      // 超时没有清掉仍在执行的 active 作用域；重试仍必须等待同一事务。
+      await expect(context.module.inspect('session-1')).rejects.toThrow('等待超时')
+    } finally {
+      release()
+      await mutationOutcome
+    }
+    expect((await context.module.inspect('session-1')).checkout.kind).toBe('local')
   })
 
   test('Given one session owns a long target mutation When another independent session inspects Then it does not wait for the global queue', async () => {
@@ -3849,6 +3903,66 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(winner).toBe('resolved')
     expect(inspected.checkout.kind).toBe('local')
   }, 60_000)
+
+  test('Given 多项到期维护 When 用户更改下一项目的保留策略 Then 两项之间让出队列并重读策略', async () => {
+    const context = createContext()
+    context.addSession('session-2', 'project-1', '第二个保留环境')
+    const retained: Array<{ id: string; revision: number; cwd: string; expiresAt: number }> = []
+    for (const sessionId of ['session-1', 'session-2']) {
+      await context.module.bind(sessionId, { kind: 'isolated' })
+      const lease = await context.module.lease(sessionId)
+      writeFileSync(join(lease.cwd, 'tracked.txt'), `retained ${sessionId}\n`)
+      const target = await context.module.inspect(sessionId)
+      const result = await context.module.operate({
+        action: 'finish', sessionId, expectedRevision: target.revision,
+        commitMessage: 'fix: maintenance interleaving fixture', retention: 'retain_24h',
+      })
+      if (result.status !== 'finished' || result.target.delivery?.state !== 'retained' || result.target.delivery.expiresAt === null) throw new Error('预期定时保留')
+      retained.push({ id: result.target.checkout.id, revision: result.target.revision, cwd: lease.cwd, expiresAt: result.target.delivery.expiresAt })
+    }
+    const [first, second] = retained
+    if (!first || !second) throw new Error('缺少测试 checkout')
+    const pause = context.pauseNextGitInspect(first.cwd)
+    const cleanup = context.module.cleanupExpiredRetained(Math.max(first.expiresAt, second.expiresAt) + 1)
+    await pause.started
+    const changed = context.module.manageManagedWorktree({
+      checkoutId: second.id, expectedRevision: second.revision, action: 'set_retention', retention: 'retain_manual',
+    })
+    pause.resume()
+    const [cleaned, manual] = await Promise.all([cleanup, changed])
+    expect(manual.retention).toBe('retain_manual')
+    expect(cleaned).toEqual([first.id])
+    expect(existsSync(second.cwd)).toBe(true)
+  }, 90_000)
+
+  test('Given 到期清理超过旧30秒超时 When 后续修改排队 Then 删除完成前不得释放事务', async () => {
+    const context = createContext({ queueWaitTimeoutMs: 50 })
+    await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'cleanup ownership regression\n')
+    const target = await context.module.inspect('session-1')
+    const retained = await context.module.operate({
+      action: 'finish', sessionId: 'session-1', expectedRevision: target.revision,
+      commitMessage: 'fix: cleanup ownership fixture', retention: 'retain_24h',
+    })
+    if (retained.status !== 'finished' || retained.target.delivery?.state !== 'retained') throw new Error('预期 retained')
+    const pause = context.pauseNextGitInspect(lease.cwd)
+    let cleanupCompleted = false
+    const cleanup = context.module.cleanupExpiredRetained(retained.target.delivery.retainedAt + 25 * 60 * 60 * 1000)
+      .then((result) => { cleanupCompleted = true; return result })
+    await pause.started
+    try {
+      // 真实超过旧 Promise.race 的30秒门槛，证明“调用返回”不会先于底层删除完成。
+      await Bun.sleep(30_100)
+      expect(cleanupCompleted).toBe(false)
+      await expect(context.module.runExclusiveSessionMutation('session-1', async () => '修改保留策略'))
+        .rejects.toThrow('等待超时')
+    } finally {
+      pause.resume()
+      await cleanup
+    }
+    expect((await context.module.inspect('session-1')).checkout.phase).toBe('discarded')
+  }, 90_000)
 
   test('Given maintenance is queued behind an inspect When another session opens Then it waits for maintenance to start and bypasses it', async () => {
     const context = createContext()

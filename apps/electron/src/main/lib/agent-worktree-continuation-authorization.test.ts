@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { SDKMessage, SessionTargetView } from '@domi/shared'
+import { waitForSessionCheckoutSignal } from './session-checkout/session-checkout-operation-queue.ts'
 import { AgentWorktreeContinuationAuthorizationRegistry, assertWorktreeContinuationRunEnvelope, buildWorktreeIterationContinuationMessage, confirmAgentWorktreeIterationContinuation, matchesWorktreeContinuationTarget, resolveWorktreeContinuationRunWorkflow } from './agent-worktree-continuation-authorization.ts'
 
 const sourceTarget: SessionTargetView = {
@@ -358,6 +359,33 @@ describe('Worktree continuation authorization', () => {
         createToken: () => 'token-invalid',
       }),
     ).rejects.toMatchObject({ code: 'operation_not_allowed' })
+  })
+
+  test('Given 续轮确认等待目标超时 When 用户重试 Then 释放确认标记且旧请求不迟到创建', async () => {
+    const registry = new AgentWorktreeContinuationAuthorizationRegistry()
+    let release = (): void => undefined
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    let createCount = 0
+    const dependencies = {
+      getMessages: () => [requestMessage()],
+      assertIdle: async () => undefined,
+      inspectTarget: async () => {
+        await waitForSessionCheckoutSignal(blocked, 10)
+        return sourceTarget
+      },
+      beginNextIteration: async () => { createCount += 1; return continuationTarget },
+      createToken: () => 'retry-token',
+    }
+    await expect(confirmAgentWorktreeIterationContinuation('session-1', 'request-1', registry, dependencies))
+      .rejects.toThrow('等待超时')
+    expect(registry.isConfirmationInProgress('session-1')).toBe(false)
+    release()
+    await Promise.resolve()
+    expect(createCount).toBe(0)
+    const retried = await confirmAgentWorktreeIterationContinuation('session-1', 'request-1', registry, dependencies)
+    expect(retried.authorizationToken).toBe('retry-token')
+    expect(createCount).toBe(1)
+    expect(registry.isConfirmationInProgress('session-1')).toBe(false)
   })
 
   test('普通活动横跨确认流程时拒绝签发，旧 token 也不能污染后续 run', async () => {

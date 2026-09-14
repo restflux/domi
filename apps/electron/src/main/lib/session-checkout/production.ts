@@ -68,6 +68,14 @@ export function createProductionSessionCheckoutModule(): SessionCheckoutModule {
       },
     },
   })
+  dependencies.onQueueEvent = async (event) => {
+    await timingWriter.record({
+      category: 'session_checkout_queue',
+      action: event.phase,
+      timestamp: event.timestamp,
+      data: { ...event },
+    })
+  }
   return createSessionCheckoutModule(dependencies)
 }
 
