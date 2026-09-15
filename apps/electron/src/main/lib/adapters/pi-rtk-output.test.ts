@@ -2,6 +2,8 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { createBashToolDefinition, type ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { initializeShellAnalysis } from '../execution-policy/shell-analysis.ts'
 import { createRtkBashToolDefinition, type PiRtkOutputOptions } from './pi-rtk-output.ts'
+import { createRtkService, RTK_SUPPORTED_VERSION } from '../rtk/rtk-service.ts'
+import { bunSuccess } from '../rtk/bun-output.fixture.ts'
 import { installPiFinalToolGuard, type PiFinalToolGuardSession } from './pi-final-tool-guard.ts'
 
 beforeAll(initializeShellAnalysis)
@@ -50,7 +52,7 @@ describe('Pi RTK 最终结果', () => {
       if (mode === 'off') fixture.options.isEnabled = () => false
       if (mode === 'research') fixture.options.getWorkflow = () => 'read-only'
       if (mode === 'wsl') fixture.options.supportedShell = false
-      await fixture.execute(mode === 'unknown' ? 'bun test' : 'git status')
+      await fixture.execute(mode === 'unknown' ? 'bun run build' : 'git status')
       expect(fixture.commands).toHaveLength(1)
       expect(fixture.filters()).toBe(0)
       expect(fixture.saved).toEqual([])
@@ -85,4 +87,42 @@ describe('Pi RTK 最终结果', () => {
     expect(fixture.commands).toEqual([])
     expect(fixture.filters()).toBe(0)
   })
+  test('Given 成功 Bun 输出 When 通过真实 SDK wrapper 和 service Then 原命令一次且统计增加', async () => {
+    const output = bunSuccess.replace('(pass) API > returns a value', '(pass) API > ' + 'a'.repeat(400))
+    const fixture = setup(0, output)
+    const service = createRtkService({
+      findExecutable: async () => '/trusted/rtk',
+      run: async (_exe, args, input) => args[0] === '--version' ? `rtk ${RTK_SUPPORTED_VERSION}` : input ?? '',
+    })
+    fixture.options.dependencies.filter = service.filter
+    fixture.options.dependencies.record = service.record
+    fixture.options.dependencies.skip = service.skip
+    const result = await fixture.execute('bun test ./src/example.test.ts')
+    expect(fixture.commands).toHaveLength(1)
+    expect(fixture.saved).toEqual([output])
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('warning: fixture warning must remain') })
+    expect(service.getStatus().optimizedCalls).toBe(1)
+  })
+  test('Given 未支持、失败和关闭 When 执行 Then 原始语义不变且原因只记一次', async () => {
+    for (const [command, code, reason] of [['bun run build', 0, 'unsupported'], ['bun test', 1, 'failed']] as const) {
+      const fixture = setup(code)
+      const reasons: string[] = []
+      fixture.options.dependencies.skip = reason => { reasons.push(reason) }
+      if (code) await expect(fixture.execute(command)).rejects.toThrow('Command exited with code 1')
+      else await fixture.execute(command)
+      expect(reasons).toEqual([reason])
+      expect(fixture.commands).toHaveLength(1)
+      fixture.options.isEnabled = () => false
+      await fixture.execute(command).catch(() => {})
+      expect(reasons).toHaveLength(1)
+    }
+  })
+
+  test('Given 统计回调异常 When 原命令失败 Then 不替换原错误', async () => {
+    const fixture = setup(2)
+    fixture.options.dependencies.skip = () => { throw new Error('metrics failed') }
+    await expect(fixture.execute('bun test')).rejects.toThrow('Command exited with code 2')
+    expect(fixture.commands).toHaveLength(1)
+  })
+
 })

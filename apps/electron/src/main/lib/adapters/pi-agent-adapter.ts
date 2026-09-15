@@ -1991,7 +1991,9 @@ function buildBuiltinToolDefinitions(
           if (!canOptimize() || !saveOriginal) throw new Error('RTK 已停用')
           return saveOriginal(text)
         },
+        originalPathHint: resolve(rtkSessionDirectory, 'rtk-output', '00000000-0000-0000-0000-000000000000.txt'),
         record: rtkService.record,
+        skip: rtkService.skip,
       },
     }) : createBash(),
     sdk.createEditToolDefinition(cwd),

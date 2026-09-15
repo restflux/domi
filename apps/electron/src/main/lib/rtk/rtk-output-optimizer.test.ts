@@ -56,4 +56,20 @@ describe('RTK 原始输出与回退', () => {
     expect(filters).toBe(0)
     expect(saved).toEqual([])
   })
+  test('Given 小于 1KB 且实际可节省 When 优化 Then 不再受固定门槛排除', async () => {
+    const { dependencies, counted } = setup()
+    const result = await optimizeRtkOutput('git-log', 'x'.repeat(240), dependencies)
+    expect(result).toBeDefined()
+    expect(counted).toHaveLength(1)
+  })
+  test('Given 长原文路径抵消收益 When 优化 Then 保存前按实际引用预算回退', async () => {
+    const { dependencies, saved } = setup()
+    const reasons: string[] = []
+    dependencies.originalPathHint = '/session/' + '路径'.repeat(120) + '/raw.txt'
+    dependencies.skip = reason => { reasons.push(reason) }
+    expect(await optimizeRtkOutput('git-log', 'x'.repeat(500), dependencies)).toBeUndefined()
+    expect(saved).toEqual([])
+    expect(reasons).toEqual(['no-gain'])
+  })
+
 })

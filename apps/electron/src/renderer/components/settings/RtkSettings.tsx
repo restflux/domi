@@ -1,3 +1,4 @@
+import type { RtkSkipReason } from '@domi/shared'
 import { useEffect } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { loadRtkSettingsAtom, rtkSettingsAtom, setRtkEnabledAtom } from '@/atoms/rtk-atoms'
@@ -10,6 +11,11 @@ const availabilityLabels = {
   unsupported: '当前平台暂不支持内置 RTK，命令将返回原始输出。',
   incompatible: '内置 RTK 版本不兼容，请重新安装 Domi。',
   error: '内置 RTK 暂不可用，命令将返回原始输出。',
+}
+
+const skipLabels: Record<RtkSkipReason, string> = {
+  unsupported: '命令未支持', 'no-gain': '无净收益', failed: '命令失败',
+  ineligible: '取消或不适用', 'output-limit': '输出超限或已截断', unavailable: '组件或原文保存不可用',
 }
 
 export function RtkSettings(): React.ReactElement {
@@ -34,10 +40,17 @@ export function RtkSettings(): React.ReactElement {
           <p className="text-muted-foreground" role="status">
             {availabilityLabels[status.availability]}{status.version ? ` · ${status.version}` : ''}
           </p>
-          <p className="text-xs text-muted-foreground">支持部分 Git 状态/日志及类型检查、测试命令；不优化 bun test、任意脚本或已截断输出。</p>
+          <p className="text-xs text-muted-foreground">支持部分 Git 状态/日志、类型检查和测试命令。Bun 测试保留汇总及其他输出，仅省略通过明细；typecheck 脚本仅省略已知命令回显。任意构建脚本和失败输出保持原样。</p>
           <p className="text-xs text-muted-foreground">
             本次应用运行：已优化 {status.optimizedCalls} 次 · 估算减少 {Math.ceil(savedBytes / 4).toLocaleString()} tokens · 输出减少 {percent.toFixed(1)}%
           </p>
+          <p className="text-xs text-muted-foreground">
+            未优化：{(Object.entries(skipLabels) as Array<[RtkSkipReason, string]>).map(([reason, label]) =>
+              `${label} ${status.skippedCalls?.[reason] ?? 0} 次`).join(' · ')}
+          </p>
+          {status.optimizedCalls === 0 && !Object.values(status.skippedCalls ?? {}).some(Boolean) && (
+            <p className="text-xs text-muted-foreground">尚未记录到启用期间的执行模式 Bash 结果。</p>
+          )}
           <p className="text-xs text-muted-foreground">统计含原文引用开销，不代表会话总用量或实际费用；重新打开此页面时刷新。</p>
           {state.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}
         </div>

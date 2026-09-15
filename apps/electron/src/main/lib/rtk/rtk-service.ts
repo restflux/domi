@@ -1,4 +1,5 @@
-import type { RtkStatus } from "@domi/shared"
+import { compactBunTestOutput, compactTypecheckOutput } from './rtk-bun-output.ts'
+import type { RtkStatus, RtkSkipReason } from "@domi/shared"
 import type { RtkFilter } from "./rtk-command-filter.ts"
 import { runRtkProcess, type RtkCanRun } from "./rtk-process.ts"
 import { findRtkExecutable, isRtkPlatformSupported, RTK_SUPPORTED_VERSION } from "./rtk-bundled.ts"
@@ -17,7 +18,7 @@ export function createRtkService(dependencies: RtkServiceDependencies) {
   let status: RtkStatus = { availability: 'not-checked', optimizedCalls: 0, originalBytes: 0, returnedBytes: 0 }
   let checking: Promise<RtkStatus> | undefined
   let generation = 0
-  const getStatus = (): RtkStatus => ({ ...status })
+  const getStatus = (): RtkStatus => ({ ...status, skippedCalls: { ...status.skippedCalls } })
   async function detect(canRun: RtkCanRun, signal?: AbortSignal): Promise<Detection | undefined> {
     const active = (): boolean => !signal?.aborted && canRun()
     try {
@@ -63,6 +64,8 @@ export function createRtkService(dependencies: RtkServiceDependencies) {
         publish(detected)
       }
       if (!active() || !executable || status.availability !== 'available') return
+      if (name === 'bun-test') return compactBunTestOutput(text) ?? text
+      if (name === 'typecheck-script') return compactTypecheckOutput(text) ?? text
       const result = await dependencies.run(executable, ['pipe', '--filter', name], text, signal, active)
       return active() ? result : undefined
     } catch { return undefined }
@@ -72,9 +75,13 @@ export function createRtkService(dependencies: RtkServiceDependencies) {
     status.originalBytes += originalBytes
     status.returnedBytes += returnedBytes
   }
+  function skip(reason: RtkSkipReason): void {
+    status.skippedCalls ??= {}
+    status.skippedCalls[reason] = (status.skippedCalls[reason] ?? 0) + 1
+  }
   // 打开设置即检查内置组件，已可用时仅返回统计，不再要求用户点击检测。
   const inspect = (): Promise<RtkStatus> => checking ?? (status.availability === 'available' ? Promise.resolve(getStatus()) : recheck())
-  return { getStatus, inspect, recheck, filter, record }
+  return { getStatus, inspect, recheck, filter, record, skip }
 }
 
 export const rtkService = createRtkService({ findExecutable: findRtkExecutable, isSupported: isRtkPlatformSupported, run: runRtkProcess })

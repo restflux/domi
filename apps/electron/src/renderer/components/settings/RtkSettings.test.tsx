@@ -42,4 +42,22 @@ describe('RTK 设置', () => {
     expect(html).toContain('不代表会话总用量或实际费用')
     expect(html).toContain('data-state="checked"')
   })
+  test('Given 零次优化 When 重新加载设置 Then 显示最新未优化原因', async () => {
+    let current: RtkStatus = { ...status, optimizedCalls: 0, skippedCalls: {} }
+    globalThis.window = { electronAPI: {
+      getSettings: async () => ({ agentRtkEnabled: true }),
+      getRtkStatus: async () => current,
+    } } as unknown as Window & typeof globalThis
+    const store = createStore()
+    await store.set(loadRtkSettingsAtom)
+    const render = () => renderToStaticMarkup(<Provider store={store}><RtkSettings /></Provider>)
+    expect(render()).toContain('尚未记录到启用期间')
+    current = { ...current, skippedCalls: { unsupported: 3, 'no-gain': 2, failed: 1 } }
+    await store.set(loadRtkSettingsAtom)
+    expect(render()).toContain('命令未支持 3 次')
+    expect(render()).toContain('无净收益 2 次')
+    expect(render()).toContain('命令失败 1 次')
+    expect(render()).not.toContain('尚未记录到启用期间')
+  })
+
 })

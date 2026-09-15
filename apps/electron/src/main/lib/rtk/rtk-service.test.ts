@@ -106,4 +106,12 @@ describe('RTK 宿主服务', () => {
     expect(env.RTK_TELEMETRY_DISABLED).toBe('1')
     expect(env.SystemRoot).toBe('C:\\Windows')
   })
+  test('Given 返回统计快照 When 调用方修改副本 Then 不影响宿主计数和重新检测', async () => {
+    const service = createRtkService({ findExecutable: async () => undefined, run: async () => '' })
+    service.skip('unsupported')
+    const snapshot = service.getStatus()
+    snapshot.skippedCalls!.unsupported = 99
+    expect((await service.inspect()).skippedCalls).toEqual({ unsupported: 1 })
+  })
+
 })

@@ -112,12 +112,13 @@ Domi 提供两种工作方式。两者都使用当前系统用户的权限，并
 
 在「设置 → 通用 → 命令输出优化」中开启内置 [RTK](https://github.com/rtk-ai/rtk)。此功能默认关闭，随 Domi 提供固定版本 **0.48.0**，无需额外安装或配置 PATH。Domi 自动检查内置组件，不使用系统中另行安装的 RTK、不注入 Shell hook，也不修改用户的 RTK 配置。
 
-- 原始命令仍由 Pi 和 Domi 权限门禁执行一次，RTK 只通过 `pipe --filter` 处理成功返回的文本，不重写或重跑命令。
-- 首版适配部分单条 `git status` / `git log`、`tsc --noEmit` / `bun x tsc --noEmit`、`vitest run` / `bun x vitest run`；是否实际优化取决于输出是否有净节省。Git 短格式、空的类型检查输出通常没有收益。
-- 研究/Plan 模式、WSL、失败/取消/超时、复杂命令、机器可读输出、`git diff`、`bun test`、任意 `bun run` 和已截断结果保持原样；用户终端及 Agent 长任务终端不受影响。
-- 仅处理 1–48 KiB 的完整文本，原文保存在会话工作台 `rtk-output/`，优化结果附带 Read 引用。原文随工作台保留，每会话最多 256 份，达到上限后恢复原输出，不自动删除历史证据。过滤或存储失败也直接返回原输出。
+- 原始命令仍由 Pi 和 Domi 权限门禁执行一次，RTK 通过固定 `pipe --filter` 处理已适配的成功文本，Bun 文本由 Domi 的有限格式适配器精简，不重写或重跑命令。
+- 适配部分单条 `git status` / `git log`、`tsc --noEmit` / `bun x tsc --noEmit`、`vitest run` / `bun x vitest run`，以及 `bun test [文件...]`、`bun run typecheck`（支持显式 `--cwd`）；是否实际优化取决于含原文引用的输出是否有净节省。Git 短格式、空的类型检查输出通常没有收益。
+- 研究/Plan 模式、WSL、失败/取消/超时、复杂命令、机器可读输出、`git diff`、未适配的 `bun run`（包括构建脚本） 和已截断结果保持原样；用户终端及 Agent 长任务终端不受影响。
+- 仅处理不超过 48 KiB 的完整文本，不设最小 1 KiB 门槛，按实际原文路径计算引用开销，原文保存在会话工作台 `rtk-output/`，优化结果附带 Read 引用。原文随工作台保留，每会话最多 256 份，达到上限后恢复原输出，不自动删除历史证据。过滤或存储失败也直接返回原输出。
 - 过滤进程禁用遥测，在独立临时目录和最小环境中运行，不继承 Provider 凭据或用户/项目的 RTK 配置；这不是 OS 沙箱。
-- 统计仅覆盖本次应用运行中的 Domi 优化结果，计入原文引用开销；tokens 按字节数近似估算，不代表整场会话用量或实际账单。
+- Bun 没有 RTK 0.48.0 原生 pipe filter：Domi 仅在完整成功报告的 pass 条数与汇总一致时省略逐条通过明细，保留文件名、汇总、skip、警告及其他文本，不冒用 Vitest 或通用 log filter。`typecheck` 脚本仅省略已知 `$ tsc --noEmit` 回显，不解释或执行 package.json 脚本；未知输出不猜测。
+- 统计仅覆盖本次应用运行中开关启用期间的执行模式 Bash 结果，区分已优化、命令未支持、无净收益、命令失败、取消或不适用、输出超限/截断、组件或原文保存不可用；重新打开设置时刷新，重启应用清零。计入原文引用开销；tokens 按字节数近似估算，不代表整场会话用量或实际账单。
 - 源码开发与构建通过 `bun run --cwd apps/electron prepare:rtk` 准备当前平台资源；常规开发/构建入口自动执行，直接 electron-builder 打包也会按目标架构准备。首次构建需要访问官方 GitHub Release，之后复用经摘要校验的缓存；用户运行应用时不联网下载 RTK。版本、官方归档 SHA-256 和二进制 SHA-256 固定在 `apps/electron/rtk-manifest.json`，资源进入 `resources/rtk/`，许可证随包提供。当前内置支持范围是 Windows/Linux x64；macOS 及其他架构暂不启用 RTK，仍可沿用既有源码构建和原始命令输出，不扩展平台发布范围。
 
 ### 隔离修改，不打扰本地代码

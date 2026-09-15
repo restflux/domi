@@ -9,6 +9,9 @@ describe('RTK 格式选择', () => {
     for (const [command, filter] of [
       ['git status', 'git-status'], ['git status --short', 'git-status'],
       ['git log -5', 'git-log'], ['git log --oneline -10', 'git-log'],
+      ['bun test ./src/a.test.ts', 'bun-test'], ['bun test', 'bun-test'],
+      ['bun --cwd apps/electron test ./src/a.test.ts', 'bun-test'],
+      ['bun run typecheck', 'typecheck-script'], ['bun run --cwd packages/shared typecheck', 'typecheck-script'],
       ['tsc --noEmit', 'tsc'], ['bun x tsc --noEmit', 'tsc'], ['vitest run', 'vitest'],
     ] as const) expect(selectRtkFilter(analyzeShellCommand(command))).toBe(filter)
   })
@@ -20,7 +23,7 @@ describe('RTK 格式选择', () => {
       'git log --stat', 'git log --patch', 'git log --oneline HEAD..main',
       'git -C /repo status', 'env X=1 git status', 'X=1 git status', 'echo $(git status)',
       'bash -c "git status"', 'git status "$FLAGS"', 'git status *',
-      'bun test', 'bun run typecheck', 'bun x vitest run --reporter=json',
+      'bun test --reporter=junit', 'bun test --watch', 'bun run build', 'bun run unknown', 'bun x vitest run --reporter=json',
       'vitest run --outputFile=x', 'tsc --listFiles', 'echo git status', '/tmp/git status',
     ]) expect(selectRtkFilter(analyzeShellCommand(command))).toBeUndefined()
   })
