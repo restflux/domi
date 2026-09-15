@@ -29,10 +29,10 @@ function shellQuote(value: string): string {
 }
 
 describe('production Session Checkout Git adapter', () => {
-  test('Given a dependency-heavy managed Worktree When selecting Git timeout Then removal receives the bounded long timeout only', () => {
+  test('Given 大仓库 When 选择 Git 预算 Then 创建和删除允许五分钟且普通命令允许两分钟', () => {
     expect(getSessionCheckoutGitTimeoutMs(['worktree', 'remove', '--force', 'D:/managed'])).toBe(5 * 60_000)
-    expect(getSessionCheckoutGitTimeoutMs(['worktree', 'add', '--detach', 'D:/managed', 'HEAD'])).toBe(10_000)
-    expect(getSessionCheckoutGitTimeoutMs(['status', '--porcelain'])).toBe(10_000)
+    expect(getSessionCheckoutGitTimeoutMs(['worktree', 'add', '--detach', 'D:/managed', 'HEAD'])).toBe(300_000)
+    expect(getSessionCheckoutGitTimeoutMs(['status', '--porcelain'])).toBe(120_000)
   })
 
   test('Given a v2 registry contains optional Worktree checkpoints When reloaded Then old records remain compatible and checkpoint metadata is preserved', () => {

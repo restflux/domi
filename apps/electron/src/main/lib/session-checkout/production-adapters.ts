@@ -1,3 +1,4 @@
+import { GitCommandInterruptedError, gitLongPathArgs, gitTimeoutMs, requestGitTermination } from './git-execution-policy.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync } from 'node:fs'
 import { lstat, readdir, realpath, rename, rm } from 'node:fs/promises'
@@ -20,6 +21,8 @@ import type {
 interface NodeSessionCheckoutOptions {
   configDir: string
   lookup: SessionCheckoutLookupPort
+  /** 宿主内部覆盖，仅用于受控运行和测试，不读取仓库配置。 */
+  worktreeCreateTimeoutMs?: number
   onTimingEvent?: (event: SessionCheckoutTimingEvent) => void | Promise<void>
 }
 
@@ -27,25 +30,16 @@ interface GitCommandResult {
   code: number
   stdout: string
   stderr: string
+  interrupted?: GitCommandInterruptedError
 }
 
 interface GitCommandOptions {
   hooksPath: string
+  worktreeCreateTimeoutMs?: number
 }
 
-/**
- * Git 子进程超时。普通命令保持 10 秒；删除含大型私有依赖的 managed Worktree
- * 使用单独的 5 分钟硬上限，避免 Windows 正常清理被误杀，同时仍防止无限挂起。
- */
-const GIT_COMMAND_TIMEOUT_MS = 10_000
-const WORKTREE_REMOVE_TIMEOUT_MS = 5 * 60_000
-
-/** Windows 删除约 1GB / 6 万文件的私有依赖树时，10 秒不足以完成正常 Worktree 清理。 */
-export function getSessionCheckoutGitTimeoutMs(args: readonly string[]): number {
-  return args[0] === 'worktree' && args[1] === 'remove'
-    ? WORKTREE_REMOVE_TIMEOUT_MS
-    : GIT_COMMAND_TIMEOUT_MS
-}
+/** 创建和删除使用长操作预算，普通 Git 使用独立预算。 */
+export const getSessionCheckoutGitTimeoutMs = gitTimeoutMs
 
 async function measureDirectoryBytes(path: string): Promise<number> {
   if (!existsSync(path)) return 0
@@ -120,12 +114,16 @@ async function removeDirectoryTree(path: string): Promise<void> {
 }
 
 function runGit(cwd: string, args: string[], options: GitCommandOptions): Promise<GitCommandResult> {
-  const timeoutMs = getSessionCheckoutGitTimeoutMs(args)
+  const timeoutMs = args[0] === 'worktree' && args[1] === 'add'
+    ? options.worktreeCreateTimeoutMs ?? getSessionCheckoutGitTimeoutMs(args)
+    : getSessionCheckoutGitTimeoutMs(args)
   return new Promise((resolveCommand) => {
     let settled = false
+    let interrupted: GitCommandInterruptedError | undefined
     let child: ChildProcessByStdio<null, Readable, Readable>
     try {
       child = spawn('git', [
+        ...gitLongPathArgs(),
         '--no-pager',
         '--no-optional-locks',
         '-c',
@@ -146,6 +144,7 @@ function runGit(cwd: string, args: string[], options: GitCommandOptions): Promis
           LANG: 'C',
         },
         windowsHide: true,
+        detached: process.platform !== 'win32',
       })
     } catch (error) {
       // 同步 spawn 失败（如 git 不在 PATH）：按命令失败返回，不抛异常。
@@ -165,19 +164,20 @@ function runGit(cwd: string, args: string[], options: GitCommandOptions): Promis
     child.stdout.on('data', (chunk: string) => { stdout += chunk })
     child.stderr.on('data', (chunk: string) => { stderr += chunk })
     child.once('error', (error) => {
-      finish({ code: -1, stdout, stderr: error.message })
+      if (!interrupted) finish({ code: -1, stdout, stderr: error.message })
     })
     child.once('close', (code) => {
-      finish({ code: code ?? -1, stdout: stdout.trim(), stderr: stderr.trim() })
+      if (!interrupted) finish({ code: code ?? -1, stdout: stdout.trim(), stderr: stderr.trim() })
     })
-    // 超时保护：git 卡死（如 Worktree 被占用）时强杀进程并以失败返回，避免会话检查永久挂起。
+    // 超时永远不作为自动清理残留的依据。
     const timeout = setTimeout(() => {
-      try {
-        child.kill('SIGKILL')
-      } catch {
-        // 进程可能已退出，忽略
-      }
-      finish({ code: -1, stdout, stderr: `git ${args.join(' ')} 超时（${timeoutMs}ms），已终止` })
+      interrupted = new GitCommandInterruptedError(args.slice(0, 2).join(' '), timeoutMs)
+      void requestGitTermination(child).finally(() => {
+        child.stdout.destroy()
+        child.stderr.destroy()
+        child.unref()
+        finish({ code: -1, stdout, stderr: interrupted?.message ?? 'Git 创建超时', interrupted })
+      })
     }, timeoutMs)
     timeout.unref?.()
   })
@@ -185,6 +185,7 @@ function runGit(cwd: string, args: string[], options: GitCommandOptions): Promis
 
 async function runGitChecked(cwd: string, args: string[], options: GitCommandOptions): Promise<string> {
   const result = await runGit(cwd, args, options)
+  if (result.interrupted) throw result.interrupted
   if (result.code !== 0) {
     throw new SessionCheckoutError(
       'git_operation_failed',
@@ -385,6 +386,7 @@ function isJournal(value: unknown): boolean {
     || typeof value.startedAt !== 'number'
   ) return false
   if (value.operation === 'create') return value.step === 'creating_worktree'
+    && (value.failureMessage === undefined || typeof value.failureMessage === 'string')
   const validOperation = value.operation === 'apply'
     || value.operation === 'preview'
     || value.operation === 'checkpoint'
@@ -539,7 +541,11 @@ export function createNodeSessionCheckoutDependencies(
   const managedCheckoutsRoot = join(options.configDir, 'worktrees')
   const disabledGitHooksRoot = join(options.configDir, 'disabled-git-hooks', randomUUID())
   mkdirSync(disabledGitHooksRoot, { recursive: true })
-  const gitOptions: GitCommandOptions = { hooksPath: disabledGitHooksRoot }
+  if (options.worktreeCreateTimeoutMs !== undefined
+    && (!Number.isSafeInteger(options.worktreeCreateTimeoutMs) || options.worktreeCreateTimeoutMs <= 0)) {
+    throw new Error('Worktree 创建预算必须是正整数毫秒')
+  }
+  const gitOptions: GitCommandOptions = { hooksPath: disabledGitHooksRoot, worktreeCreateTimeoutMs: options.worktreeCreateTimeoutMs }
   const runSessionGit = (cwd: string, args: string[]) => runGit(cwd, args, gitOptions)
   const runSessionGitChecked = (cwd: string, args: string[]) => runGitChecked(cwd, args, gitOptions)
 
@@ -564,6 +570,7 @@ export function createNodeSessionCheckoutDependencies(
       inspect: async (root): Promise<GitCheckoutSnapshot | null> => {
         if (!existsSync(root)) return null
         const topLevel = await runSessionGit(root, ['rev-parse', '--show-toplevel'])
+        if (topLevel.interrupted) throw topLevel.interrupted
         if (topLevel.code !== 0 || !topLevel.stdout) return null
         const commonDir = await runSessionGitChecked(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
         const gitDir = await runSessionGitChecked(root, ['rev-parse', '--path-format=absolute', '--absolute-git-dir'])
@@ -583,6 +590,7 @@ export function createNodeSessionCheckoutDependencies(
       findContainingWorktreeRoot: async (root) => {
         if (!existsSync(root)) return null
         const topLevel = await runSessionGit(root, ['rev-parse', '--show-toplevel'])
+        if (topLevel.interrupted) throw topLevel.interrupted
         if (topLevel.code !== 0 || !topLevel.stdout) return null
         return realpath(resolve(topLevel.stdout))
       },

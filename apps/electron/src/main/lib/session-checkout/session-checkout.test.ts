@@ -1,3 +1,4 @@
+import { GitCommandInterruptedError } from './git-execution-policy.ts'
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -121,6 +122,7 @@ function createContext(options: {
   applyEngine?: SessionCheckoutApplyEngine
   crashAfterWorktreeCreate?: boolean
   createWorktreeFailures?: number
+  createWorktreeInterrupted?: boolean
   createWorktreeFailureLeavesFile?: boolean
   removeWorktreeFailures?: number
   transientRemoveWorktreeFailures?: number
@@ -273,6 +275,7 @@ function createContext(options: {
       if (options.createWorktreeFailureLeavesFile) {
         writeFileSync(join(managedRoot, 'web', 'unknown.txt'), '保留\n')
       }
+      if (options.createWorktreeInterrupted) throw new GitCommandInterruptedError('worktree add', 300_000)
       throw new Error('模拟 worktree add 留下半成品目录')
     }
     await createDetachedWorktree(localRoot, managedRoot, baseOid)
@@ -654,9 +657,11 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(context.timingEvents).toEqual([])
   })
 
-  test('Given worktree add 留下空目录残余 When 创建 Isolated Then 自动清理并用新的唯一路径重试', async () => {
+  test('Given worktree add 留下空目录残余 When 创建失败后手动重试 Then 清理空目录且使用新的唯一路径', async () => {
     const context = createContext({ createWorktreeFailures: 1 })
 
+    await expect(context.module.bind('session-1', { kind: 'isolated' })).rejects.toMatchObject({ code: 'git_operation_failed' })
+    expect(context.getCreateWorktreeCallCount()).toBe(1)
     const target = await context.module.bind('session-1', { kind: 'isolated' })
     const lease = await context.module.lease('session-1')
 
@@ -666,11 +671,24 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(context.timingEvents.map(({ phase, outcome, attempt }) => [phase, outcome, attempt])).toEqual([
       ['worktree_create', 'error', 1],
       ['checkout_bind', 'error', 1],
-      ['worktree_create', 'success', 2],
-      ['checkout_bind', 'success', 2],
+      ['worktree_create', 'success', 1],
+      ['checkout_bind', 'success', 1],
     ])
     expect(basename(lease.cwd)).toContain('--i1--')
     expect(git(lease.cwd, 'rev-parse', '--is-inside-work-tree')).toBe('true')
+  })
+
+  test('Given 创建超时留下空目录 When 进程退出无法证明 Then 保留目录和诊断且不自动重试', async () => {
+    const context = createContext({ createWorktreeFailures: 1, createWorktreeInterrupted: true })
+    await expect(context.module.bind('session-1', { kind: 'isolated' })).rejects.toMatchObject({ code: 'recovery_required' })
+    expect(context.getCreateWorktreeCallCount()).toBe(1)
+    const registry = JSON.parse(readFileSync(join(context.configDir, 'managed-checkouts.json'), 'utf8')) as {
+      managedCheckouts: Record<string, { managedGitRoot: string; journal: { failureMessage?: string } }>
+    }
+    const record = Object.values(registry.managedCheckouts)[0]!
+    expect(existsSync(join(record.managedGitRoot, 'web'))).toBeTrue()
+    expect(record.journal.failureMessage).toContain('300000ms')
+    expect((await context.restart().inspect('session-1')).checkout.phase).toBe('recovery_required')
   })
 
   test('Given worktree add 残余包含未知文件 When 创建 Isolated Then fail closed 并保留恢复现场', async () => {

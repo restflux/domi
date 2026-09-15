@@ -1,3 +1,5 @@
+import { GIT_COMMAND_TIMEOUT_MS, GitCommandInterruptedError, gitLongPathArgs, requestGitTermination } from './git-execution-policy.ts'
+import { assertGitOperationActive, canCleanGitOperation, interruptGitOperation, withGitOperation } from './git-operation-lifetime.ts'
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
@@ -342,7 +344,7 @@ class GitCommandFailure extends Error {
   }
 }
 
-const GIT_TIMEOUT_MS = 30_000
+const GIT_TIMEOUT_MS = GIT_COMMAND_TIMEOUT_MS
 const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i
 
 async function runGit(
@@ -350,8 +352,10 @@ async function runGit(
   args: string[],
   options: { env?: NodeJS.ProcessEnv; input?: Buffer | string; allowedExitCodes?: number[] } = {},
 ): Promise<GitResult> {
+  assertGitOperationActive()
   return await new Promise<GitResult>((resolveResult, reject) => {
-    const child = spawn('git', ['-c', 'core.quotePath=false', ...args], {
+    const child = spawn('git', [...gitLongPathArgs(), '-c', 'core.quotePath=false', ...args], {
+      detached: process.platform !== 'win32',
       cwd,
       env: {
         ...process.env,
@@ -363,6 +367,7 @@ async function runGit(
     const stdoutChunks: Buffer[] = []
     const stderrChunks: Buffer[] = []
     let settled = false
+    let interrupted = false
 
     const finish = (error: Error | null, result?: GitResult): void => {
       if (settled) return
@@ -376,6 +381,7 @@ async function runGit(
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
     child.on('error', (error) => finish(error))
     child.on('close', (exitCode) => {
+      if (interrupted) return
       const result: GitResult = {
         exitCode: exitCode ?? -1,
         stdout: Buffer.concat(stdoutChunks),
@@ -386,8 +392,16 @@ async function runGit(
     })
 
     const timeout = setTimeout(() => {
-      child.kill('SIGTERM')
-      finish(new Error(`git 命令超时：${args[0] ?? 'unknown'}`))
+      interrupted = true
+      const error = new GitCommandInterruptedError(args[0] ?? 'unknown', GIT_TIMEOUT_MS)
+      interruptGitOperation(error)
+      void requestGitTermination(child).finally(() => {
+        child.stdin.destroy()
+        child.stdout.destroy()
+        child.stderr.destroy()
+        child.unref()
+        finish(error)
+      })
     }, GIT_TIMEOUT_MS)
 
     if (options.input !== undefined) child.stdin.end(options.input)
@@ -968,7 +982,7 @@ async function checkpointLockMarkerOwned(markerPath: string, commitOid: string):
 }
 
 async function removeBestEffort(path: string | null): Promise<void> {
-  if (!path) return
+  if (!path || !canCleanGitOperation()) return
   try {
     await unlink(path)
   } catch {
@@ -1010,7 +1024,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
     } catch (error) {
       return { status: 'error', error: { code: 'git_error', message: this.errorMessage(error) } }
     } finally {
-      if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+      if (tempRoot) await this.cleanup(tempRoot)
     }
   }
 
@@ -1063,7 +1077,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
     } catch (error) {
       return { status: 'error', error: { code: 'git_error', message: this.errorMessage(error) } }
     } finally {
-      if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+      if (tempRoot) await this.cleanup(tempRoot)
     }
   }
 
@@ -2316,6 +2330,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
   }
 
   private async cleanup(path: string): Promise<void> {
+    if (!canCleanGitOperation()) return
     try {
       await rm(path, { recursive: true, force: true, maxRetries: 2 })
     } catch (error) {
@@ -2328,5 +2343,23 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
 export function createSessionCheckoutApplyEngine(
   options: SessionCheckoutApplyEngineOptions = {},
 ): SessionCheckoutApplyEngine {
-  return new DefaultSessionCheckoutApplyEngine(options)
+  const engine = new DefaultSessionCheckoutApplyEngine(options)
+  const scoped = <Args extends unknown[], Result>(operation: (...args: Args) => Promise<Result>) =>
+    (...args: Args): Promise<Result> => withGitOperation(() => operation(...args))
+  // 不确定中断不能被内部 catch 降为普通可重试错误；抛出后保留 Main mutation journal。
+  return {
+    inspectReview: scoped(engine.inspectReview.bind(engine)),
+    captureHandoffSnapshot: scoped(engine.captureHandoffSnapshot.bind(engine)),
+    restoreHandoffSnapshot: scoped(engine.restoreHandoffSnapshot.bind(engine)),
+    checkpoint: scoped(engine.checkpoint.bind(engine)),
+    recoverCheckpoint: scoped(engine.recoverCheckpoint.bind(engine)),
+    preflight: scoped(engine.preflight.bind(engine)),
+    plan: scoped(engine.plan.bind(engine)),
+    apply: scoped(engine.apply.bind(engine)),
+    finish: scoped(engine.finish.bind(engine)),
+    preview: scoped(engine.preview.bind(engine)),
+    inspectPreview: scoped(engine.inspectPreview.bind(engine)),
+    rollback: scoped(engine.rollback.bind(engine)),
+    finalize: scoped(engine.finalize.bind(engine)),
+  }
 }

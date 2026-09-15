@@ -41,7 +41,7 @@ export class SessionCheckoutIpcTimeoutError extends Error {}
 
 /**
  * IPC 超时保护：主进程 git/fs 操作被占用（如残留 Agent 进程锁住 Worktree）时可能长时间不返回。
- * 超时按“处理中”处理：operate 会转入自动等待收敛；冷启动 inspect/bind 才展示错误，已有快照的后台 inspect 保留当前状态。
+ * 超时按“处理中”处理：operate 会转入自动等待收敛；冷启动 inspect 才展示错误；bind 等待宿主最终结果，已有快照的后台 inspect 保留当前状态。
  * Windows 上验收提交（plan + preview + finalize + cleanup）的正常耗时可达 20-40s，故不设 20s。
  */
 const SESSION_CHECKOUT_IPC_TIMEOUT_MS = 45_000
@@ -182,14 +182,22 @@ function preflightMatchesSnapshot(
   return preflightIdentityMatchesSnapshot(preflight, snapshot) && !acceptanceSlotReleased
 }
 
+const pendingBindAtomFamily = atomFamily((_sessionId: string) => atom<Promise<boolean> | null>(null))
+const bindGenerationAtomFamily = atomFamily((_sessionId: string) => atom(0))
+
 export const inspectSessionTargetAtomFamily = atomFamily((sessionId: string) => {
   const stateAtom = sessionTargetStateAtomFamily(sessionId)
-  return atom(null, async (_get, set, options: InspectSessionTargetOptions = {}): Promise<void> => {
+  return atom(null, async (get, set, options: InspectSessionTargetOptions = {}): Promise<void> => {
+    const pendingBindAtom = pendingBindAtomFamily(sessionId)
+    if (get(pendingBindAtom)) return
+    const generation = get(bindGenerationAtomFamily(sessionId))
+    const bindChanged = (): boolean => !!get(pendingBindAtom) || generation !== get(bindGenerationAtomFamily(sessionId))
     if (!options.silent) set(stateAtom, (state) => ({ ...state, loading: true, error: null }))
     let result: Awaited<ReturnType<typeof window.electronAPI.sessionCheckout.inspect>> | null = null
     try {
       result = await invokeWithTimeout(() => inspectSessionTarget(sessionId))
     } catch (error) {
+      if (bindChanged()) return
       set(stateAtom, (state) => {
         // 已有权威快照时，inspect 只是后台刷新。它可能排在 Session Checkout 的
         // 串行 mutation 后面，超时不等于当前 target 或用户操作失败；保留现状，
@@ -205,6 +213,7 @@ export const inspectSessionTargetAtomFamily = atomFamily((sessionId: string) => 
       })
       return
     }
+    if (bindChanged()) return
     if (result.ok) {
       set(stateAtom, (current) => {
         const keepPreflight = preflightMatchesSnapshot(current.preflight, current.snapshot, result.value)
@@ -340,33 +349,42 @@ export const confirmWorktreeIterationAtomFamily = atomFamily((sessionId: string)
 
 export const bindSessionTargetAtomFamily = atomFamily((sessionId: string) => {
   const stateAtom = sessionTargetStateAtomFamily(sessionId)
-  return atom(null, async (_get, set, kind: RendererSessionTargetChoice['kind']): Promise<boolean> => {
-    set(stateAtom, (state) => ({ ...state, loading: true, error: null }))
-    let result: Awaited<ReturnType<typeof window.electronAPI.sessionCheckout.bind>> | null = null
-    try {
-      result = await invokeWithTimeout(() => window.electronAPI.sessionCheckout.bind({ sessionId, choice: { kind } }))
-    } catch (error) {
-      set(stateAtom, {
-        ...EMPTY_STATE,
-        error: {
-          code: 'bind_failed',
-          message: error instanceof Error ? error.message : 'Session Target 绑定失败，请重试',
-        },
-      })
+  // 按 store/session 隔离；未完成时禁止切换目标或重复创建。
+  const pendingAtom = pendingBindAtomFamily(sessionId)
+  return atom(null, (get, set, kind: RendererSessionTargetChoice['kind']): Promise<boolean> => {
+    const pending = get(pendingAtom)
+    if (pending) return pending
+    set(bindGenerationAtomFamily(sessionId), (generation) => generation + 1)
+    const run = async (): Promise<boolean> => {
+      set(stateAtom, (state) => ({ ...state, loading: true, error: null }))
+      try {
+        // Renderer 等待超时不能取消 Main；必须消费宿主最终结果。
+        const result = await window.electronAPI.sessionCheckout.bind({ sessionId, choice: { kind } })
+        if (result.ok) {
+          set(stateAtom, {
+            snapshot: result.value,
+            selectionRequired: false,
+            loading: false,
+            pendingAction: null,
+            error: null,
+          })
+          return true
+        }
+        set(stateAtom, (state) => ({ ...state, loading: false, error: result.error }))
+      } catch (error) {
+        set(stateAtom, (state) => ({
+          ...state,
+          loading: false,
+          error: { code: 'bind_failed', message: error instanceof Error ? error.message : 'Session Target 绑定失败，请重试' },
+        }))
+      }
       return false
     }
-    if (result.ok) {
-      set(stateAtom, {
-        snapshot: result.value,
-        selectionRequired: false,
-        loading: false,
-        pendingAction: null,
-        error: null,
-      })
-      return true
-    }
-    set(stateAtom, (state) => ({ ...state, loading: false, error: result.error }))
-    return false
+    const request = run().finally(() => {
+      if (get(pendingAtom) === request) set(pendingAtom, null)
+    })
+    set(pendingAtom, request)
+    return request
   })
 })
 

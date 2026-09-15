@@ -1,3 +1,4 @@
+import { GitCommandInterruptedError } from './git-execution-policy.ts'
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -567,6 +568,8 @@ export function createSessionCheckoutModule(
     if (current.revision !== record.revision || current.phase !== record.phase) return current
     const recovered = {
       ...current,
+      ...(record.journal?.operation === 'create' && record.journal.failureMessage
+        ? { journal: { ...record.journal } } : {}),
       phase: 'recovery_required' as const,
       revision: current.revision + 1,
     }
@@ -4272,10 +4275,21 @@ export function createSessionCheckoutModule(
           timestamp: new Date(failedAt).toISOString(),
           durationMs: Math.max(0, failedAt - bindStartedAt),
         })
+        const failureMessage = error instanceof Error ? error.message : String(error)
+        if (record.journal?.operation === 'create') record.journal.failureMessage = failureMessage.slice(0, 4096)
+        // 超时不能证明后代进程已退出；禁止清理或自动重试。
+        if (error instanceof GitCommandInterruptedError) {
+          markRecoveryRequired(record)
+          throw new SessionCheckoutError('recovery_required', error.message)
+        }
         let partialCheckout: GitCheckoutSnapshot | null = null
         try {
           partialCheckout = await dependencies.git.inspect(managedRoot)
-        } catch {
+        } catch (inspectionError) {
+          if (inspectionError instanceof GitCommandInterruptedError) {
+            markRecoveryRequired(record)
+            throw new SessionCheckoutError('recovery_required', `${failureMessage}；${inspectionError.message}`)
+          }
           partialCheckout = null
         }
         if (partialCheckout) {
@@ -4293,7 +4307,7 @@ export function createSessionCheckoutModule(
           markRecoveryRequired(record)
           throw new SessionCheckoutError(
             'recovery_required',
-            'Worktree 创建失败且残余目录包含未知内容，已保留现场，请查看原因或改用新会话',
+            `Worktree 创建失败且残余目录包含未知内容，已保留现场：${failureMessage}`,
           )
         }
 
@@ -4310,10 +4324,7 @@ export function createSessionCheckoutModule(
         failedRegistry.revision += 1
         dependencies.registry.write(failedRegistry)
 
-        if (createAttempt < 1) {
-          return bindTarget(sessionId, choice, verifiedIsolatedProof, createAttempt + 1, requestStartedAt)
-        }
-        throw new SessionCheckoutError('git_operation_failed', 'Worktree 创建失败，已安全清理残余目录，可直接重试')
+        throw new SessionCheckoutError('git_operation_failed', `Worktree 创建失败，已安全清理残余目录，可直接重试：${failureMessage}`)
       }
   }
 

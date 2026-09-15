@@ -105,6 +105,8 @@ interface ManagedCheckoutJournalBase {
 export interface ManagedCheckoutCreateJournal extends ManagedCheckoutJournalBase {
   operation: 'create'
   step: 'creating_worktree'
+  /** 原始失败诊断；不授予任何残留清理权限。旧记录可缺失。 */
+  failureMessage?: string
 }
 
 export interface ManagedCheckoutMutationJournal extends ManagedCheckoutJournalBase {

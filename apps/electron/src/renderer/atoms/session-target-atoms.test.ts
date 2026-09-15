@@ -935,6 +935,43 @@ describe('session target atoms', () => {
     expect(store.get(sessionTargetStateAtomFamily('a')).error?.code).toBe('checkout_limit_reached')
   })
 
+  test('Given 创建超过 45 秒 When 重复绑定并收到晚到结果 Then 只创建一次且保持等待', async () => {
+    enableFakeTimers()
+    let calls = 0
+    let finish!: (value: { ok: true; value: SessionTargetView }) => void
+    installApi({
+      inspect: async () => ({ ok: true, value: view('unused') }),
+      bind: () => { calls += 1; return new Promise((resolve) => { finish = resolve }) },
+      operate: async () => ({ ok: true, value: { status: 'applied', target: view('unused'), changedFiles: [] } }),
+    })
+    const store = createStore()
+    const first = store.set(bindSessionTargetAtomFamily('slow-bind'), 'isolated')
+    await tickFakeTimers(46_000)
+    expect(store.get(sessionTargetStateAtomFamily('slow-bind')).loading).toBeTrue()
+    expect(store.get(sessionTargetStateAtomFamily('slow-bind')).error).toBeNull()
+    const second = store.set(bindSessionTargetAtomFamily('slow-bind'), 'isolated')
+    expect(calls).toBe(1)
+    finish({ ok: true, value: view('slow-created') })
+    expect(await first).toBeTrue()
+    expect(await second).toBeTrue()
+    expect(store.get(sessionTargetStateAtomFamily('slow-bind')).snapshot).toEqual(view('slow-created'))
+  })
+
+  test('Given bind 前的 inspect 晚到 When bind 已完成 Then 旧结果不能清空新目标', async () => {
+    let finishInspect!: (value: { ok: false; error: { code: 'target_unselected'; message: string } }) => void
+    installApi({
+      inspect: () => new Promise((resolve) => { finishInspect = resolve }),
+      bind: async () => ({ ok: true, value: view('new-bound') }),
+      operate: async () => ({ ok: true, value: { status: 'applied', target: view('unused'), changedFiles: [] } }),
+    })
+    const store = createStore()
+    const inspecting = store.set(inspectSessionTargetAtomFamily('late-inspect'))
+    await store.set(bindSessionTargetAtomFamily('late-inspect'), 'isolated')
+    finishInspect({ ok: false, error: { code: 'target_unselected', message: '旧状态' } })
+    await inspecting
+    expect(store.get(sessionTargetStateAtomFamily('late-inspect')).snapshot).toEqual(view('new-bound'))
+  })
+
   test('Given bind 成功 When 调用方等待结果 Then 返回 true 且 target 就绪', async () => {
     const bound = view('bound-a')
     installApi({
