@@ -905,11 +905,6 @@ export class AgentOrchestrator {
    * 通过 EventBus 分发 AgentEvent，通过 callbacks 发送控制信号。
    */
   async sendMessage(input: AgentSendInput, callbacks: SessionCallbacks): Promise<void> {
-    const explicitImageRequest = Boolean(input.imageGeneration)
-    // 在所有异步准备之前固定选择；宿主续跑事务不继承用户生图默认。
-    if (!input.worktreeContinuationAuthorizationToken) {
-      input = { ...input, imageGeneration: resolveRequestImageGeneration(input.imageGeneration) }
-    }
     const { sessionId, userMessage, rawUserMessage, userMessageUuid, nextTurnAsides, channelId, modelId, workspaceId: requestedWorkspaceId, additionalDirectories, customTools, executionPolicyOverride, workflowOverride, permissionModeOverride, mentionedSkills, mentionedMcpServers, mentionedSessionIds, mentionedTodoIds, mentionedCalendarEventIds, automationContext, retryOfErrorUuid, worktreeContinuationAuthorizationToken } = input
     const normalizedNextTurnAsides = normalizeAgentNextTurnAsides(nextTurnAsides)
     const stderrChunks: string[] = []
@@ -928,6 +923,15 @@ export class AgentOrchestrator {
       callbacks.onError('侧聊只能由所属主会话的侧聊入口发送消息。')
       callbacks.onComplete({ startedAt: streamStartedAt })
       return
+    }
+    // 侧聊许可绑定原始请求对象，必须在任何配置正规化／复制之前消费。
+    // 看图输入仍走附件 + Read；侧聊不继承或接受生图配置。
+    const explicitImageRequest = !sideChatParentSessionId && Boolean(input.imageGeneration)
+    if (sideChatParentSessionId) {
+      input = { ...input, imageGeneration: undefined }
+    } else if (!worktreeContinuationAuthorizationToken) {
+      // 在异步准备前固定普通 Work 的选择；宿主续跑不继承用户生图默认。
+      input = { ...input, imageGeneration: resolveRequestImageGeneration(input.imageGeneration) }
     }
     let trustedWorktreeContinuation: TrustedWorktreeContinuationAuthorization | undefined
     let prevalidatedWorktreeContinuationTarget: Awaited<ReturnType<typeof resolveProductionAgentSessionTarget>> | undefined
@@ -1665,7 +1669,7 @@ export class AgentOrchestrator {
         console.log(`[Agent 编排] 注入 referenced_planning: ${mentionedTodoIds?.length ?? 0} todos, ${mentionedCalendarEventIds?.length ?? 0} calendar events`)
       }
 
-      const detectedImageRequest = parseAgentImageRequest(userMessage)
+      const detectedImageRequest = parseAgentImageRequest(sideChatParentSessionId ? '' : userMessage)
       const imageCommand = detectedImageRequest.matched || !explicitImageRequest
         ? detectedImageRequest
         : parseAgentImageRequest(`/image ${userMessage}`)
