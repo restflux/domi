@@ -353,7 +353,7 @@ export function registerSessionCheckoutIpc(
   assertIdle?: (sessionId: string) => Promise<void>,
   revealManagedRoot?: (root: string) => Promise<void> | void,
   prepareManagedDiscard?: (ownerSessionId: string) => Promise<void>,
-  getActiveManagedSessions?: (ownerSessionId: string) => Promise<string[]>,
+  getActiveSessionsByCheckout?: () => Map<string, string[]>,
   prepareRecoveryHandoff?: (input: WorktreeRecoveryHandoffInput) => Promise<WorktreeRecoveryHandoffResult>,
   prepareSessionHandoff?: (input: AgentSessionHandoffInput) => Promise<AgentSessionHandoffResult>,
   exportHandoffPrompt?: (input: ExportAgentSessionHandoffPromptInput) => Promise<ExportAgentSessionHandoffPromptResult>,
@@ -440,11 +440,11 @@ export function registerSessionCheckoutIpc(
       const items = parsed.includeDiagnostics === true && module.inspectManagedWorktreeCleanup
         ? await module.inspectManagedWorktreeCleanup(parsed)
         : await module.listManagedWorktrees!(parsed)
-      if (!getActiveManagedSessions) return items
-      return Promise.all(items.map(async (item) => ({
-        ...item,
-        activeSessionIds: await getActiveManagedSessions(item.ownerSessionId),
-      })))
+      if (!getActiveSessionsByCheckout) return items
+      // 每个 request 只构建一次「checkoutId → 活跃会话」索引；
+      // 此前逐条目解析 owner 目标（每次 inspect 含多次 Git 子进程）是列表首屏的主要耗时。
+      const activeByCheckout = getActiveSessionsByCheckout()
+      return items.map((item) => ({ ...item, activeSessionIds: activeByCheckout.get(item.checkoutId) ?? [] }))
     })
   })
 

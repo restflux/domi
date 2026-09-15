@@ -187,6 +187,11 @@ export interface SessionCheckoutModule {
   markReadyForReview(sessionId: string, input: MarkReadyForReviewInput): Promise<SessionTargetView>
   operate(input: SessionCheckoutOperation): Promise<SessionCheckoutOperationResult>
   listManagedWorktrees(input?: ListManagedWorktreesInput): Promise<ManagedWorktreeSummaryView[]>
+  /**
+   * 只读枚举仍指向 Isolated Checkout 的会话绑定；供主进程一次构建 checkoutId → 活跃会话
+   * 的占用索引（registry 直读，不执行 Git/fs 校验，也不进入 mutation 队列）。
+   */
+  listSessionTargetBindings(): Array<{ sessionId: string; checkoutId: string }>
   /** main-owned 只读清理巡检；不写 registry、Git refs 或目录。 */
   inspectManagedWorktreeCleanup(input?: ListManagedWorktreesInput): Promise<ManagedWorktreeSummaryView[]>
   bulkCleanupManagedWorktrees(candidates: BulkCleanupManagedWorktreeCandidate[]): Promise<BulkCleanupManagedWorktreesResult>

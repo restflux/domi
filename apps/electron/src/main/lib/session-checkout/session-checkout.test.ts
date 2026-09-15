@@ -50,6 +50,7 @@ interface TestContext {
   getRemoveWorktreeCallCount(): number
   getCreateWorktreeCallCount(): number
   getMeasureDirectoryCallCount(): number
+  getInspectReviewCallCount(): number
   timingEvents: SessionCheckoutTimingEvent[]
   setSessionProject(sessionId: string, projectId: string): void
   setProjectRoot(projectId: string, root: string): void
@@ -248,6 +249,12 @@ function createContext(options: {
     await removeDirectoryTree(...args)
   }
   if (options.applyEngine) dependencies.applyEngine = options.applyEngine
+  const inspectReview = dependencies.applyEngine.inspectReview.bind(dependencies.applyEngine)
+  let inspectReviewCallCount = 0
+  dependencies.applyEngine.inspectReview = async (...args) => {
+    inspectReviewCallCount += 1
+    return inspectReview(...args)
+  }
   const measureDirectoryBytes = dependencies.files.measureDirectoryBytes
   let measureDirectoryCallCount = 0
   let nextDirectoryMeasurePause: {
@@ -289,12 +296,21 @@ function createContext(options: {
     configDir,
     projectRoot,
     repositoryRoot,
+    getInspectReviewCallCount: () => inspectReviewCallCount,
     module: createSessionCheckoutModule(dependencies, { queueWaitTimeoutMs: options.queueWaitTimeoutMs }),
-    restart: () => createSessionCheckoutModule(createNodeSessionCheckoutDependencies({
-      configDir,
-      lookup: dependencies.lookup,
-      onTimingEvent: recordTiming,
-    })),
+    restart: () => {
+      const restartedDependencies = createNodeSessionCheckoutDependencies({
+        configDir,
+        lookup: dependencies.lookup,
+        onTimingEvent: recordTiming,
+      })
+      const restartedInspectReview = restartedDependencies.applyEngine.inspectReview.bind(restartedDependencies.applyEngine)
+      restartedDependencies.applyEngine.inspectReview = async (...args) => {
+        inspectReviewCallCount += 1
+        return restartedInspectReview(...args)
+      }
+      return createSessionCheckoutModule(restartedDependencies)
+    },
     failNextRegistryRead: () => { failRegistryRead = true },
     pauseNextGitInspect: (expectedPath) => {
       let signalStarted = (): void => undefined
@@ -3091,6 +3107,40 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(existsSync(firstLease.cwd)).toBe(false)
     expect((await context.module.inspect('session-1')).checkout.id).toBe(second.checkout.id)
   }, 120_000)
+
+  test('Given a finalized worktree When management runs cleanup diagnostics Then shared read-only evidence is computed once per record', async () => {
+    const context = createContext({ removeWorktreeFailures: 1 })
+    const first = await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'dedup diagnostics\n')
+    const finished = await context.module.operate({
+      action: 'finish',
+      sessionId: 'session-1',
+      expectedRevision: first.revision,
+      commitMessage: 'fix: dedup diagnostics',
+    })
+    if (finished.status !== 'finished') throw new Error(`预期 finished，实际为 ${finished.status}`)
+    expect(finished.cleanup).toBe('pending')
+
+    const before = context.getInspectReviewCallCount()
+    const diagnosed = await context.module.inspectManagedWorktreeCleanup({ checkoutId: first.checkout.id })
+    expect(diagnosed).toHaveLength(1)
+    expect(diagnosed[0]).toMatchObject({
+      checkoutId: first.checkout.id,
+      state: 'cleanup_pending',
+    })
+    // summary 与 cleanup 巡检共享同一批证据：inspectReview（含两棵树完整快照扫描）只允许执行一次。
+    expect(context.getInspectReviewCallCount() - before).toBe(1)
+  }, 60_000)
+
+  test('Given mixed isolated and local bindings When listing session target bindings Then only isolated bindings are exposed registry-only', async () => {
+    const context = createContext({})
+    const isolated = await context.module.bind('session-1', { kind: 'isolated' })
+    await context.module.bind('child-session', { kind: 'local' })
+    expect(context.module.listSessionTargetBindings()).toEqual([
+      { sessionId: 'session-1', checkoutId: isolated.checkout.id },
+    ])
+  }, 60_000)
 
   test('Given Commit succeeds and Git removal leaves only an unregistered directory residue When the session continues Then cleanup damage does not disable the delivered conversation', async () => {
     const context = createContext({ removeWorktreeFailures: 1, removeWorktreeFailureLeavesResidue: true })

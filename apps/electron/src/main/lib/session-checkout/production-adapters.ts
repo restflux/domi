@@ -41,13 +41,45 @@ interface GitCommandOptions {
 /** 创建和删除使用长操作预算，普通 Git 使用独立预算。 */
 export const getSessionCheckoutGitTimeoutMs = gitTimeoutMs
 
+/** 目录大小测量的 IO 并发上限：逐项 await 的 lstat 在 Windows 大型 node_modules 上极慢。 */
+const DIRECTORY_MEASURE_CONCURRENCY = 16
+
+/** 有界并发门：限制同时进行的 fs 调用数，避免一次性打满线程池。 */
+class BoundedIoGate {
+  private active = 0
+  private readonly waiters: Array<() => void> = []
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>((resolve) => { this.waiters.push(resolve) })
+    }
+    this.active += 1
+    try {
+      return await task()
+    } finally {
+      this.active -= 1
+      this.waiters.shift()?.()
+    }
+  }
+}
+
 async function measureDirectoryBytes(path: string): Promise<number> {
   if (!existsSync(path)) return 0
-  const stat = await lstat(path)
-  if (stat.isSymbolicLink()) return 0
-  if (!stat.isDirectory()) return stat.size
   let total = 0
-  for (const entry of await readdir(path)) total += await measureDirectoryBytes(join(path, entry))
+  const gate = new BoundedIoGate(DIRECTORY_MEASURE_CONCURRENCY)
+  const walk = async (entry: string): Promise<void> => {
+    const stat = await gate.run(() => lstat(entry))
+    if (stat.isSymbolicLink()) return
+    if (!stat.isDirectory()) {
+      total += stat.size
+      return
+    }
+    const children = await gate.run(() => readdir(entry))
+    await Promise.all(children.map((child) => walk(join(entry, child))))
+  }
+  await walk(path)
   return total
 }
 

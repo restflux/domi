@@ -504,7 +504,7 @@ describe('Session Checkout IPC', () => {
       },
     }, undefined, undefined, undefined, async (ownerSessionId) => {
       calls.push(`prepare:${ownerSessionId}`)
-    }, async () => ['owner', 'child'])
+    }, () => new Map([['checkout-1', ['owner', 'child']]]))
 
     const listed = await handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.LIST_MANAGED)!({}, {})
     const discarded = await handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.MANAGE)!({}, {

@@ -1110,7 +1110,18 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
   }, (sessionId) => sessionCheckoutOperationGuard.assertIdle(sessionId), async (root) => {
     shell.showItemInFolder(root)
   }, (ownerSessionId) => sessionCheckoutOperationGuard.stopAndAssertIdle(ownerSessionId),
-  (ownerSessionId) => sessionCheckoutOperationGuard.getActiveSessionIds(ownerSessionId),
+  // Worktree 管理列表的占用索引：registry 直读 binding + 内存活跃判定，零 Git 开销；
+  // 与原逐条目 inspect(owner) 语义等价（discard 仅在 owner 仍绑定该 checkout 时开放）。
+  () => {
+    const activeByCheckout = new Map<string, string[]>()
+    for (const { sessionId, checkoutId } of sessionCheckout.listSessionTargetBindings()) {
+      if (!isAgentSessionActive(sessionId)) continue
+      const existing = activeByCheckout.get(checkoutId)
+      if (existing) existing.push(sessionId)
+      else activeByCheckout.set(checkoutId, [sessionId])
+    }
+    return activeByCheckout
+  },
   async (input) => {
     const prepared = await prepareAgentWorktreeRecoveryHandoff({
       originSessionId: input.sessionId,

@@ -58,6 +58,9 @@ interface ResolvedSessionProject {
   project: SessionCheckoutProjectRecord
 }
 
+/** applyEngine.inspectReview 的返回类型；供共享诊断 memo 使用。 */
+type ManagedReviewInspection = Awaited<ReturnType<SessionCheckoutDependencies['applyEngine']['inspectReview']>>
+
 const UNVERSIONED_OID = 'unversioned'
 const UNVERSIONED_REF = 'WORKING_TREE'
 const RETENTION_24H_MS = 24 * 60 * 60 * 1000
@@ -3644,9 +3647,35 @@ export function createSessionCheckoutModule(
     return record.delivery.deliveredAt
   }
 
+  /**
+   * 单次列表诊断内共享的只读证据。summary 与 cleanup 巡检此前会各自重复执行
+   * quarantine/residue/inspectReview（后者含两棵树的完整快照扫描），这里是惰性 memo。
+   */
+  interface ManagedWorktreeSharedDiagnostics {
+    quarantine(): Promise<string | undefined>
+    residue(): Promise<ValidatedCleanupResidue | undefined>
+    inspectReview(): Promise<ManagedReviewInspection>
+  }
+
+  function createSharedManagedDiagnostics(record: ManagedCheckoutRecord): ManagedWorktreeSharedDiagnostics {
+    let quarantine: Promise<string | undefined> | undefined
+    let residue: Promise<ValidatedCleanupResidue | undefined> | undefined
+    let review: Promise<ManagedReviewInspection> | undefined
+    return {
+      quarantine: () => quarantine ??= validateCleanupQuarantine(record),
+      residue: () => residue ??= validateDetachedCleanupResidue(record, true),
+      inspectReview: () => review ??= dependencies.applyEngine.inspectReview({
+        baseOid: record.applyBaseOid ?? record.baseOid,
+        isolatedPath: record.managedRoot,
+        localPath: record.localRoot,
+      }),
+    }
+  }
+
   async function summarizeManagedWorktree(
     record: ManagedCheckoutRecord,
     includeDiagnostics = false,
+    shared?: ManagedWorktreeSharedDiagnostics,
   ): Promise<ManagedWorktreeSummaryView> {
     // 快速列表必须保守且不扫描 Git/磁盘；只有后台单项诊断完成后才开放清理。
     let dirty = true
@@ -3654,18 +3683,18 @@ export function createSessionCheckoutModule(
     let approximateBytes: number | null = null
     if (includeDiagnostics) {
       if (record.delivery.state === 'finalized' || record.delivery.state === 'retained') {
-        const quarantine = await validateCleanupQuarantine(record)
-        const residue = quarantine ? undefined : await validateDetachedCleanupResidue(record, true)
+        const quarantine = await (shared ? shared.quarantine() : validateCleanupQuarantine(record))
+        const residue = quarantine ? undefined : await (shared ? shared.residue() : validateDetachedCleanupResidue(record, true))
         if (quarantine || residue) {
           cleanupResidue = true
           dirty = false
         } else if (dependencies.files.exists(record.managedRoot)) {
           try {
-            const snapshot = await dependencies.applyEngine.inspectReview({
+            const snapshot = await (shared ? shared.inspectReview() : dependencies.applyEngine.inspectReview({
               baseOid: record.applyBaseOid ?? record.baseOid,
               isolatedPath: record.managedRoot,
               localPath: record.localRoot,
-            })
+            }))
             dirty = snapshot.status !== 'ready' || snapshot.isolatedFingerprint !== record.delivery.isolatedFingerprint
           } catch { dirty = true }
         }
@@ -3735,7 +3764,10 @@ export function createSessionCheckoutModule(
     return { eligibility: 'blocked', reason, message, inspectedRevision: revision }
   }
 
-  async function inspectCleanupForRecord(record: ManagedCheckoutRecord): Promise<ManagedWorktreeCleanupView> {
+  async function inspectCleanupForRecord(
+    record: ManagedCheckoutRecord,
+    shared?: ManagedWorktreeSharedDiagnostics,
+  ): Promise<ManagedWorktreeCleanupView> {
     if (record.delivery.state === 'working') return cleanupBlocked('working', '当前轮次仍在修改，尚未形成可清理的交付环境。', record.revision)
     if (record.delivery.state === 'ready_for_review') return cleanupBlocked('review_pending', '当前轮次正在等待验收，不能清理。', record.revision)
     if (record.delivery.state === 'preview_active' || record.delivery.state === 'preview_detached') {
@@ -3761,8 +3793,8 @@ export function createSessionCheckoutModule(
       && candidate.target.checkoutId === record.checkoutId
     ))
     if (collaborators.length > 0) return cleanupBlocked('collaborator_active', 'Worktree 仍被协作会话占用。', record.revision)
-    const quarantine = await validateCleanupQuarantine(record)
-    const residue = quarantine ? undefined : await validateDetachedCleanupResidue(record, true)
+    const quarantine = await (shared ? shared.quarantine() : validateCleanupQuarantine(record))
+    const residue = quarantine ? undefined : await (shared ? shared.residue() : validateDetachedCleanupResidue(record, true))
     if (record.journal?.operation === 'cleanup' && record.journal.cleanupQuarantinePath && !quarantine) {
       return cleanupBlocked('identity_mismatch', '清理目录身份无法重新验证，已保留环境。', record.revision)
     }
@@ -3771,11 +3803,11 @@ export function createSessionCheckoutModule(
       const validated = await validateManagedCheckout(binding, record, false)
       if (!validated) return cleanupBlocked('identity_mismatch', 'Worktree checkout identity 无法验证，已保留环境。', record.revision)
       try {
-        const snapshot = await dependencies.applyEngine.inspectReview({
+        const snapshot = await (shared ? shared.inspectReview() : dependencies.applyEngine.inspectReview({
           baseOid: record.applyBaseOid ?? record.baseOid,
           isolatedPath: record.managedRoot,
           localPath: record.localRoot,
-        })
+        }))
         if (snapshot.status !== 'ready' || snapshot.isolatedFingerprint !== record.delivery.isolatedFingerprint) {
           return cleanupBlocked('uncommitted_changes', '提交或保留后检测到新增修改，不能批量清理。', record.revision)
         }
@@ -3802,10 +3834,14 @@ export function createSessionCheckoutModule(
       .filter((record) => record.phase !== 'discarded')
       .filter((record) => !input.projectId || record.projectId === input.projectId)
       .filter((record) => !input.checkoutId || record.checkoutId === input.checkoutId)
-    const summaries = await Promise.all(records.map(async (record) => ({
-      ...(await summarizeManagedWorktree(record, true)),
-      cleanup: await inspectCleanupForRecord(record),
-    })))
+    const summaries = await Promise.all(records.map(async (record) => {
+      // 同一条记录的 summary 与 cleanup 巡检共享同一批只读证据，避免双倍 Git/磁盘扫描。
+      const shared = createSharedManagedDiagnostics(record)
+      return {
+        ...(await summarizeManagedWorktree(record, true, shared)),
+        cleanup: await inspectCleanupForRecord(record, shared),
+      }
+    }))
     return summaries
       .filter((summary) => !input.needsAttention || summary.cleanup?.eligibility === 'blocked')
       .sort((left, right) => right.updatedAt - left.updatedAt)
@@ -3860,6 +3896,20 @@ export function createSessionCheckoutModule(
       }
     }
     return { cleaned, retained }
+  }
+
+  /**
+   * 只读枚举 registry 中仍指向 Isolated Checkout 的会话绑定。
+   * 供主进程一次构建「checkoutId → 活跃会话」占用索引，替代逐条目 inspect（每次含多次 Git 子进程）；
+   * 与 inspect() 的 isolated checkout.id 恒等（两者都源自 binding.target.checkoutId），且不执行 Git/fs 校验。
+   */
+  function listSessionTargetBindings(): Array<{ sessionId: string; checkoutId: string }> {
+    const bindings: Array<{ sessionId: string; checkoutId: string }> = []
+    for (const binding of Object.values(dependencies.registry.read().sessionBindings)) {
+      if (binding.target.kind !== 'isolated') continue
+      bindings.push({ sessionId: binding.sessionId, checkoutId: binding.target.checkoutId })
+    }
+    return bindings
   }
 
   async function listManagedWorktrees(input: ListManagedWorktreesInput = {}): Promise<ManagedWorktreeSummaryView[]> {
@@ -4382,6 +4432,7 @@ export function createSessionCheckoutModule(
     ),
     // 只读管理列表不占用全局 mutation lock；慢速目录诊断与用户操作互不阻塞。
     listManagedWorktrees,
+    listSessionTargetBindings,
     inspectManagedWorktreeCleanup,
     bulkCleanupManagedWorktrees: (candidates) => withBindingLock(() => bulkCleanupManagedWorktrees(candidates), { operation: 'bulkCleanupManagedWorktrees' }),
     manageManagedWorktree: (input) => withBindingLock(

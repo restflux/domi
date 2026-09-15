@@ -27,6 +27,7 @@ function createCheckoutModule(lease: CheckoutLease): SessionCheckoutModule & {
     markReadyForReview: async () => { throw new Error('测试不使用 markReadyForReview') },
     operate: async () => { throw new Error('测试不使用 operate') },
     listManagedWorktrees: async () => [],
+    listSessionTargetBindings: () => [],
     inspectManagedWorktreeCleanup: async () => [],
     bulkCleanupManagedWorktrees: async () => ({ cleaned: [], retained: [] }),
     manageManagedWorktree: async () => { throw new Error('测试不使用 manageManagedWorktree') },
