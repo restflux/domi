@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { SessionHoverMeta } from './session-hover-meta'
-import { SessionHoverMetaPanel } from './SessionMiniMapPopover'
+import { SessionHoverMetaPanel, getMetaOnlyPanelHeight } from './SessionMiniMapPopover'
 
 function renderMetaPanel(meta: Partial<SessionHoverMeta>, projectName?: string): string {
   const full: SessionHoverMeta = {
@@ -48,5 +48,22 @@ describe('SessionHoverMetaPanel', () => {
 
     expect(html).toContain('data-session-hover-meta="location"')
     expect(html).toContain('main')
+  })
+})
+
+describe('getMetaOnlyPanelHeight', () => {
+  test('按位置行是否存在取高，不为会话内容预留空间', () => {
+    const noLocation: SessionHoverMeta = {
+      targetLabel: 'Local',
+      targetTone: 'neutral',
+      statusLabel: null,
+      statusTone: 'neutral',
+      gitLabel: null,
+      updatedLabel: null,
+    }
+
+    expect(getMetaOnlyPanelHeight(noLocation)).toBe(56)
+    expect(getMetaOnlyPanelHeight({ ...noLocation, gitLabel: 'main' })).toBe(76)
+    expect(getMetaOnlyPanelHeight(noLocation, 'domi')).toBe(76)
   })
 })

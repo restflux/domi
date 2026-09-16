@@ -2,10 +2,10 @@ import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * SessionMiniMapPopover — 左侧会话悬浮面板
  *
- * 用于在 Working、置顶、最近会话和折叠侧栏中快速扫读会话结构。
- * 优先复用已打开会话写入的 tabMinimapCache；未打开时按需读取本地 JSONL。
- * Agent 会话在标题下方补一行元信息（Local/Worktree、交付状态、项目与分支），
- * 其中分支与状态在面板打开时才静默补齐。
+ * Agent 会话只展示元信息（Local/Worktree、交付状态、项目与分支），不读取会话内容；
+ * 分支与交付状态在面板打开时才静默补齐。
+ * Chat 会话仍以会话内容迷你地图为主，优先复用已打开会话写入的 tabMinimapCache，
+ * 未打开时按需读取本地 JSONL。
  */
 
 import * as React from 'react'
@@ -27,16 +27,7 @@ import {
   type SessionHoverTargetKind,
   type SessionHoverTone,
 } from './session-hover-meta'
-import type {
-  ChatMessage,
-  SDKAssistantMessage,
-  SDKContentBlock,
-  SDKMessage,
-  SDKSystemMessage,
-  SDKUserContentBlock,
-  SDKUserMessage,
-} from '@domi/shared'
-import { getSDKCompactStatus } from '@domi/shared'
+import type { ChatMessage } from '@domi/shared'
 
 export type { SessionHoverTargetKind } from './session-hover-meta'
 
@@ -75,9 +66,12 @@ interface SessionMiniMapPopoverProps {
 }
 
 const PANEL_WIDTH = 318
-/** 头部包含标题行与元信息两行，最小高度相应抬高，保证正文仍能显示约两条消息。 */
-const PANEL_MIN_HEIGHT = 150
+/** Chat 会话仍展示消息预览，高度按可见条数计算。 */
+const PANEL_MIN_HEIGHT = 132
 const PANEL_MAX_HEIGHT = 420
+/** Agent 会话只展示元信息：标题行 + 状态行 + 可选的位置行（项目 / 分支）。 */
+const META_PANEL_BASE_HEIGHT = 56
+const META_PANEL_LOCATION_HEIGHT = 20
 const PANEL_GAP = 16
 const VIEWPORT_MARGIN = 8
 const MAX_RENDERED_ITEMS = 80
@@ -181,22 +175,6 @@ function normalizePreviewText(text: string): string {
     .trim()
 }
 
-function sdkBlockText(block: SDKContentBlock | SDKUserContentBlock): string {
-  if (block.type === 'text' && 'text' in block && typeof block.text === 'string') {
-    return block.text
-  }
-  if (block.type === 'thinking' && 'thinking' in block && typeof block.thinking === 'string') {
-    return block.thinking
-  }
-  if (block.type === 'tool_use' && 'name' in block && typeof block.name === 'string') {
-    return `调用工具 ${block.name || 'tool'}`
-  }
-  if (block.type === 'tool_result') {
-    return block.is_error ? '工具结果出错' : '工具返回结果'
-  }
-  return ''
-}
-
 function buildChatMinimapItems(messages: ChatMessage[], userAvatar?: string): TabMinimapItem[] {
   return messages
     .map((message) => ({
@@ -207,65 +185,6 @@ function buildChatMinimapItems(messages: ChatMessage[], userAvatar?: string): Ta
       model: message.model,
     }))
     .filter((item) => item.preview.length > 0)
-}
-
-function buildAgentMinimapItems(messages: SDKMessage[], userAvatar?: string): TabMinimapItem[] {
-  const items: TabMinimapItem[] = []
-
-  for (const message of messages) {
-    if (message.type === 'assistant') {
-      const assistant = message as SDKAssistantMessage
-      const blocks = Array.isArray(assistant.message?.content) ? assistant.message.content : []
-      const preview = normalizePreviewText(blocks.map(sdkBlockText).filter(Boolean).join(' ')).slice(0, 220)
-      if (!preview) continue
-      items.push({
-        id: assistant.uuid ?? `assistant-${items.length}`,
-        role: 'assistant',
-        preview,
-        model: assistant._channelModelId ?? assistant.message?.model,
-      })
-      continue
-    }
-
-    if (message.type === 'user') {
-      const user = message as SDKUserMessage
-      const blocks = Array.isArray(user.message?.content) ? user.message.content : []
-      const preview = normalizePreviewText(blocks.map(sdkBlockText).filter(Boolean).join(' ')).slice(0, 220)
-      if (!preview) continue
-      items.push({
-        id: user.uuid ?? `user-${items.length}`,
-        role: 'user',
-        preview,
-        avatar: userAvatar,
-      })
-      continue
-    }
-
-    if (message.type === 'system') {
-      const system = message as SDKSystemMessage
-      const compactStatus = getSDKCompactStatus(system)
-      const preview = compactStatus === 'success'
-        ? '上下文已压缩'
-        : compactStatus === 'noop'
-          ? '当前上下文无需压缩'
-          : compactStatus === 'compacting'
-            ? '正在压缩上下文...'
-            : compactStatus === 'failed'
-              ? '上下文压缩失败'
-              : system.subtype === 'permission_denied'
-              ? '权限检查已拒绝操作'
-              : ''
-      if (preview) {
-        items.push({
-          id: `${system.subtype ?? 'system'}-${items.length}`,
-          role: 'status',
-          preview,
-        })
-      }
-    }
-  }
-
-  return items
 }
 
 export function useSessionMiniMapPopoverPosition(
@@ -325,8 +244,12 @@ function getPreferredPanelHeight({
   if (loading) return 260
   if (error || itemCount === 0) return PANEL_MIN_HEIGHT
   const visibleItems = Math.min(itemCount, 8)
-  // 72 为头部两行 + 内边距的实测高度，正文按每条 42 递增。
-  return Math.min(PANEL_MAX_HEIGHT, Math.max(PANEL_MIN_HEIGHT, 72 + visibleItems * 42))
+  return Math.min(PANEL_MAX_HEIGHT, Math.max(PANEL_MIN_HEIGHT, 54 + visibleItems * 42))
+}
+
+/** Agent 面板只承载元信息，按实际行数取高，不再为消息预览预留空间。 */
+export function getMetaOnlyPanelHeight(meta: SessionHoverMeta, projectName?: string): number {
+  return META_PANEL_BASE_HEIGHT + ((projectName || meta.gitLabel) ? META_PANEL_LOCATION_HEIGHT : 0)
 }
 
 function getMessageBubbleClass(item: TabMinimapItem): string {
@@ -449,11 +372,11 @@ function SessionMiniMapPopoverContent({
   const [items, setItems] = React.useState<TabMinimapItem[]>(cachedItems ?? [])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const preferredHeight = getPreferredPanelHeight({ loading, error, itemCount: items.length })
-  const position = useSessionMiniMapPopoverPosition(anchorRef, open, preferredHeight)
   const targetState = useAtomValue(sessionTargetStateAtomFamily(target.sessionId))
   const inspectTarget = useSetAtom(inspectSessionTargetAtomFamily(target.sessionId))
   const isAgentSession = target.type === 'agent'
+  // Agent 会话的悬浮面只回答"在哪跑、跑到哪一步"，不再展示会话内容。
+  const showContent = !isAgentSession
   // 已有权威快照或已在检查时不再重复请求。
   const needsTargetSnapshot = isAgentSession && !targetState.snapshot && !targetState.loading
   const meta = React.useMemo(
@@ -464,6 +387,10 @@ function SessionMiniMapPopoverContent({
     }),
     [target.sessionTargetKind, target.updatedAt, targetState.snapshot],
   )
+  const preferredHeight = isAgentSession
+    ? getMetaOnlyPanelHeight(meta, target.workspaceName)
+    : getPreferredPanelHeight({ loading, error, itemCount: items.length })
+  const position = useSessionMiniMapPopoverPosition(anchorRef, open, preferredHeight)
   const renderedItems = React.useMemo(
     () => items.length > MAX_RENDERED_ITEMS ? items.slice(-MAX_RENDERED_ITEMS) : items,
     [items],
@@ -477,7 +404,7 @@ function SessionMiniMapPopoverContent({
   }, [inspectTarget, needsTargetSnapshot, open])
 
   React.useEffect(() => {
-    if (!open) return
+    if (!open || !showContent) return
     if (cachedItems) {
       setItems(cachedItems)
       setLoading(false)
@@ -492,9 +419,10 @@ function SessionMiniMapPopoverContent({
 
     const load = async (): Promise<void> => {
       try {
-        const nextItems = target.type === 'chat'
-          ? buildChatMinimapItems(await window.electronAPI.getConversationMessages(target.sessionId), userProfile.avatar)
-          : buildAgentMinimapItems(await window.electronAPI.getAgentSessionSDKMessages(target.sessionId), userProfile.avatar)
+        const nextItems = buildChatMinimapItems(
+          await window.electronAPI.getConversationMessages(target.sessionId),
+          userProfile.avatar,
+        )
         if (cancelled) return
         setItems(nextItems)
         setCache((prev) => {
@@ -514,7 +442,7 @@ function SessionMiniMapPopoverContent({
     return () => {
       cancelled = true
     }
-  }, [cachedItems, open, setCache, target.sessionId, target.type, userProfile.avatar])
+  }, [cachedItems, open, setCache, showContent, target.sessionId, userProfile.avatar])
 
   if (!open || !position) return null
 
@@ -536,16 +464,19 @@ function SessionMiniMapPopoverContent({
             <span className="min-w-0 truncate text-xs font-medium text-popover-foreground/85" title={target.title}>
               {target.title}
             </span>
-            <span className="w-[44px] shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
-              {loading ? '加载中' : `${items.length} 条`}
-            </span>
+            {showContent && (
+              <span className="w-[44px] shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
+                {loading ? '加载中' : `${items.length} 条`}
+              </span>
+            )}
           </div>
           {isAgentSession && (
             <SessionHoverMetaPanel meta={meta} projectName={target.workspaceName} />
           )}
         </div>
 
-        <div className="relative flex-1 min-h-0 overflow-hidden bg-popover p-1.5">
+        {showContent && (
+        <div data-session-minimap-content="true" className="relative flex-1 min-h-0 overflow-hidden bg-popover p-1.5">
           {loading && (
             <div className="absolute inset-1.5 rounded-md bg-muted/30 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -598,6 +529,7 @@ function SessionMiniMapPopoverContent({
             </div>
           )}
         </div>
+        )}
       </div>
     </div>,
     document.body,
