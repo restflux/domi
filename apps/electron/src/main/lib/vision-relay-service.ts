@@ -98,7 +98,8 @@ function isAllowedTrigger(triggeredBy: 'user' | 'automation' | 'delegation' | un
 
 function mapFailure(error: unknown): VisionRelayServiceResult {
   if (error instanceof VisionRelayImageError) return failure(error.code)
-  if (error instanceof VisionRelayProviderError) return failure(error.code)
+  // Provider 层错误 message 已按安全策略生成（仅附加 HTTP 状态码数字），优先透出提高可诊断性
+  if (error instanceof VisionRelayProviderError) return { ok: false, code: error.code, message: error.message }
   if (error instanceof VisionRelayResultError) return failure(error.code)
   console.warn('[Vision Relay] unexpected failure:', error instanceof Error ? error.name : typeof error)
   return failure('VISION_INTERNAL_ERROR')

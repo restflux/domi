@@ -109,6 +109,32 @@ describe('Vision Relay adapter provider', () => {
     })).rejects.toEqual(expect.objectContaining({ code: 'VISION_RATE_LIMITED', message: expect.not.stringContaining('sensitive') }))
   })
 
+  test('HTTP 状态码附加到安全消息，响应体不泄露', async () => {
+    const error = await executeAdapterVisionRequest({
+      provider: 'openai', baseUrl: 'https://vision.example', apiKey: 'secret', modelId: 'vision-model', image, question: 'inspect', analysisMode: 'general', qualityPreset: 'fast',
+    }, {
+      getAdapter: () => adapter(),
+      createFetch: () => ({ fetchFn: responseFetch('internal upstream detail', 502), close: async () => {} }),
+    }).catch((thrown: unknown) => thrown)
+    expect(error).toBeInstanceOf(VisionRelayProviderError)
+    const providerError = error as VisionRelayProviderError
+    expect(providerError.code).toBe('VISION_PROVIDER_ERROR')
+    expect(providerError.httpStatus).toBe(502)
+    expect(providerError.message).toContain('（HTTP 502）')
+    expect(providerError.message).not.toContain('internal upstream detail')
+  })
+
+  test('认证失败同样附加状态码便于区分', async () => {
+    const error = await executeAdapterVisionRequest({
+      provider: 'openai', baseUrl: 'https://vision.example', apiKey: 'secret', modelId: 'vision-model', image, question: 'inspect', analysisMode: 'general', qualityPreset: 'fast',
+    }, {
+      getAdapter: () => adapter(),
+      createFetch: () => ({ fetchFn: responseFetch('forbidden', 403), close: async () => {} }),
+    }).catch((thrown: unknown) => thrown)
+    expect((error as VisionRelayProviderError).code).toBe('VISION_AUTH_FAILED')
+    expect((error as VisionRelayProviderError).message).toContain('（HTTP 403）')
+  })
+
   test('provider errors map to stable safe codes', () => {
     expect(VisionRelayProviderError.from(new Error('API 错误 (401): secret body')).code).toBe('VISION_AUTH_FAILED')
     expect(VisionRelayProviderError.from(new Error('API 错误 (429): quota')).code).toBe('VISION_RATE_LIMITED')

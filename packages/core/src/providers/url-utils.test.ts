@@ -189,8 +189,28 @@ describe('resolveOpenAIChatCompletionsUrl', () => {
     )
   })
 
-  test('custom 不向自定义 Chat 请求地址追加后缀', () => {
-    expect(resolveOpenAIChatCompletionsUrl('https://api.example.com/v2', 'custom')).toBe('https://api.example.com/v2')
+  test('custom 协议根填法（纯版本段结尾）补全 /chat/completions，与 Agent 链路行为对齐', () => {
+    expect(resolveOpenAIChatCompletionsUrl('https://api.example.com/v1', 'custom')).toBe(
+      'https://api.example.com/v1/chat/completions',
+    )
+    expect(resolveOpenAIChatCompletionsUrl('https://api.example.com/v2/', 'custom')).toBe(
+      'https://api.example.com/v2/chat/completions',
+    )
+    expect(resolveOpenAIChatCompletionsUrl('http://175.178.153.250/v1', 'custom')).toBe(
+      'http://175.178.153.250/v1/chat/completions',
+    )
+  })
+
+  test('custom 协议根补全时保留查询参数', () => {
+    expect(resolveOpenAIChatCompletionsUrl('https://api.example.com/v1?api-version=2024', 'custom')).toBe(
+      'https://api.example.com/v1/chat/completions?api-version=2024',
+    )
+  })
+
+  test('custom 不向非版本段的自定义请求地址追加后缀', () => {
+    expect(resolveOpenAIChatCompletionsUrl('https://api.example.com/api/openai/chat', 'custom')).toBe(
+      'https://api.example.com/api/openai/chat',
+    )
   })
 
   test('内置 openai 协议根地址补全 /chat/completions', () => {
@@ -266,7 +286,22 @@ describe('resolveAnthropicMessagesUrl', () => {
     )
   })
 
-  test('anthropic-compatible 不向用户填写的地址追加后缀', () => {
+  test('anthropic-compatible 协议根填法（纯版本段结尾）补全 /messages，与 Agent 链路行为对齐', () => {
+    expect(resolveAnthropicMessagesUrl('https://gateway.example.com/v1', 'anthropic-compatible')).toBe(
+      'https://gateway.example.com/v1/messages',
+    )
+    expect(resolveAnthropicMessagesUrl('https://gateway.example.com/v2/', 'anthropic-compatible')).toBe(
+      'https://gateway.example.com/v2/messages',
+    )
+  })
+
+  test('anthropic-compatible 协议根补全时保留查询参数', () => {
+    expect(resolveAnthropicMessagesUrl('https://gateway.example.com/v1?api-version=2024', 'anthropic-compatible')).toBe(
+      'https://gateway.example.com/v1/messages?api-version=2024',
+    )
+  })
+
+  test('anthropic-compatible 不向非版本段的自定义请求地址追加后缀', () => {
     expect(resolveAnthropicMessagesUrl('https://gateway.example.com/custom-path', 'anthropic-compatible')).toBe(
       'https://gateway.example.com/custom-path',
     )

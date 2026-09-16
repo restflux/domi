@@ -46,6 +46,30 @@ function replacePathSuffix(rawUrl: string, suffix: string, replacement: string):
   }
 }
 
+/**
+ * 判断 URL 是否以纯版本段（/v1、/v2 等）结尾，即 OpenAI / Anthropic 兼容端点的「协议根填法」。
+ * 这类填法在 Pi Agent 链路下由 SDK 自动拼接后缀，core 链路需要对齐补全，避免双链路语义分裂。
+ */
+function endsWithVersionSegment(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl.trim())
+    return /\/v\d+$/.test(parsed.pathname.replace(/\/+$/, ''))
+  } catch {
+    const withoutQuery = rawUrl.trim().split(/[?#]/, 1)[0] ?? ''
+    return /\/v\d+$/.test(withoutQuery.replace(/\/+$/, ''))
+  }
+}
+
+/**
+ * 在 URL 路径末尾追加后缀，查询参数与片段保留在末尾。
+ */
+function appendPathSuffix(rawUrl: string, suffix: string): string {
+  const trimmed = rawUrl.trim()
+  const separatorIndex = trimmed.search(/[?#]/)
+  if (separatorIndex === -1) return `${trimmed}${suffix}`
+  return `${trimmed.slice(0, separatorIndex)}${suffix}${trimmed.slice(separatorIndex)}`
+}
+
 function removePathSuffixForSdkBaseUrl(rawUrl: string, suffix: string): string {
   const trimmed = rawUrl.trim()
   try {
@@ -165,14 +189,19 @@ export function normalizeOpenAIBaseUrlForSdk(baseUrl: string): string {
 /**
  * 解析 OpenAI Chat Completions 请求地址。
  *
- * OpenAI 兼容格式（custom）要求用户直接填写完整请求端点。
- * 内置 OpenAI 协议供应商仍允许填写协议根地址，例如：
+ * OpenAI 兼容格式（custom）支持两种填法：
+ * - 完整请求端点（如 "https://api.example.com/v1/chat/completions" 或非标准路径）→ 原样使用；
+ * - 协议根地址（以 /v1、/v2 等纯版本段结尾）→ 补全 /chat/completions，与
+ *   Pi Agent 链路（SDK 自动拼接后缀）行为对齐，避免同一渠道在两条链路下语义分裂。
+ * 内置 OpenAI 协议供应商允许填写协议根地址，例如：
  * - "https://api.example.com/v1" → "https://api.example.com/v1/chat/completions"
- * - custom: "https://api.example.com/v1/chat/completions" → 原样使用
  */
 export function resolveOpenAIChatCompletionsUrl(baseUrl: string, provider: ProviderType = 'openai'): string {
   if (provider === 'custom') {
-    return trimTrailingUrlPathSlash(baseUrl)
+    const trimmed = trimTrailingUrlPathSlash(baseUrl)
+    if (hasPathSuffix(trimmed, '/chat/completions')) return trimmed
+    if (endsWithVersionSegment(trimmed)) return appendPathSuffix(trimmed, '/chat/completions')
+    return trimmed
   }
   if (hasPathSuffix(baseUrl, '/chat/completions')) {
     return trimTrailingUrlPathSlash(baseUrl)
@@ -239,14 +268,19 @@ export function normalizeAnthropicProviderUrl(baseUrl: string, provider: Provide
 /**
  * 解析 Anthropic Messages 请求地址。
  *
- * Anthropic 兼容格式要求用户直接填写完整请求端点。
+ * Anthropic 兼容格式（anthropic-compatible）支持两种填法：
+ * - 完整请求端点（如 "https://gateway.example.com/v1/messages" 或非标准路径）→ 原样使用；
+ * - 协议根地址（以 /v1、/v2 等纯版本段结尾）→ 补全 /messages，与
+ *   Pi Agent 链路（SDK 自动拼接后缀）行为对齐，避免同一渠道在两条链路下语义分裂。
  * 内置 Anthropic 协议供应商仍允许填写协议根地址，例如：
  * - minimax: "https://api.minimaxi.com/anthropic" → ".../anthropic/v1/messages"
- * - anthropic-compatible: "https://gateway.example.com/v1/messages" → 原样使用
  */
 export function resolveAnthropicMessagesUrl(baseUrl: string, provider: ProviderType): string {
   if (provider === 'anthropic-compatible') {
-    return trimTrailingUrlPathSlash(baseUrl)
+    const trimmed = trimTrailingUrlPathSlash(baseUrl)
+    if (hasPathSuffix(trimmed, '/messages')) return trimmed
+    if (endsWithVersionSegment(trimmed)) return appendPathSuffix(trimmed, '/messages')
+    return trimmed
   }
   if (provider === 'xiaomi' || provider === 'xiaomi-token-plan') {
     return `${new URL(baseUrl.trim()).origin}/anthropic/v1/messages`

@@ -183,7 +183,7 @@ function getUrlInputLabel(provider: ProviderType): string {
 }
 
 function getUrlInputPlaceholder(provider: ProviderType): string {
-  if (provider === 'custom') return 'https://api.example.com/v2（Chat 按原样请求）'
+  if (provider === 'custom') return 'https://api.example.com/v1 或完整端点 /v1/chat/completions'
   if (provider === 'openai-responses') return 'https://api.example.com/v1/responses'
   if (provider === 'anthropic-compatible') return 'https://api.example.com/v1/messages'
   return 'https://api.example.com'

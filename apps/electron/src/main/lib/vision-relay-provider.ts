@@ -64,8 +64,13 @@ class VisionHttpStatusError extends Error {
 }
 
 export class VisionRelayProviderError extends Error {
-  constructor(readonly code: VisionRelayProviderErrorCode) {
-    super(SAFE_PROVIDER_MESSAGES[code])
+  // httpStatus 为纯数字状态码，非敏感信息；附加到安全消息中提高可诊断性
+  constructor(readonly code: VisionRelayProviderErrorCode, readonly httpStatus?: number) {
+    super(
+      httpStatus != null
+        ? `${SAFE_PROVIDER_MESSAGES[code]}（HTTP ${httpStatus}）`
+        : SAFE_PROVIDER_MESSAGES[code],
+    )
     this.name = 'VisionRelayProviderError'
   }
 
@@ -75,9 +80,9 @@ export class VisionRelayProviderError extends Error {
     if (input?.timedOut) return new VisionRelayProviderError('VISION_TIMEOUT')
     if (input?.aborted) return new VisionRelayProviderError('VISION_ABORTED')
     if (error instanceof VisionHttpStatusError) {
-      if (error.status === 401 || error.status === 403) return new VisionRelayProviderError('VISION_AUTH_FAILED')
-      if (error.status === 429) return new VisionRelayProviderError('VISION_RATE_LIMITED')
-      return new VisionRelayProviderError('VISION_PROVIDER_ERROR')
+      if (error.status === 401 || error.status === 403) return new VisionRelayProviderError('VISION_AUTH_FAILED', error.status)
+      if (error.status === 429) return new VisionRelayProviderError('VISION_RATE_LIMITED', error.status)
+      return new VisionRelayProviderError('VISION_PROVIDER_ERROR', error.status)
     }
     const message = error instanceof Error ? error.message : String(error)
     if (/\b(?:401|403)\b|unauthori[sz]ed|invalid.*(?:key|token)|authentication/i.test(message)) {
