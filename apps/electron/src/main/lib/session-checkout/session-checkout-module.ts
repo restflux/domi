@@ -3762,6 +3762,7 @@ export function createSessionCheckoutModule(
       ...(cleanupReason ? { cleanupReason } : {}),
       approximateBytes,
       updatedAt: managedUpdatedAt(record),
+      ...(isRetryableCleanupFailure(record) ? { autoCleanupScheduled: true } : {}),
       canReveal: dependencies.files.exists(record.managedRoot),
       canCleanup: includeDiagnostics && (delivery.state === 'retained' || delivery.state === 'finalized') && !dirty,
     }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ManagedWorktreeSummaryView } from '@domi/shared'
-import { partitionManagedWorktreesForBulkCleanup } from './WorktreeManagerSheet.tsx'
+import { partitionManagedWorktreesForBulkCleanup, stateBadgeMeta } from './WorktreeManagerSheet.tsx'
 
 function item(
   checkoutId: string,
@@ -40,5 +40,21 @@ describe('WorktreeManagerSheet bulk cleanup', () => {
       safe: [safe],
       retained: [retained, blocked],
     })
+  })
+})
+
+describe('WorktreeManagerSheet state badge', () => {
+  test('Given every managed summary state When mapping to badge Then each state gets a stable label and color class', () => {
+    const states: Array<ManagedWorktreeSummaryView['state']> = [
+      'working', 'ready_for_review', 'preview_active', 'retained', 'cleanup_pending', 'delivered', 'needs_attention',
+    ]
+    for (const state of states) {
+      const meta = stateBadgeMeta(state)
+      expect(meta.label.length).toBeGreaterThan(0)
+      expect(meta.className).toContain('bg-')
+    }
+    // 需要用户关注的两个状态必须是 amber 提示色。
+    expect(stateBadgeMeta('needs_attention').className).toContain('amber')
+    expect(stateBadgeMeta('cleanup_pending').className).toContain('amber')
   })
 })

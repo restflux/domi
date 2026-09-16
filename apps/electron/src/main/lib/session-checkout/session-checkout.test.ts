@@ -3143,6 +3143,26 @@ describe.concurrent('SessionCheckoutModule', () => {
     ])
   }, 60_000)
 
+  test('Given pending and working Worktrees When listing managed summaries Then only transient-cleanup failures are marked auto-retryable', async () => {
+    const context = createContext({ removeWorktreeFailures: 1 })
+    context.addSession('session-2', 'project-1', '正在工作的任务')
+    const target = await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'auto retry visibility\n')
+    const finished = await context.module.operate({
+      action: 'finish', sessionId: 'session-1', expectedRevision: target.revision, commitMessage: 'fix: auto retry visibility',
+    })
+    if (finished.status !== 'finished') throw new Error(`预期 finished，实际为 ${finished.status}`)
+    await context.module.bind('session-2', { kind: 'isolated' })
+
+    // 快速列表（无诊断）即可判定自动重试标记：pending 记录标记，working 记录不标记。
+    const summaries = await context.module.listManagedWorktrees({})
+    const pendingSummary = summaries.find((summary) => summary.checkoutId === target.checkout.id)
+    const workingSummary = summaries.find((summary) => summary.ownerSessionId === 'session-2')
+    expect(pendingSummary?.autoCleanupScheduled).toBe(true)
+    expect(workingSummary?.autoCleanupScheduled).toBeUndefined()
+  }, 90_000)
+
   test('Given Commit succeeds and Git removal leaves only an unregistered directory residue When the session continues Then cleanup damage does not disable the delivered conversation', async () => {
     const context = createContext({ removeWorktreeFailures: 1, removeWorktreeFailureLeavesResidue: true })
     const first = await context.module.bind('session-1', { kind: 'isolated' })

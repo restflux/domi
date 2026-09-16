@@ -395,6 +395,8 @@ export interface ManagedWorktreeSummaryView {
   cleanupReason?: WorktreeCleanupReason
   approximateBytes: number | null
   updatedAt: number
+  /** 该 Worktree 的清理失败属于瞬时占用类，后台维护会自动重试清理。 */
+  autoCleanupScheduled?: boolean
   canReveal: boolean
   canCleanup: boolean
   /** 只读 cleanup inspection；只用于解释与确认，真实清理会重新校验。 */

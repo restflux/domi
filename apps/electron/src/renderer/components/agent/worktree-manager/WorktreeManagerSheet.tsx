@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button.tsx'
+import { Badge } from '@/components/ui/badge.tsx'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet.tsx'
 import {
   AlertDialog,
@@ -62,6 +63,26 @@ function stateLabel(item: ManagedWorktreeSummaryView): string {
   if (item.state === 'cleanup_pending') return '等待清理'
   if (item.state === 'delivered') return '已交付'
   return '需要处理'
+}
+
+/** 状态徽章配色：语义色 + dark 变体，与 cleanupMessage 的 amber 用法风格一致。导出仅供测试断言映射稳定性。 */
+export function stateBadgeMeta(state: ManagedWorktreeSummaryView['state']): { label: string; className: string } {
+  if (state === 'needs_attention') return { label: '需要处理', className: 'border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-300' }
+  if (state === 'cleanup_pending') return { label: '等待清理', className: 'border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-300' }
+  if (state === 'working') return { label: '正在修改', className: 'border-transparent bg-blue-500/15 text-blue-700 dark:text-blue-300' }
+  if (state === 'ready_for_review') return { label: '等待验收', className: 'border-transparent bg-purple-500/15 text-purple-700 dark:text-purple-300' }
+  if (state === 'preview_active') return { label: 'Local 验收中', className: 'border-transparent bg-purple-500/15 text-purple-700 dark:text-purple-300' }
+  if (state === 'retained') return { label: '暂时保留', className: 'border-transparent bg-muted text-muted-foreground' }
+  return { label: '已交付', className: 'border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' }
+}
+
+function StateBadge({ state }: { state: ManagedWorktreeSummaryView['state'] }): React.ReactElement {
+  const meta = stateBadgeMeta(state)
+  return (
+    <Badge variant="secondary" className={cn('px-1.5 py-0 text-[10px] font-medium', meta.className)}>
+      {meta.label}
+    </Badge>
+  )
 }
 
 function retentionLabel(item: ManagedWorktreeSummaryView): string | null {
@@ -337,6 +358,16 @@ export function WorktreeManagerSheet(): React.ReactElement {
           </div>
         </div>
 
+        {bulkCleaning && bulkProgress && bulkProgress.total > 0 ? (
+          // 批量清理逐项进度条：2px 高，宽度 = done/total，配合头部文字进度。
+          <div className="h-0.5 w-full bg-muted" aria-hidden>
+            <div
+              className="h-full rounded-r-full bg-primary transition-[width] duration-300"
+              style={{ width: `${Math.min(100, Math.round((bulkProgress.done / bulkProgress.total) * 100))}%` }}
+            />
+          </div>
+        ) : null}
+
         <div className="flex gap-1 border-b border-border/60 px-5 py-3">
           {([
             ['project', '当前项目'],
@@ -422,7 +453,7 @@ export function WorktreeManagerSheet(): React.ReactElement {
                               ? '检测到修改、身份异常或其他安全占用，暂不能清理'
                               : undefined
                       return (
-                        <div key={item.checkoutId} className={cn('rounded-lg border p-3', attention && 'border-amber-500/30 bg-amber-500/5')}>
+                        <div key={item.checkoutId} className={cn('rounded-lg bg-card p-3 shadow-sm', attention && 'border border-amber-500/30 bg-amber-500/5')}>
                           <div className="flex items-start gap-3">
                             {attention ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" /> : <HardDrive className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
                             <div className="min-w-0 flex-1">
@@ -430,11 +461,19 @@ export function WorktreeManagerSheet(): React.ReactElement {
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="truncate text-sm font-medium">{item.ownerSessionTitle}</span>
+                                    <StateBadge state={item.state} />
                                     <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{item.project.name}</span>
                                     <span className="text-[10px] text-muted-foreground">Iteration {item.iteration}</span>
+                                    {bulkCleaning && bulkProgress?.currentCheckoutId === item.checkoutId ? (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-primary">
+                                        <Loader2 className="size-3 animate-spin" />正在清理…
+                                      </span>
+                                    ) : null}
                                   </div>
-                                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                                    <span>{stateLabel(item)}</span>
+                                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                                    {item.autoCleanupScheduled ? (
+                                      <span className="inline-flex items-center rounded-full bg-amber-500/15 px-1.5 py-0 text-[10px] font-medium text-amber-700 dark:text-amber-300">将自动重试清理</span>
+                                    ) : null}
                                     <span>{diagnosed ? formatBytes(item.approximateBytes) : '正在检查占用…'}</span>
                                     {item.commitOid ? <span>Commit {item.commitOid.slice(0, 8)}</span> : null}
                                     {retentionLabel(item) ? <span>{retentionLabel(item)}</span> : null}
