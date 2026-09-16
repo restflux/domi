@@ -77,8 +77,11 @@ function setup(): {
       calls.push(`inspect-cleanup:${input?.projectId ?? 'all'}`)
       return []
     },
-    bulkCleanupManagedWorktrees: async (candidates) => {
+    bulkCleanupManagedWorktrees: async (candidates, onProgress) => {
       calls.push(`bulk-cleanup:${candidates.map((candidate) => `${candidate.checkoutId}@${candidate.expectedRevision}`).join(',')}`)
+      // 模拟逐项进度推送，供 IPC 转发断言使用。
+      onProgress?.({ total: 2, done: 1, currentCheckoutId: 'checkout-1', lastOutcome: 'cleaned', cleanedCount: 1, retainedCount: 0 })
+      onProgress?.({ total: 2, done: 2, currentCheckoutId: 'checkout-2', lastOutcome: 'retained', cleanedCount: 1, retainedCount: 1 })
       return { cleaned: [], retained: [] }
     },
     manageManagedWorktree: async (input) => {
@@ -448,6 +451,36 @@ describe('Session Checkout IPC', () => {
     expect(valid).toEqual({ ok: true, value: { cleaned: [], retained: [] } })
     expect(forged).toEqual({ ok: false, error: { code: 'invalid_request', message: 'Session Target 请求参数无效' } })
     expect(calls).toEqual(['bulk-cleanup:checkout-2@4,checkout-1@3'])
+  })
+
+  test('Given bulk cleanup emits item progress When IPC forwards it Then the renderer receives BULK_CLEANUP_PROGRESS and destroyed senders are skipped', async () => {
+    const { handlers } = setup()
+    const bulkCleanup = handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_MANAGED)!
+
+    const sent: Array<{ channel: string; payload: Record<string, unknown> }> = []
+    const liveSender = {
+      send: (channel: string, payload: unknown) => { sent.push({ channel, payload: payload as Record<string, unknown> }) },
+      isDestroyed: () => false,
+    }
+    const destroyedSender = {
+      send: (channel: string, payload: unknown) => { sent.push({ channel, payload: payload as Record<string, unknown> }) },
+      isDestroyed: () => true,
+    }
+
+    const live = await bulkCleanup({ sender: liveSender }, {
+      candidates: [{ checkoutId: 'checkout-1', expectedRevision: 1 }],
+    })
+    const destroyed = await bulkCleanup({ sender: destroyedSender }, {
+      candidates: [{ checkoutId: 'checkout-1', expectedRevision: 1 }],
+    })
+
+    expect(live).toMatchObject({ ok: true })
+    expect(destroyed).toMatchObject({ ok: true })
+    // 存活 sender 收到两条逐项进度；已销毁 sender 不再推送。
+    expect(sent).toHaveLength(2)
+    expect(sent.every((entry) => entry.channel === SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_PROGRESS)).toBe(true)
+    expect(sent[0]!.payload).toMatchObject({ total: 2, done: 1, lastOutcome: 'cleaned' })
+    expect(sent[1]!.payload).toMatchObject({ total: 2, done: 2, lastOutcome: 'retained' })
   })
 
   test('Given managed Worktree list/manage/reveal requests When parsed Then no renderer path or forged retention time crosses IPC', async () => {

@@ -4,6 +4,7 @@ import {
   type BulkCleanupManagedWorktreesInput,
   type BulkCleanupManagedWorktreesResult,
   type BulkCleanupManagedWorktreeCandidate,
+  type BulkCleanupProgressPayload,
   type ConfirmWorktreeIterationInput,
   type ConfirmWorktreeIterationResult,
   type ManageWorktreeInput,
@@ -38,7 +39,10 @@ export interface SessionCheckoutIpcModule {
   operate(input: OperateSessionCheckoutInput): Promise<SessionCheckoutOperationResult>
   listManagedWorktrees?(input?: ListManagedWorktreesInput): Promise<ManagedWorktreeSummaryView[]>
   inspectManagedWorktreeCleanup?(input?: ListManagedWorktreesInput): Promise<ManagedWorktreeSummaryView[]>
-  bulkCleanupManagedWorktrees?(candidates: BulkCleanupManagedWorktreeCandidate[]): Promise<BulkCleanupManagedWorktreesResult>
+  bulkCleanupManagedWorktrees?(
+    candidates: BulkCleanupManagedWorktreeCandidate[],
+    onProgress?: (event: BulkCleanupProgressPayload) => void,
+  ): Promise<BulkCleanupManagedWorktreesResult>
   manageManagedWorktree?(input: ManageWorktreeInput): Promise<ManagedWorktreeSummaryView>
   resolveManagedRootForReveal?(checkoutId: string): Promise<string>
 }
@@ -49,6 +53,22 @@ const INVALID_REQUEST = {
   ok: false,
   error: { code: 'invalid_request', message: 'Session Target 请求参数无效' },
 } as const
+
+interface ProgressEventSender {
+  send(channel: string, payload: unknown): void
+  isDestroyed(): boolean
+}
+
+/** 从 invoke event 提取 sender 并构造进度推送；sender 缺失（如测试 registrar）时退化为 no-op。 */
+function createBulkCleanupProgressPusher(event: unknown): (payload: BulkCleanupProgressPayload) => void {
+  const sender = (event as { sender?: unknown } | null)?.sender as ProgressEventSender | undefined
+  if (!sender || typeof sender.send !== 'function' || typeof sender.isDestroyed !== 'function') return () => undefined
+  return (payload) => {
+    // 页面销毁后不再推送，避免向已关闭的 webContents 发送事件。
+    if (sender.isDestroyed()) return
+    sender.send(SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_PROGRESS, payload)
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -448,10 +468,10 @@ export function registerSessionCheckoutIpc(
     })
   })
 
-  ipc.handle(SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_MANAGED, async (_, input) => {
+  ipc.handle(SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_MANAGED, async (event, input) => {
     const parsed = parseBulkCleanupManagedInput(input)
     if (!parsed || !module.bulkCleanupManagedWorktrees) return INVALID_REQUEST
-    return invoke(() => module.bulkCleanupManagedWorktrees!(parsed.candidates))
+    return invoke(() => module.bulkCleanupManagedWorktrees!(parsed.candidates, createBulkCleanupProgressPusher(event)))
   })
 
   ipc.handle(SESSION_CHECKOUT_IPC_CHANNELS.MANAGE, async (_, input) => {    const parsed = parseManageInput(input)

@@ -33,6 +33,7 @@ function createCheckoutModule(lease: CheckoutLease): SessionCheckoutModule & {
     manageManagedWorktree: async () => { throw new Error('测试不使用 manageManagedWorktree') },
     resolveManagedRootForReveal: async () => { throw new Error('测试不使用 resolveManagedRootForReveal') },
     cleanupExpiredRetained: async () => [],
+    cleanupRetryableManagedWorktrees: async () => [],
     assertReleaseSession: async () => { throw new Error('测试不使用 assertReleaseSession') },
     releaseSession: async () => { throw new Error('测试不使用 releaseSession') },
     reconcile: async () => ({

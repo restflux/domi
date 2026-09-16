@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import type { SessionCheckoutModule } from './index.ts'
+import type { BulkCleanupProgressPayload } from '@domi/shared'
 import type { SessionCheckoutApplyEngine } from './session-checkout-apply.ts'
 import type { SessionCheckoutTimingEvent } from './ports.ts'
 import { createSessionCheckoutModule } from './session-checkout-module.ts'
@@ -3894,6 +3895,116 @@ describe.concurrent('SessionCheckoutModule', () => {
 
     expect(result.cleaned).toEqual([])
     expect(result.retained[0]).toMatchObject({ checkoutId: target.checkout.id, cleanup: { eligibility: 'blocked', reason: 'unknown' } })
+    expect(existsSync(lease.cwd)).toBe(true)
+  }, 90_000)
+
+  test('Given bulk cleanup is deleting a worktree When an unrelated session inspects Then the read completes without queue timeout', async () => {
+    const context = createContext({ removeWorktreeFailures: 1 })
+    context.addSession('session-2', 'project-1', '无关 local 会话')
+    // 先把无关会话绑到 local，避免与 bulk 项争用创建/绑定队列。
+    await context.module.bind('session-2', { kind: 'local' })
+
+    const target = await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'bulk concurrency\n')
+    const finished = await context.module.operate({
+      action: 'finish', sessionId: 'session-1', expectedRevision: target.revision, commitMessage: 'fix: bulk concurrency',
+    })
+    if (finished.status !== 'finished') throw new Error(`预期 finished，实际为 ${finished.status}`)
+    const [summary] = await context.module.listManagedWorktrees({ checkoutId: target.checkout.id })
+    if (!summary) throw new Error('预期存在可清理记录')
+
+    // 卡住 bulk 项内的 Git 校验，模拟慢删除；此时 bulk 项持 maintenance 锁。
+    const pause = context.pauseNextGitInspect(lease.cwd)
+    const bulkPromise = context.module.bulkCleanupManagedWorktrees([
+      { checkoutId: target.checkout.id, expectedRevision: summary.revision },
+    ])
+    await pause.started
+
+    // 无关 local 会话在 bulk 项持锁期间应立即可读，而不是等 30 秒队列超时。
+    const startedAt = Date.now()
+    const unrelated = await context.module.inspect('session-2')
+    expect(Date.now() - startedAt).toBeLessThan(10_000)
+    expect(unrelated.checkout.kind).toBe('local')
+
+    pause.resume()
+    const result = await bulkPromise
+    expect(result.cleaned).toHaveLength(1)
+  }, 120_000)
+
+  test('Given a pending-cleanup worktree When bulk cleanup runs Then shared evidence scans once and progress events report each item', async () => {
+    const context = createContext({ removeWorktreeFailures: 1 })
+    const target = await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'shared evidence\n')
+    const finished = await context.module.operate({
+      action: 'finish', sessionId: 'session-1', expectedRevision: target.revision, commitMessage: 'fix: shared evidence',
+    })
+    if (finished.status !== 'finished') throw new Error(`预期 finished，实际为 ${finished.status}`)
+    expect(existsSync(lease.cwd)).toBe(true)
+    const [summary] = await context.module.listManagedWorktrees({ checkoutId: target.checkout.id })
+    if (!summary) throw new Error('预期存在可清理记录')
+
+    const events: BulkCleanupProgressPayload[] = []
+    const before = context.getInspectReviewCallCount()
+    const result = await context.module.bulkCleanupManagedWorktrees(
+      [{ checkoutId: target.checkout.id, expectedRevision: summary.revision }],
+      (event) => { events.push(event) },
+    )
+    expect(result.cleaned).toHaveLength(1)
+    expect(existsSync(lease.cwd)).toBe(false)
+    // 同一项内巡检与删除共享同一批只读证据：inspectReview（含两棵树完整快照扫描）只允许执行一次。
+    expect(context.getInspectReviewCallCount() - before).toBe(1)
+    expect(events).toEqual([{
+      total: 1,
+      done: 1,
+      currentCheckoutId: target.checkout.id,
+      lastOutcome: 'cleaned',
+      cleanedCount: 1,
+      retainedCount: 0,
+    }])
+  }, 90_000)
+
+  test('Given a pending cleanup after a transient Windows lock When background retry runs Then the worktree is safely cleaned', async () => {
+    const context = createContext({ removeWorktreeFailures: 1 })
+    const target = await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'retry pending\n')
+    const finished = await context.module.operate({
+      action: 'finish', sessionId: 'session-1', expectedRevision: target.revision, commitMessage: 'fix: retry pending',
+    })
+    if (finished.status !== 'finished') throw new Error(`预期 finished，实际为 ${finished.status}`)
+    expect(existsSync(lease.cwd)).toBe(true)
+
+    const cleaned = await context.module.cleanupRetryableManagedWorktrees()
+    expect(cleaned).toEqual([target.checkout.id])
+    expect(existsSync(lease.cwd)).toBe(false)
+    const after = await context.module.listManagedWorktrees({ checkoutId: target.checkout.id })
+    expect(after).toEqual([])
+  }, 90_000)
+
+  test('Given an identity-changed blocked cleanup When background retry runs Then the record is left untouched', async () => {
+    const context = createContext({ removeWorktreeFailures: 1 })
+    const target = await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'identity blocked\n')
+    const finished = await context.module.operate({
+      action: 'finish', sessionId: 'session-1', expectedRevision: target.revision, commitMessage: 'fix: identity blocked',
+    })
+    if (finished.status !== 'finished') throw new Error(`预期 finished，实际为 ${finished.status}`)
+
+    // 手工将失败改写为 identity 类 blocked，模拟需要人工判断的真实身份异常。
+    const registryPath = join(context.configDir, 'managed-checkouts.json')
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as any
+    const record = registry.managedCheckouts[target.checkout.id]
+    record.delivery.cleanup = 'blocked'
+    record.delivery.cleanupMessage = 'Worktree 的 Git 身份或路径已变化，未执行清理。'
+    record.revision += 1
+    registry.revision += 1
+    writeFileSync(registryPath, JSON.stringify(registry, null, 2))
+
+    const cleaned = await context.module.cleanupRetryableManagedWorktrees()
+    expect(cleaned).toEqual([])
     expect(existsSync(lease.cwd)).toBe(true)
   }, 90_000)
 

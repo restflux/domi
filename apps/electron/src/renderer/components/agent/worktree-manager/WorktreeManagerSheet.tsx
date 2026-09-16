@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useAtom, useAtomValue } from 'jotai'
-import type { ListManagedWorktreesInput, ManagedWorktreeSummaryView, WorktreeRetentionMode } from '@domi/shared'
+import type { BulkCleanupProgressPayload, ListManagedWorktreesInput, ManagedWorktreeSummaryView, WorktreeRetentionMode } from '@domi/shared'
 import {
   AlertTriangle,
   Check,
@@ -125,6 +125,7 @@ export function WorktreeManagerSheet(): React.ReactElement {
   const [cleanupTarget, setCleanupTarget] = React.useState<ManagedWorktreeSummaryView | null>(null)
   const [bulkCleanupOpen, setBulkCleanupOpen] = React.useState(false)
   const [bulkCleaning, setBulkCleaning] = React.useState(false)
+  const [bulkProgress, setBulkProgress] = React.useState<BulkCleanupProgressPayload | null>(null)
   const loadGenerationRef = React.useRef(0)
 
   const load = React.useCallback(async (): Promise<void> => {
@@ -218,10 +219,14 @@ export function WorktreeManagerSheet(): React.ReactElement {
 
   const bulkCleanup = async (): Promise<void> => {
     const execute = window.electronAPI.sessionCheckout.bulkCleanupManaged
+    const subscribeProgress = window.electronAPI.sessionCheckout.onBulkCleanupProgress
     const candidates = items.filter((item) => item.cleanup?.eligibility === 'safe')
     if (!execute || candidates.length === 0 || bulkCleaning) return
     setBulkCleaning(true)
     setBulkCleanupOpen(false)
+    setBulkProgress(null)
+    // 订阅主进程逐项进度；finally 中统一取消订阅并满空进度。
+    const unsubscribe = subscribeProgress?.((payload) => setBulkProgress(payload))
     try {
       const result = await execute({ candidates: candidates.map((item) => ({ checkoutId: item.checkoutId, expectedRevision: item.revision })) })
       if (!result.ok) toast.error('批量清理失败', { description: result.error.message })
@@ -230,6 +235,8 @@ export function WorktreeManagerSheet(): React.ReactElement {
       } else toast.success(`已安全清理 ${result.value.cleaned.length} 个 Worktree`)
       await load()
     } finally {
+      unsubscribe?.()
+      setBulkProgress(null)
       setBulkCleaning(false)
     }
   }
@@ -308,12 +315,18 @@ export function WorktreeManagerSheet(): React.ReactElement {
         <div className="flex items-start justify-between border-b border-border/60 px-5 pb-4 pt-5">
           <div>
             <h2 className="text-base font-semibold">Worktrees</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{items.length} 个物理环境 · {sizeSummary}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {bulkCleaning && bulkProgress
+                ? `正在清理 ${bulkProgress.done}/${bulkProgress.total} · 已清理 ${bulkProgress.cleanedCount} · 保留 ${bulkProgress.retainedCount}`
+                : `${items.length} 个物理环境 · ${sizeSummary}`}
+            </p>
           </div>
           <div className="flex items-center gap-1">
             <Button type="button" variant="outline" size="sm" disabled={bulkCleaning || diagnosticsLoading || safeCleanupItems.length === 0} onClick={() => setBulkCleanupOpen(true)}>
               {bulkCleaning ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-              {bulkCleaning ? '清理中…' : `清理安全项${safeCleanupItems.length > 0 ? `（${safeCleanupItems.length}）` : ''}`}
+              {bulkCleaning && bulkProgress
+                ? `清理中 ${bulkProgress.done}/${bulkProgress.total}`
+                : bulkCleaning ? '清理中…' : `清理安全项${safeCleanupItems.length > 0 ? `（${safeCleanupItems.length}）` : ''}`}
             </Button>
             <Button type="button" variant="ghost" size="icon-sm" disabled={loading} onClick={() => void load()} aria-label="刷新 Worktrees">
               <RefreshCw className={cn('size-4', loading && 'animate-spin')} />

@@ -3,9 +3,10 @@ import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type {
-  ManagedWorktreeSummaryView,
   BulkCleanupManagedWorktreeCandidate,
   BulkCleanupManagedWorktreesResult,
+  BulkCleanupProgressPayload,
+  ManagedWorktreeSummaryView,
   SessionCheckoutErrorCode,
   SessionCheckoutOperation,
   SessionCheckoutOperationErrorResult,
@@ -2407,7 +2408,11 @@ export function createSessionCheckoutModule(
 
   async function cleanupFinalized(
     record: ManagedCheckoutRecord,
-    options: { allowLegacyResidue?: boolean } = {},
+    options: {
+      allowLegacyResidue?: boolean
+      /** 与同一请求内前置巡检共享的只读证据；仅 allowLegacyResidue: true 的批量路径传入，删除前全部安全校验仍会执行。 */
+      shared?: ManagedWorktreeSharedDiagnostics
+    } = {},
   ): Promise<{ cleaned: boolean; message?: string; reason?: WorktreeCleanupReason }> {
     const block = (message: string, reason = cleanupReasonForMessage(message)): { cleaned: false; message: string; reason: WorktreeCleanupReason } => {
       updateManagedCheckout(record.checkoutId, (current) => {
@@ -2517,7 +2522,7 @@ export function createSessionCheckoutModule(
     }
 
     try {
-      const existingQuarantine = await validateCleanupQuarantine(record)
+      const existingQuarantine = await (options.shared ? options.shared.quarantine() : validateCleanupQuarantine(record))
       if (existingQuarantine) {
         await retryTransientCleanup(() => dependencies.files.removeDirectoryTree(existingQuarantine))
       } else if (record.journal?.operation === 'cleanup' && record.journal.cleanupQuarantinePath && dependencies.files.exists(record.journal.cleanupQuarantinePath)) {
@@ -2527,11 +2532,11 @@ export function createSessionCheckoutModule(
           ? await validateManagedCheckout(binding, record, false)
           : undefined
         if (validated) {
-          const snapshot = await dependencies.applyEngine.inspectReview({
+          const snapshot = await (options.shared ? options.shared.inspectReview() : dependencies.applyEngine.inspectReview({
             baseOid: record.applyBaseOid ?? record.baseOid,
             isolatedPath: record.managedRoot,
             localPath: record.localRoot,
-          })
+          }))
           if (snapshot.status !== 'ready' || snapshot.isolatedFingerprint !== record.delivery.isolatedFingerprint) {
             return block('Worktree 在提交后出现了新修改，未执行清理。')
           }
@@ -2546,7 +2551,9 @@ export function createSessionCheckoutModule(
             await quarantineAndRemove(removing, residue)
           }
         } else {
-          const residue = await validateDetachedCleanupResidue(record, options.allowLegacyResidue === true)
+          const residue = await (options.shared && options.allowLegacyResidue === true
+            ? options.shared.residue()
+            : validateDetachedCleanupResidue(record, options.allowLegacyResidue === true))
           if (!residue) return block(CLEANUP_IDENTITY_CHANGED_MESSAGE)
           const removing = beginRemoval(record, residue.directoryIdentity)
           if (!removing) return block('Worktree 记录在清理前丢失，未执行清理。')
@@ -3849,49 +3856,87 @@ export function createSessionCheckoutModule(
 
   async function bulkCleanupManagedWorktrees(
     candidates: BulkCleanupManagedWorktreeCandidate[],
+    onProgress?: (event: BulkCleanupProgressPayload) => void,
   ): Promise<BulkCleanupManagedWorktreesResult> {
     const cleaned: BulkCleanupManagedWorktreesResult['cleaned'] = []
     const retained: BulkCleanupManagedWorktreesResult['retained'] = []
     const uniqueCandidates = [...new Map(candidates.map((candidate) => [candidate.checkoutId, candidate])).values()]
       .sort((left, right) => left.checkoutId.localeCompare(right.checkoutId))
+    const total = uniqueCandidates.length
+    let done = 0
     for (const candidate of uniqueCandidates) {
-      const record = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
-      if (!record || record.phase === 'discarded') continue
-      if (record.revision !== candidate.expectedRevision) {
-        retained.push({
-          checkoutId: record.checkoutId,
-          iteration: managedIteration(record),
-          cleanup: cleanupBlocked('unknown', 'Worktree revision 已变化，未执行清理。', record.revision),
-        })
-        continue
+      let outcome: 'cleaned' | 'retained' | 'skipped' = 'skipped'
+      try {
+        // 每项独立 maintenance 锁：无关会话的 inspect 永不阻塞，项间让出队列供用户请求插队；
+        // 对齐 cleanupExpiredRetained 的既有模式，不再整批独占导致全局读取超时。
+        outcome = await withBindingLock(async (): Promise<'cleaned' | 'retained' | 'skipped'> => {
+          const record = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
+          if (!record || record.phase === 'discarded') return 'skipped'
+          if (record.revision !== candidate.expectedRevision) {
+            retained.push({
+              checkoutId: record.checkoutId,
+              iteration: managedIteration(record),
+              cleanup: cleanupBlocked('unknown', 'Worktree revision 已变化，未执行清理。', record.revision),
+            })
+            return 'retained'
+          }
+          // 同一项内的巡检与删除共享同一批只读证据，避免双份全树扫描；删除前全部安全校验仍会执行。
+          const shared = createSharedManagedDiagnostics(record)
+          const inspection = await inspectCleanupForRecord(record, shared)
+          if (inspection.eligibility !== 'safe') {
+            retained.push({ checkoutId: record.checkoutId, iteration: managedIteration(record), cleanup: inspection })
+            return 'retained'
+          }
+          const latest = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
+          if (!latest || latest.revision !== candidate.expectedRevision) {
+            retained.push({
+              checkoutId: record.checkoutId,
+              iteration: managedIteration(record),
+              cleanup: cleanupBlocked('unknown', 'Worktree 在清理前发生变化，未执行清理。', latest?.revision ?? record.revision),
+            })
+            return 'retained'
+          }
+          const result = await cleanupFinalized(latest, { allowLegacyResidue: true, shared })
+          const updated = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
+          if (result.cleaned) {
+            cleaned.push({
+              checkoutId: record.checkoutId,
+              iteration: managedIteration(record),
+              commitOid: record.delivery.state === 'finalized' || record.delivery.state === 'retained' ? record.delivery.commitOid : null,
+            })
+            return 'cleaned'
+          }
+          if (updated) {
+            retained.push({
+              checkoutId: updated.checkoutId,
+              iteration: managedIteration(updated),
+              cleanup: await inspectCleanupForRecord(updated),
+            })
+          }
+          return 'retained'
+        }, { operation: 'bulkCleanupManagedWorktrees', allowConcurrentInspect: true, targetKeys: [`isolated:${candidate.checkoutId}`] })
+      } catch (error) {
+        // 单项异常不再中断整批；registry 已持久化该项状态，管理面板刷新即可见。
+        console.warn('[session-checkout] 批量清理单项失败:', error)
+        const failedRecord = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
+        if (failedRecord) {
+          retained.push({
+            checkoutId: candidate.checkoutId,
+            iteration: managedIteration(failedRecord),
+            cleanup: cleanupBlocked('unknown', `清理执行异常：${error instanceof Error ? error.message : String(error)}`, failedRecord.revision),
+          })
+          outcome = 'retained'
+        }
       }
-      const inspection = await inspectCleanupForRecord(record)
-      if (inspection.eligibility !== 'safe') {
-        retained.push({ checkoutId: record.checkoutId, iteration: managedIteration(record), cleanup: inspection })
-        continue
-      }
-      const latest = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
-      if (!latest || latest.revision !== candidate.expectedRevision) {
-        retained.push({
-          checkoutId: record.checkoutId,
-          iteration: managedIteration(record),
-          cleanup: cleanupBlocked('unknown', 'Worktree 在清理前发生变化，未执行清理。', latest?.revision ?? record.revision),
-        })
-        continue
-      }
-      const result = await cleanupFinalized(latest, { allowLegacyResidue: true })
-      const updated = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
-      if (result.cleaned) {
-        cleaned.push({
-          checkoutId: record.checkoutId,
-          iteration: managedIteration(record),
-          commitOid: record.delivery.state === 'finalized' || record.delivery.state === 'retained' ? record.delivery.commitOid : null,
-        })
-      } else if (updated) {
-        retained.push({
-          checkoutId: updated.checkoutId,
-          iteration: managedIteration(updated),
-          cleanup: await inspectCleanupForRecord(updated),
+      done += 1
+      if (outcome !== 'skipped') {
+        onProgress?.({
+          total,
+          done,
+          currentCheckoutId: candidate.checkoutId,
+          lastOutcome: outcome,
+          cleanedCount: cleaned.length,
+          retainedCount: retained.length,
         })
       }
     }
@@ -4003,6 +4048,49 @@ export function createSessionCheckoutModule(
         if (didClean) cleaned.push(record.checkoutId)
       } catch (error) {
         console.warn(`[session-checkout] 到期保留清理未完成: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    return cleaned
+  }
+
+  /**
+   * 判断记录是否属于可自动重试的清理失败：仅限瞬时占用类（pending，或 blocked 中
+   * directory_busy/quarantine_busy），不触碰 identity/修改/协作类需要人工判断的失败。
+   */
+  function isRetryableCleanupFailure(record: ManagedCheckoutRecord): boolean {
+    if (record.phase === 'discarded') return false
+    const delivery = record.delivery
+    if (delivery.state !== 'finalized' && delivery.state !== 'retained') return false
+    if (delivery.cleanup === 'pending') return true
+    if (delivery.cleanup === 'blocked' && delivery.cleanupMessage) {
+      const reason = cleanupReasonForMessage(delivery.cleanupMessage)
+      return reason === 'directory_busy' || reason === 'quarantine_busy'
+    }
+    return false
+  }
+
+  /**
+   * 后台自动重试瞬时占用失败的清理（finalize 时被 Windows 文件占用卡住的 worktree 等）。
+   * 每轮最多 limit 项、每项独立 maintenance 锁；cleanupFinalized 删除前仍会全量重校验，
+   * 安全等价于用户在管理面板手动重试。
+   */
+  async function cleanupRetryableManagedWorktrees(limit = 10): Promise<string[]> {
+    const retryable = Object.values(dependencies.registry.read().managedCheckouts)
+      .filter(isRetryableCleanupFailure)
+      .sort((left, right) => managedUpdatedAt(left) - managedUpdatedAt(right))
+      .slice(0, Math.max(0, limit))
+    const cleaned: string[] = []
+    for (const record of retryable) {
+      try {
+        // 按单个 checkout 取得队列位置，让用户请求能在两项后台维护之间执行。
+        const didClean = await withBindingLock(async () => {
+          const current = dependencies.registry.read().managedCheckouts[record.checkoutId]
+          if (!current || !isRetryableCleanupFailure(current)) return false
+          return (await cleanupFinalized(current)).cleaned
+        }, { operation: 'cleanupRetryableManagedWorktrees', allowConcurrentInspect: true, targetKeys: [`isolated:${record.checkoutId}`] })
+        if (didClean) cleaned.push(record.checkoutId)
+      } catch (error) {
+        console.warn(`[session-checkout] 占用失败清理自动重试未完成: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     return cleaned
@@ -4434,7 +4522,7 @@ export function createSessionCheckoutModule(
     listManagedWorktrees,
     listSessionTargetBindings,
     inspectManagedWorktreeCleanup,
-    bulkCleanupManagedWorktrees: (candidates) => withBindingLock(() => bulkCleanupManagedWorktrees(candidates), { operation: 'bulkCleanupManagedWorktrees' }),
+    bulkCleanupManagedWorktrees: (candidates, onProgress) => bulkCleanupManagedWorktrees(candidates, onProgress),
     manageManagedWorktree: (input) => withBindingLock(
       () => manageManagedWorktree(input),
       { operation: 'manageManagedWorktree', targetKeys: [`isolated:${input.checkoutId}`] },
@@ -4444,6 +4532,7 @@ export function createSessionCheckoutModule(
       { operation: 'resolveManagedRootForReveal', targetKeys: [`isolated:${checkoutId}`] },
     ),
     cleanupExpiredRetained,
+    cleanupRetryableManagedWorktrees,
     assertReleaseSession: (sessionId, intent) => withBindingLock(async () => {
       await assertReleaseSession(sessionId, intent)
     }, { operation: 'assertReleaseSession', sessionIds: [sessionId] }),

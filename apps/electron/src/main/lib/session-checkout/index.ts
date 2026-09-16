@@ -2,6 +2,7 @@ import type {
   ManagedWorktreeSummaryView,
   BulkCleanupManagedWorktreeCandidate,
   BulkCleanupManagedWorktreesResult,
+  BulkCleanupProgressPayload,
   SessionCheckoutErrorCode,
   SessionCheckoutKind,
   SessionCheckoutOperation,
@@ -194,11 +195,23 @@ export interface SessionCheckoutModule {
   listSessionTargetBindings(): Array<{ sessionId: string; checkoutId: string }>
   /** main-owned 只读清理巡检；不写 registry、Git refs 或目录。 */
   inspectManagedWorktreeCleanup(input?: ListManagedWorktreesInput): Promise<ManagedWorktreeSummaryView[]>
-  bulkCleanupManagedWorktrees(candidates: BulkCleanupManagedWorktreeCandidate[]): Promise<BulkCleanupManagedWorktreesResult>
+  /**
+   * 批量清理：每项独立 maintenance 锁（项间让出队列，不阻塞无关会话读取），
+   * 可选 onProgress 逐项回调供 IPC 层推送进度。
+   */
+  bulkCleanupManagedWorktrees(
+    candidates: BulkCleanupManagedWorktreeCandidate[],
+    onProgress?: (event: BulkCleanupProgressPayload) => void,
+  ): Promise<BulkCleanupManagedWorktreesResult>
   manageManagedWorktree(input: ManageManagedWorktreeInput): Promise<ManagedWorktreeSummaryView>
   /** 仅 main reveal IPC 使用，renderer 不得接收返回路径。 */
   resolveManagedRootForReveal(checkoutId: string): Promise<string>
   cleanupExpiredRetained(now?: number): Promise<string[]>
+  /**
+   * 后台自动重试瞬时占用失败的清理（pending 或 directory_busy/quarantine_busy 类 blocked）；
+   * 每轮最多 limit 项、每项独立 maintenance 锁，删除前仍全量重校验。
+   */
+  cleanupRetryableManagedWorktrees(limit?: number): Promise<string[]>
   assertReleaseSession(sessionId: string, intent: SessionCheckoutReleaseIntent): Promise<void>
   releaseSession(sessionId: string, intent: SessionCheckoutReleaseIntent): Promise<void>
   reconcile(): Promise<SessionCheckoutReconcileSummary>

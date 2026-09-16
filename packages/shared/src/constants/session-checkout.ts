@@ -3,6 +3,7 @@ import type {
   ManagedWorktreeSummaryView,
   BulkCleanupManagedWorktreeCandidate,
   BulkCleanupManagedWorktreesResult,
+  BulkCleanupProgressPayload,
   SessionCheckoutOperationResult,
   SessionTargetView,
   WorktreeApplyPreflightView,
@@ -18,6 +19,7 @@ export const SESSION_CHECKOUT_IPC_CHANNELS = {
   LIST_MANAGED: 'session-checkout:list-managed',
   MANAGE: 'session-checkout:manage',
   BULK_CLEANUP_MANAGED: 'session-checkout:bulk-cleanup-managed',
+  BULK_CLEANUP_PROGRESS: 'session-checkout:bulk-cleanup-progress',
   REVEAL_MANAGED: 'session-checkout:reveal-managed',
   HANDOFF_RECOVERY: 'session-checkout:handoff-recovery',
   HANDOFF_SESSION: 'session-checkout:handoff-session',
@@ -199,6 +201,8 @@ export interface SessionCheckoutRendererApi {
   listManaged?(input: ListManagedWorktreesInput): Promise<SessionCheckoutIpcResult<ManagedWorktreeSummaryView[]>>
   manage?(input: ManageWorktreeInput): Promise<SessionCheckoutIpcResult<ManagedWorktreeSummaryView>>
   bulkCleanupManaged?(input: BulkCleanupManagedWorktreesInput): Promise<SessionCheckoutIpcResult<BulkCleanupManagedWorktreesResult>>
+  /** 订阅批量清理进度推送；返回取消订阅函数。 */
+  onBulkCleanupProgress?(listener: (payload: BulkCleanupProgressPayload) => void): () => void
   revealManaged?(input: RevealManagedWorktreeInput): Promise<SessionCheckoutIpcResult<void>>
   handoffRecovery?(input: WorktreeRecoveryHandoffInput): Promise<SessionCheckoutIpcResult<WorktreeRecoveryHandoffResult>>
   handoffSession?(input: AgentSessionHandoffInput): Promise<SessionCheckoutIpcResult<AgentSessionHandoffResult>>

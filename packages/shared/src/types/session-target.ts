@@ -357,6 +357,16 @@ export interface BulkCleanupManagedWorktreesResult {
   retained: Array<{ checkoutId: string; iteration: number; cleanup: ManagedWorktreeCleanupView }>
 }
 
+/** 批量清理进度推送（主进程 → 渲染进程，仅 BULK_CLEANUP_PROGRESS 通道）。 */
+export interface BulkCleanupProgressPayload {
+  total: number
+  done: number
+  currentCheckoutId?: string
+  lastOutcome: 'cleaned' | 'retained'
+  cleanedCount: number
+  retainedCount: number
+}
+
 export type ManagedWorktreeSummaryState =
   | 'working'
   | 'ready_for_review'

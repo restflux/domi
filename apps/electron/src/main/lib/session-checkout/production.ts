@@ -106,12 +106,22 @@ export async function reconcileProductionSessionCheckouts(): Promise<void> {
   }
   if (!retentionMaintenanceTimer) {
     retentionMaintenanceTimer = setInterval(() => {
+      // 到期保留与瞬时占用失败（pending / directory_busy）两类后台维护各自独立 catch；
+      // cleanupRetryableManagedWorktrees 每轮有项数上限，逐步消化存量而不长期占队。
       void module.cleanupExpiredRetained().catch((error) => {
         console.warn('[session-checkout] retained Worktree 到期维护失败:', error)
+      })
+      void module.cleanupRetryableManagedWorktrees().catch((error) => {
+        console.warn('[session-checkout] 占用失败 Worktree 自动重试清理失败:', error)
       })
     }, RETENTION_MAINTENANCE_INTERVAL_MS)
     retentionMaintenanceTimer.unref?.()
   }
+  // 启动时先消化一批 finalize 时被文件占用卡住的 Worktree，避免只在面板手动重试；
+  // 每项独立 maintenance 锁，不会阻塞用户会话读取。
+  void module.cleanupRetryableManagedWorktrees().catch((error) => {
+    console.warn('[session-checkout] 启动自动清理未完成:', error)
+  })
 }
 
 /** 仅供测试替换生产 singleton。 */

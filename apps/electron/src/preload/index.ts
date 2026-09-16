@@ -237,6 +237,7 @@ import type {
   PiExtensionTrustApi,
   PiRunTimingRendererApi,
   SessionCheckoutRendererApi,
+  BulkCleanupProgressPayload,
 } from '@domi/shared'
 import type {
   EditableContextMenuAction,
@@ -1560,6 +1561,14 @@ const electronAPI: ElectronAPI = {
     listManaged: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.LIST_MANAGED, input),
     manage: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.MANAGE, input),
     bulkCleanupManaged: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_MANAGED, input),
+    onBulkCleanupProgress: (listener) => {
+      // 对齐 onStateChanged 订阅模式；返回取消订阅函数精确移除当前 listener。
+      const wrapped = (_event: Electron.IpcRendererEvent, payload: BulkCleanupProgressPayload): void => listener(payload)
+      ipcRenderer.on(SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_PROGRESS, wrapped)
+      return () => {
+        ipcRenderer.removeListener(SESSION_CHECKOUT_IPC_CHANNELS.BULK_CLEANUP_PROGRESS, wrapped)
+      }
+    },
     revealManaged: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.REVEAL_MANAGED, input),
     handoffRecovery: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.HANDOFF_RECOVERY, input),
     handoffSession: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.HANDOFF_SESSION, input),
