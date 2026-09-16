@@ -206,12 +206,12 @@ export interface SessionCheckoutModule {
   manageManagedWorktree(input: ManageManagedWorktreeInput): Promise<ManagedWorktreeSummaryView>
   /** 仅 main reveal IPC 使用，renderer 不得接收返回路径。 */
   resolveManagedRootForReveal(checkoutId: string): Promise<string>
-  cleanupExpiredRetained(now?: number): Promise<string[]>
+  cleanupExpiredRetained(now?: number, shouldContinue?: () => boolean): Promise<string[]>
   /**
    * 后台自动重试瞬时占用失败的清理（pending 或 directory_busy/quarantine_busy 类 blocked）；
    * 每轮最多 limit 项、每项独立 maintenance 锁，删除前仍全量重校验。
    */
-  cleanupRetryableManagedWorktrees(limit?: number): Promise<string[]>
+  cleanupRetryableManagedWorktrees(limit?: number, shouldContinue?: () => boolean): Promise<string[]>
   assertReleaseSession(sessionId: string, intent: SessionCheckoutReleaseIntent): Promise<void>
   releaseSession(sessionId: string, intent: SessionCheckoutReleaseIntent): Promise<void>
   reconcile(): Promise<SessionCheckoutReconcileSummary>

@@ -83,6 +83,11 @@ let processSessionCheckoutModule: SessionCheckoutModule | undefined
 let retentionMaintenanceTimer: NodeJS.Timeout | undefined
 const RETENTION_MAINTENANCE_INTERVAL_MS = 15 * 60 * 1000
 
+/** 后台维护只使用没有活跃 Isolated 会话的空闲窗口，避免抢占用户操作队列。 */
+function canRunRetentionMaintenance(module: SessionCheckoutModule): boolean {
+  return module.listSessionTargetBindings().every(({ sessionId }) => !isRegisteredAgentActive(sessionId))
+}
+
 /** 进程级 singleton；registry 与绑定锁不得因调用方不同而分裂。 */
 export function getSessionCheckoutModule(): SessionCheckoutModule {
   processSessionCheckoutModule ??= createProductionSessionCheckoutModule()
@@ -106,22 +111,19 @@ export async function reconcileProductionSessionCheckouts(): Promise<void> {
   }
   if (!retentionMaintenanceTimer) {
     retentionMaintenanceTimer = setInterval(() => {
-      // 到期保留与瞬时占用失败（pending / directory_busy）两类后台维护各自独立 catch；
-      // cleanupRetryableManagedWorktrees 每轮有项数上限，逐步消化存量而不长期占队。
-      void module.cleanupExpiredRetained().catch((error) => {
+      // 到期保留与瞬时占用失败两类维护都只在空闲窗口运行，并各自独立 catch；
+      // 每轮仅处理少量项目，用户会话出现后立即停止调度后续项目。
+      const shouldContinue = (): boolean => canRunRetentionMaintenance(module)
+      if (!shouldContinue()) return
+      void module.cleanupExpiredRetained(Date.now(), shouldContinue).catch((error) => {
         console.warn('[session-checkout] retained Worktree 到期维护失败:', error)
       })
-      void module.cleanupRetryableManagedWorktrees().catch((error) => {
+      void module.cleanupRetryableManagedWorktrees(2, shouldContinue).catch((error) => {
         console.warn('[session-checkout] 占用失败 Worktree 自动重试清理失败:', error)
       })
     }, RETENTION_MAINTENANCE_INTERVAL_MS)
     retentionMaintenanceTimer.unref?.()
   }
-  // 启动时先消化一批 finalize 时被文件占用卡住的 Worktree，避免只在面板手动重试；
-  // 每项独立 maintenance 锁，不会阻塞用户会话读取。
-  void module.cleanupRetryableManagedWorktrees().catch((error) => {
-    console.warn('[session-checkout] 启动自动清理未完成:', error)
-  })
 }
 
 /** 仅供测试替换生产 singleton。 */

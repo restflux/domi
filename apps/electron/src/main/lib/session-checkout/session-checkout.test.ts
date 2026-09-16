@@ -3996,6 +3996,10 @@ describe.concurrent('SessionCheckoutModule', () => {
     if (finished.status !== 'finished') throw new Error(`预期 finished，实际为 ${finished.status}`)
     expect(existsSync(lease.cwd)).toBe(true)
 
+    const skippedWhileBusy = await context.module.cleanupRetryableManagedWorktrees(10, () => false)
+    expect(skippedWhileBusy).toEqual([])
+    expect(existsSync(lease.cwd)).toBe(true)
+
     const cleaned = await context.module.cleanupRetryableManagedWorktrees()
     expect(cleaned).toEqual([target.checkout.id])
     expect(existsSync(lease.cwd)).toBe(false)

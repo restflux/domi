@@ -4033,11 +4033,12 @@ export function createSessionCheckoutModule(
       && record.delivery.expiresAt <= now
   }
 
-  async function cleanupExpiredRetained(now = Date.now()): Promise<string[]> {
+  async function cleanupExpiredRetained(now = Date.now(), shouldContinue: () => boolean = () => true): Promise<string[]> {
     const expired = Object.values(dependencies.registry.read().managedCheckouts)
       .filter((record) => isExpiredRetained(record, now))
     const cleaned: string[] = []
     for (const record of expired) {
+      if (!shouldContinue()) break
       try {
         // 按单个 checkout 取得队列位置，让用户请求能在两项后台维护之间执行。
         const didClean = await withBindingLock(async () => {
@@ -4075,13 +4076,15 @@ export function createSessionCheckoutModule(
    * 每轮最多 limit 项、每项独立 maintenance 锁；cleanupFinalized 删除前仍会全量重校验，
    * 安全等价于用户在管理面板手动重试。
    */
-  async function cleanupRetryableManagedWorktrees(limit = 10): Promise<string[]> {
+  async function cleanupRetryableManagedWorktrees(limit = 2, shouldContinue: () => boolean = () => true): Promise<string[]> {
     const retryable = Object.values(dependencies.registry.read().managedCheckouts)
       .filter(isRetryableCleanupFailure)
       .sort((left, right) => managedUpdatedAt(left) - managedUpdatedAt(right))
       .slice(0, Math.max(0, limit))
     const cleaned: string[] = []
     for (const record of retryable) {
+      // 后台维护只在空闲窗口运行；用户会话一旦出现，停止调度后续清理项。
+      if (!shouldContinue()) break
       try {
         // 按单个 checkout 取得队列位置，让用户请求能在两项后台维护之间执行。
         const didClean = await withBindingLock(async () => {
