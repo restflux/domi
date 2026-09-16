@@ -1,23 +1,32 @@
 import { BrandLogo } from '@/components/ui/brand-logo'
 /**
- * SessionMiniMapPopover — 左侧会话悬浮迷你地图
+ * SessionMiniMapPopover — 左侧会话悬浮面板
  *
  * 用于在 Working、置顶、最近会话和折叠侧栏中快速扫读会话结构。
  * 优先复用已打开会话写入的 tabMinimapCache；未打开时按需读取本地 JSONL。
+ * Agent 会话在标题下方补一行元信息（Local/Worktree、交付状态、项目与分支），
+ * 其中分支与状态在面板打开时才静默补齐。
  */
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertTriangle, Bot, Loader2, MessageSquare } from 'lucide-react'
+import { AlertTriangle, Bot, Folder, GitBranch, Loader2, MessageSquare } from 'lucide-react'
 import { UserAvatar } from '@/components/chat/UserAvatar'
 import { tabMinimapCacheAtom, type TabMinimapItem } from '@/atoms/tab-atoms'
 import { userProfileAtom } from '@/atoms/user-profile'
+import { inspectSessionTargetAtomFamily, sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms'
 import { getModelLogo, resolveModelProvider } from '@/lib/model-logo'
 import { channelsAtom } from '@/atoms/chat-atoms'
 import { cn } from '@/lib/utils'
+import {
+  buildSessionHoverMeta,
+  type SessionHoverMeta,
+  type SessionHoverTargetKind,
+  type SessionHoverTone,
+} from './session-hover-meta'
 import type {
   ChatMessage,
   SDKAssistantMessage,
@@ -29,6 +38,8 @@ import type {
 } from '@domi/shared'
 import { getSDKCompactStatus } from '@domi/shared'
 
+export type { SessionHoverTargetKind } from './session-hover-meta'
+
 export type SessionMiniMapType = 'chat' | 'agent'
 
 export interface SessionMiniMapTarget {
@@ -36,6 +47,10 @@ export interface SessionMiniMapTarget {
   sessionId: string
   title: string
   workspaceName?: string
+  /** 会话持久化的 Session Target 意图；chat 会话不传。 */
+  sessionTargetKind?: SessionHoverTargetKind
+  /** 会话更新时间戳；缺失时不显示"更新于"。 */
+  updatedAt?: number
 }
 
 interface UseSessionMiniMapHoverReturn {
@@ -60,7 +75,8 @@ interface SessionMiniMapPopoverProps {
 }
 
 const PANEL_WIDTH = 318
-const PANEL_MIN_HEIGHT = 132
+/** 头部包含标题行与元信息两行，最小高度相应抬高，保证正文仍能显示约两条消息。 */
+const PANEL_MIN_HEIGHT = 150
 const PANEL_MAX_HEIGHT = 420
 const PANEL_GAP = 16
 const VIEWPORT_MARGIN = 8
@@ -309,13 +325,70 @@ function getPreferredPanelHeight({
   if (loading) return 260
   if (error || itemCount === 0) return PANEL_MIN_HEIGHT
   const visibleItems = Math.min(itemCount, 8)
-  return Math.min(PANEL_MAX_HEIGHT, Math.max(PANEL_MIN_HEIGHT, 54 + visibleItems * 42))
+  // 72 为头部两行 + 内边距的实测高度，正文按每条 42 递增。
+  return Math.min(PANEL_MAX_HEIGHT, Math.max(PANEL_MIN_HEIGHT, 72 + visibleItems * 42))
 }
 
 function getMessageBubbleClass(item: TabMinimapItem): string {
   if (item.role === 'user') return 'bg-primary/[0.06]'
   if (item.role === 'status') return 'bg-amber-500/[0.08]'
   return ''
+}
+
+const META_CHIP_CLASS: Record<SessionHoverTone, string> = {
+  neutral: 'bg-foreground/[0.06] text-muted-foreground',
+  progress: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  ready: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  muted: 'bg-foreground/[0.05] text-muted-foreground/70',
+}
+
+/** 标题下方的两行元信息：目标/状态/更新时间 + 项目/分支。 */
+export function SessionHoverMetaPanel({
+  meta,
+  projectName,
+}: {
+  meta: SessionHoverMeta
+  projectName?: string
+}): React.ReactElement {
+  const chip = (tone: SessionHoverTone): string => cn(
+    'shrink-0 rounded-full px-1.5 text-[10px] font-medium leading-4',
+    META_CHIP_CLASS[tone],
+  )
+
+  return (
+    <div data-session-hover-meta="panel" className="flex flex-col gap-1">
+      <div data-session-hover-meta="status" className="flex min-w-0 items-center gap-1.5">
+        <span data-session-hover-meta="target" className={chip(meta.targetTone)}>{meta.targetLabel}</span>
+        {meta.statusLabel && <span className={chip(meta.statusTone)}>{meta.statusLabel}</span>}
+        {meta.updatedLabel && (
+          <span className="ml-auto shrink-0 text-[11px] leading-4 tabular-nums text-muted-foreground/70">
+            更新于 {meta.updatedLabel}
+          </span>
+        )}
+      </div>
+      {(projectName || meta.gitLabel) && (
+        <div
+          data-session-hover-meta="location"
+          className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground/70"
+        >
+          {projectName && (
+            <>
+              <Folder size={11} className="shrink-0 opacity-70" />
+              <span className="max-w-[110px] shrink-0 truncate" title={projectName}>{projectName}</span>
+            </>
+          )}
+          {projectName && meta.gitLabel && <span className="shrink-0 opacity-40">·</span>}
+          {meta.gitLabel && (
+            <>
+              <GitBranch size={11} className="shrink-0 opacity-70" />
+              <span className="min-w-0 flex-1 truncate" title={meta.gitLabel}>{meta.gitLabel}</span>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function PreviewText({ text }: { text: string }): React.ReactElement {
@@ -378,10 +451,30 @@ function SessionMiniMapPopoverContent({
   const [error, setError] = React.useState<string | null>(null)
   const preferredHeight = getPreferredPanelHeight({ loading, error, itemCount: items.length })
   const position = useSessionMiniMapPopoverPosition(anchorRef, open, preferredHeight)
+  const targetState = useAtomValue(sessionTargetStateAtomFamily(target.sessionId))
+  const inspectTarget = useSetAtom(inspectSessionTargetAtomFamily(target.sessionId))
+  const isAgentSession = target.type === 'agent'
+  // 已有权威快照或已在检查时不再重复请求。
+  const needsTargetSnapshot = isAgentSession && !targetState.snapshot && !targetState.loading
+  const meta = React.useMemo(
+    () => buildSessionHoverMeta({
+      sessionTargetKind: target.sessionTargetKind,
+      snapshot: targetState.snapshot,
+      updatedAt: target.updatedAt,
+    }),
+    [target.sessionTargetKind, target.updatedAt, targetState.snapshot],
+  )
   const renderedItems = React.useMemo(
     () => items.length > MAX_RENDERED_ITEMS ? items.slice(-MAX_RENDERED_ITEMS) : items,
     [items],
   )
+
+  React.useEffect(() => {
+    // 分支与交付状态只有 inspect 才知道，因此放在面板打开后静默补齐：
+    // 不切 loading、不覆盖已有错误，结果写入共享 atom 供输入区复用。
+    if (!open || !needsTargetSnapshot) return
+    void inspectTarget({ silent: true })
+  }, [inspectTarget, needsTargetSnapshot, open])
 
   React.useEffect(() => {
     if (!open) return
@@ -438,20 +531,18 @@ function SessionMiniMapPopoverContent({
           isLeaving ? 'session-minimap-popover-exit' : 'session-minimap-popover-enter',
         )}
       >
-        <div className="flex items-center justify-between gap-2 px-3 py-2 shrink-0 bg-muted/35 border-b border-border/35">
-          <div className="min-w-0 flex items-center gap-2">
-            <span className="truncate text-xs font-medium text-popover-foreground/85">
+        <div className="flex flex-col gap-1.5 px-3 py-2 shrink-0 bg-muted/35 border-b border-border/35">
+          <div className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-xs font-medium text-popover-foreground/85" title={target.title}>
               {target.title}
             </span>
-            {target.workspaceName && (
-              <span className="shrink-0 px-1.5 py-0 rounded-full bg-primary/10 text-[10px] leading-4 workspace-badge font-medium truncate max-w-[92px]">
-                {target.workspaceName}
-              </span>
-            )}
+            <span className="w-[44px] shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
+              {loading ? '加载中' : `${items.length} 条`}
+            </span>
           </div>
-          <span className="w-[44px] shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
-            {loading ? '加载中' : `${items.length} 条`}
-          </span>
+          {isAgentSession && (
+            <SessionHoverMetaPanel meta={meta} projectName={target.workspaceName} />
+          )}
         </div>
 
         <div className="relative flex-1 min-h-0 overflow-hidden bg-popover p-1.5">

@@ -37,6 +37,7 @@ import { sessionHoverPreviewEnabledAtom } from '@/atoms/ui-preferences'
 import {
   SessionMiniMapPopover,
   useSessionMiniMapHover,
+  type SessionHoverTargetKind,
 } from '@/components/session-preview/SessionMiniMapPopover'
 import { CONFIG_DIR_NAME, DEV_CONFIG_DIR_NAME } from '@domi/shared'
 import type {
@@ -137,8 +138,15 @@ interface SearchResultRowProps {
   committedQuery: string
   miniMapDisabled?: boolean
   getAgentWorkspaceName: (sessionId: string) => string | undefined
+  /** 悬浮面板的目标意图与更新时间；搜索结果本身不携带会话元数据。 */
+  getAgentHoverTarget: (sessionId: string) => SearchResultHoverTarget | undefined
   onSelect: (result: SearchResult) => void
   onHover: (index: number) => void
+}
+
+interface SearchResultHoverTarget {
+  sessionTargetKind?: SessionHoverTargetKind
+  updatedAt?: number
 }
 
 function SearchResultRow({
@@ -148,12 +156,14 @@ function SearchResultRow({
   committedQuery,
   miniMapDisabled,
   getAgentWorkspaceName,
+  getAgentHoverTarget,
   onSelect,
   onHover,
 }: SearchResultRowProps): React.ReactElement {
   const preview = useSessionMiniMapHover(400, miniMapDisabled)
   const isContent = isContentResult(result)
   const wsName = result.type === 'agent' ? getAgentWorkspaceName(result.id) : undefined
+  const hoverTarget = result.type === 'agent' ? getAgentHoverTarget(result.id) : undefined
 
   return (
     <>
@@ -205,6 +215,8 @@ function SearchResultRow({
           sessionId: result.id,
           title: result.title,
           workspaceName: wsName,
+          sessionTargetKind: hoverTarget?.sessionTargetKind,
+          updatedAt: hoverTarget?.updatedAt,
         }}
         anchorRef={preview.anchorRef}
         open={preview.isOpen}
@@ -240,6 +252,12 @@ export function SearchDialog(): React.ReactElement {
     if (!session?.workspaceId) return undefined
     return workspaceNameMap.get(session.workspaceId)
   }, [agentSessions, workspaceNameMap])
+
+  const getAgentHoverTarget = React.useCallback((sessionId: string): SearchResultHoverTarget | undefined => {
+    const session = agentSessions.find((s) => s.id === sessionId)
+    if (!session) return undefined
+    return { sessionTargetKind: session.sessionTarget?.kind, updatedAt: session.updatedAt }
+  }, [agentSessions])
 
   // query：输入框当前值（实时跟随用户）
   // committedQuery：用户已确认提交的搜索词（点击/回车后才更新），用于结果展示与高亮
@@ -596,6 +614,7 @@ export function SearchDialog(): React.ReactElement {
                   committedQuery={committedQuery}
                   miniMapDisabled={!sessionHoverPreviewEnabled}
                   getAgentWorkspaceName={getAgentWorkspaceName}
+                  getAgentHoverTarget={getAgentHoverTarget}
                   onSelect={navigateToResult}
                   onHover={setSelectedIndex}
                 />
@@ -619,6 +638,7 @@ export function SearchDialog(): React.ReactElement {
                   committedQuery={committedQuery}
                   miniMapDisabled={!sessionHoverPreviewEnabled}
                   getAgentWorkspaceName={getAgentWorkspaceName}
+                  getAgentHoverTarget={getAgentHoverTarget}
                   onSelect={navigateToResult}
                   onHover={setSelectedIndex}
                 />

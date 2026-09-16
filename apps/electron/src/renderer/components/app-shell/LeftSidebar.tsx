@@ -99,6 +99,7 @@ import { getAgentSessionTransferLabel } from '@/components/session-header-menu-m
 import {
   SessionMiniMapPopover,
   useSessionMiniMapHover,
+  type SessionHoverTargetKind,
   type SessionMiniMapType,
 } from '@/components/session-preview/SessionMiniMapPopover'
 import { detectIsMac } from '@/lib/platform'
@@ -1028,6 +1029,10 @@ interface RailRecentItem {
   status: SessionIndicatorStatus
   pinned: boolean
   workspaceName?: string
+  /** 会话持久化的 Session Target 意图；chat 项不传。 */
+  sessionTargetKind?: SessionHoverTargetKind
+  /** 会话更新时间戳；chat 项不传。 */
+  updatedAt?: number
   isAutomation?: boolean
   isDelegation?: boolean
 }
@@ -1085,6 +1090,8 @@ function RailRecentButton({
           sessionId: item.id,
           title: item.title,
           workspaceName: item.workspaceName,
+          sessionTargetKind: item.sessionTargetKind,
+          updatedAt: item.updatedAt,
         }}
         anchorRef={preview.anchorRef}
         open={preview.isOpen}
@@ -2948,6 +2955,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         status: agentIndicatorMap.get(session.id) ?? (unviewedCompletedSessionIds.has(session.id) ? 'completed' as const : 'idle' as const),
         pinned: !!session.pinned,
         workspaceName: session.workspaceId ? workspaceNameMap.get(session.workspaceId) : undefined,
+        sessionTargetKind: session.sessionTarget?.kind,
+        updatedAt: session.updatedAt,
         isAutomation: !!session.sourceAutomationId,
         isDelegation: !!session.sourceDelegationId,
       }))
@@ -4920,6 +4929,8 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
             sessionId: session.id,
             title: session.title,
             workspaceName,
+            sessionTargetKind: session.sessionTarget?.kind,
+            updatedAt: session.updatedAt,
           }}
           anchorRef={preview.anchorRef}
           open={preview.isOpen}
