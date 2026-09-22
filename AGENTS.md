@@ -327,6 +327,16 @@ Domi 没有 `UpdaterInitializer`，主进程也不初始化 Proma updater。
 - Agent 工作区按 slug 隔离，每个会话独立目录
 - MCP 配置和 Skills 默认按工作区管理；用户显式开启后，Pi 可只读继承外部用户级 Skills 与 `~/.pi/agent/mcp.json` 顶层服务器，工作区同名配置优先
 
+### 数据迁移约束
+
+- v1/v2 备份导入均须逐项目显式选择新建、合并或跳过，不按源项目 slug、同名项目或本机首个项目自动绑定，不推断跨机器路径。
+- 新建项目仅使用用户在当前电脑手动选择的 `projectRootPath`；未选目录时创建 Domi 托管空白项目。合并必须显式指定本机项目，沿用其根目录，不借导入重新绑定已有项目。
+- 附加目录和文件默认不关联，只应用用户显式提交的路径映射。导入前完成项目名称、根目录和附加路径校验；校验失败保留预览，允许修正后重试。
+- 多项目会话索引、消息和会话工作文件按各自目标项目归属导入；跳过的项目不得回落到其他项目。判断会话工作目录是否已存在时使用纯路径拼接，不能调用会自动创建目录的 getter 后再判断。
+- 项目代码由用户在目标电脑准备；平台专用 MCP/Skills 命令、可执行文件和绝对路径由用户调整，不自动转换或安装依赖。
+- 导出的大批量文件读取、目录遍历、ZIP 压缩和写出使用异步流程，写出失败必须返回错误，不能让界面一直等待。
+- 回归：`bun test ./apps/electron/src/main/lib/migration-export.test.ts ./apps/electron/src/main/lib/migration-boundary.test.ts ./apps/electron/src/main/lib/chat-tools/chat-tool-migration.test.ts ./apps/electron/src/renderer/lib/migration-path-mappings.test.ts`。
+
 ## 构建工具
 
 - **主进程/Preload**：esbuild；主进程将 Electron 与 Pi runtime 包标记为 external，Preload 仅 external Electron

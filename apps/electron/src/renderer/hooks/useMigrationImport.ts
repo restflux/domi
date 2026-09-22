@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
+import { initialMigrationPathMappings } from '@/lib/migration-path-mappings'
 
 type MigrationComponent = 'sessions' | 'skills' | 'mcp' | 'channels' | 'chattools'
 
 interface PathCheckResult {
   path: string
   exists: boolean
-  suggested?: string
 }
 
 export interface ImportPreview {
@@ -47,6 +47,7 @@ export interface WorkspaceImportMapping {
   action: 'merge' | 'create' | 'skip'
   targetWorkspaceId?: string
   newWorkspaceName?: string
+  projectRootPath?: string
 }
 
 interface UseMigrationImportReturn {
@@ -58,11 +59,11 @@ interface UseMigrationImportReturn {
   hasConflicts: boolean
   importConfirming: boolean
   importResult: { success: boolean; error?: string } | null
-  isV2: boolean
   handleSelectImportFile: () => Promise<void>
   handleConfirmImport: () => Promise<void>
   handlePathMapping: (originalPath: string, newValue: string | null) => void
   handleWorkspaceMapping: (sourceSlug: string, mapping: Partial<WorkspaceImportMapping>) => void
+  handleSelectProjectDirectory: (sourceSlug: string) => Promise<void>
   setConflictResolution: (value: 'overwrite' | 'skip') => void
   reset: () => void
 }
@@ -76,8 +77,6 @@ export function useMigrationImport(initialFilePath?: string | null): UseMigratio
   const [importConfirming, setImportConfirming] = useState(false)
   const [importResult, setImportResult] = useState<{ success: boolean; error?: string } | null>(null)
 
-  const isV2 = importPreview?.manifest.version === '2.0' && !!importPreview.workspaces
-
   const hasConflicts = importPreview?.workspaces?.some((ws) => {
     const mapping = workspaceMappings.find((m) => m.sourceSlug === ws.workspaceSlug)
     if (!mapping || mapping.action !== 'merge') return false
@@ -85,18 +84,13 @@ export function useMigrationImport(initialFilePath?: string | null): UseMigratio
   }) ?? false
 
   const initFromPreview = useCallback((preview: ImportPreview) => {
-    const initialPathMappings: Record<string, string | null> = {}
-    for (const r of preview.pathCheckResults) {
-      if (!r.exists) initialPathMappings[r.path] = null
-    }
-    setPathMappings(initialPathMappings)
+    setPathMappings(initialMigrationPathMappings(preview.pathCheckResults))
 
-    if (preview.manifest.version === '2.0' && preview.workspaces) {
+    if (preview.workspaces) {
       const mappings: WorkspaceImportMapping[] = preview.workspaces.map((ws) => ({
         sourceSlug: ws.workspaceSlug,
-        action: ws.existsLocally ? 'merge' : 'create',
-        targetWorkspaceId: ws.localWorkspaceId,
-        newWorkspaceName: ws.workspaceName,
+        action: 'create',
+        newWorkspaceName: ws.existsLocally ? `${ws.workspaceName}（导入）` : ws.workspaceName,
       }))
       setWorkspaceMappings(mappings)
     } else {
@@ -157,7 +151,7 @@ export function useMigrationImport(initialFilePath?: string | null): UseMigratio
         manifest: importPreview.manifest,
         pathMappings,
         conflictResolution: hasConflicts ? conflictResolution : undefined,
-        ...(isV2 ? { workspaceMappings } : {}),
+        workspaceMappings,
       })
       setImportResult({ success: true })
       setImportPreview(null)
@@ -166,7 +160,7 @@ export function useMigrationImport(initialFilePath?: string | null): UseMigratio
     } finally {
       setImportConfirming(false)
     }
-  }, [importPreview, pathMappings, workspaceMappings, isV2, conflictResolution, hasConflicts])
+  }, [importPreview, pathMappings, workspaceMappings, conflictResolution, hasConflicts])
 
   const handlePathMapping = useCallback((originalPath: string, newValue: string | null) => {
     setPathMappings((prev) => ({ ...prev, [originalPath]: newValue }))
@@ -177,6 +171,15 @@ export function useMigrationImport(initialFilePath?: string | null): UseMigratio
       prev.map((m) => (m.sourceSlug === sourceSlug ? { ...m, ...partial } : m))
     )
   }, [])
+
+  const handleSelectProjectDirectory = useCallback(async (sourceSlug: string) => {
+    try {
+      const folder = await window.electronAPI.openFolderDialog()
+      if (folder) handleWorkspaceMapping(sourceSlug, { projectRootPath: folder.path })
+    } catch (error) {
+      setImportResult({ success: false, error: error instanceof Error ? error.message : '选择项目目录失败' })
+    }
+  }, [handleWorkspaceMapping])
 
   const reset = useCallback(() => {
     // 清理主进程中的临时解压目录
@@ -201,11 +204,11 @@ export function useMigrationImport(initialFilePath?: string | null): UseMigratio
     hasConflicts,
     importConfirming,
     importResult,
-    isV2,
     handleSelectImportFile,
     handleConfirmImport,
     handlePathMapping,
     handleWorkspaceMapping,
+    handleSelectProjectDirectory,
     setConflictResolution,
     reset,
   }

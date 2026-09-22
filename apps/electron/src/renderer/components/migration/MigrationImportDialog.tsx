@@ -22,7 +22,8 @@ import {
 } from '@/atoms/migration-atoms'
 import { agentWorkspacesAtom } from '@/atoms/agent-atoms'
 import { useMigrationImport } from '@/hooks/useMigrationImport'
-import type { WorkspaceImportPreviewItem } from '@/hooks/useMigrationImport'
+import type { WorkspaceImportMapping, WorkspaceImportPreviewItem } from '@/hooks/useMigrationImport'
+import { MigrationPathMappingRow } from './MigrationPathMappingRow'
 
 export function MigrationImportDialog(): React.ReactElement {
   const [open, setOpen] = useAtom(migrationImportDialogOpenAtom)
@@ -38,11 +39,11 @@ export function MigrationImportDialog(): React.ReactElement {
     hasConflicts,
     importConfirming,
     importResult,
-    isV2,
     handleSelectImportFile,
     handleConfirmImport,
     handlePathMapping,
     handleWorkspaceMapping,
+    handleSelectProjectDirectory,
     setConflictResolution,
     reset,
   } = useMigrationImport(open ? initialFilePath : null)
@@ -114,18 +115,21 @@ export function MigrationImportDialog(): React.ReactElement {
                   <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
                   <div className="text-sm text-amber-700 dark:text-amber-400">
                     <p className="font-medium">检测到跨平台迁移（{importPreview.manifest.sourcePlatform} → 当前系统）</p>
-                    <p className="mt-0.5 text-amber-600 dark:text-amber-500">部分 Skills 和 MCP 工具可能需要手动调整命令路径。</p>
+                    <p className="mt-0.5 text-amber-600 dark:text-amber-500">请为每个项目手动选择当前电脑上的目录。项目代码需要提前复制或克隆；不会自动沿用备份中的路径。</p>
+                    <p className="mt-1 text-amber-600 dark:text-amber-500">MCP 和 Skills 中的平台专用命令、可执行文件及绝对路径需要手动调整；导入不会自动安装这些依赖。</p>
                   </div>
                 </div>
               )}
 
               {/* 内容摘要 */}
-              {isV2 && importPreview.workspaces ? (
-                <V2ContentSummary
+              {importPreview.workspaces ? (
+                <MigrationContentSummary
                   preview={importPreview}
                   workspaceMappings={workspaceMappings}
                   localWorkspaces={localWorkspaces}
                   onWorkspaceMapping={handleWorkspaceMapping}
+                  onSelectProjectDirectory={handleSelectProjectDirectory}
+                  disabled={importConfirming}
                   hasConflicts={hasConflicts}
                   conflictResolution={conflictResolution}
                   onConflictResolutionChange={setConflictResolution}
@@ -137,34 +141,16 @@ export function MigrationImportDialog(): React.ReactElement {
               {/* 路径检查 */}
               {importPreview.pathCheckResults.length > 0 && (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">附加目录处理</label>
+                  <p className="text-sm font-medium text-foreground">附加目录与文件路径</p>
                   <div className="rounded-lg border border-border/50 divide-y divide-border/30">
                     {importPreview.pathCheckResults.map((r) => (
-                      <div key={r.path} className="px-4 py-3 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          {r.exists ? (
-                            <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
-                          ) : (
-                            <XCircle size={14} className="text-red-400 flex-shrink-0" />
-                          )}
-                          <span className="text-xs font-mono text-foreground truncate">{r.path}</span>
-                        </div>
-                        {!r.exists && (
-                          <div className="flex items-center gap-2 pl-5">
-                            <span className="text-xs text-muted-foreground">处理方式：</span>
-                            <select
-                              value={pathMappings[r.path] === null ? '__remove' : (pathMappings[r.path] ?? '__remove')}
-                              onChange={(e) => handlePathMapping(r.path, e.target.value === '__remove' ? null : e.target.value)}
-                              className="text-xs border border-border rounded px-2 py-1 bg-background"
-                            >
-                              <option value="__remove">移除（推荐）</option>
-                              {r.suggested && (
-                                <option value={r.suggested}>推断路径：{r.suggested}</option>
-                              )}
-                            </select>
-                          </div>
-                        )}
-                      </div>
+                      <MigrationPathMappingRow
+                        key={r.path}
+                        entry={r}
+                        mapping={pathMappings[r.path]}
+                        disabled={importConfirming}
+                        onChange={handlePathMapping}
+                      />
                     ))}
                   </div>
                 </div>
@@ -269,17 +255,19 @@ function V1ContentSummary({ preview }: { preview: { manifest: { workspaceName?: 
 
 // ─── v2 多工作区内容摘要 ──────────────────────────────────────────────────
 
-interface V2ContentSummaryProps {
+interface MigrationContentSummaryProps {
   preview: { manifest: { exportedAt: number; components: string[] }; agentSessionCount: number; chatConversationCount: number; workspaces?: WorkspaceImportPreviewItem[] }
-  workspaceMappings: Array<{ sourceSlug: string; action: string; targetWorkspaceId?: string; newWorkspaceName?: string }>
-  localWorkspaces: Array<{ id: string; name: string; slug: string }>
-  onWorkspaceMapping: (sourceSlug: string, mapping: Record<string, unknown>) => void
+  workspaceMappings: WorkspaceImportMapping[]
+  localWorkspaces: Array<{ id: string; name: string; slug: string; projectRootPath?: string }>
+  onWorkspaceMapping: (sourceSlug: string, mapping: Partial<WorkspaceImportMapping>) => void
+  onSelectProjectDirectory: (sourceSlug: string) => Promise<void>
+  disabled: boolean
   hasConflicts: boolean
   conflictResolution: 'overwrite' | 'skip'
   onConflictResolutionChange: (value: 'overwrite' | 'skip') => void
 }
 
-function V2ContentSummary({ preview, workspaceMappings, localWorkspaces, onWorkspaceMapping, hasConflicts, conflictResolution, onConflictResolutionChange }: V2ContentSummaryProps): React.ReactElement {
+function MigrationContentSummary({ preview, workspaceMappings, localWorkspaces, onWorkspaceMapping, onSelectProjectDirectory, disabled, hasConflicts, conflictResolution, onConflictResolutionChange }: MigrationContentSummaryProps): React.ReactElement {
   const wsCount = preview.workspaces?.length ?? 0
 
   return (
@@ -309,7 +297,8 @@ function V2ContentSummary({ preview, workspaceMappings, localWorkspaces, onWorks
         <div className="rounded-lg border border-border/50 divide-y divide-border/30">
           {(preview.workspaces ?? []).map((ws) => {
             const mapping = workspaceMappings.find((m) => m.sourceSlug === ws.workspaceSlug)
-            const action = mapping?.action ?? 'merge'
+            const action = mapping?.action ?? 'create'
+            const targetWorkspace = localWorkspaces.find((item) => item.id === mapping?.targetWorkspaceId)
 
             return (
               <div key={ws.workspaceSlug} className="px-4 py-3 space-y-2">
@@ -338,33 +327,30 @@ function V2ContentSummary({ preview, workspaceMappings, localWorkspaces, onWorks
                   <span className="text-xs text-muted-foreground">操作：</span>
                   <select
                     value={action}
+                    disabled={disabled}
                     onChange={(e) => {
                       const newAction = e.target.value as 'merge' | 'create' | 'skip'
-                      if (newAction === 'merge' && ws.existsLocally) {
-                        onWorkspaceMapping(ws.workspaceSlug, { action: 'merge', targetWorkspaceId: ws.localWorkspaceId })
-                      } else if (newAction === 'merge') {
-                        onWorkspaceMapping(ws.workspaceSlug, { action: 'merge', targetWorkspaceId: localWorkspaces[0]?.id })
+                      if (newAction === 'merge') {
+                        onWorkspaceMapping(ws.workspaceSlug, { action: 'merge', targetWorkspaceId: undefined })
                       } else if (newAction === 'create') {
-                        onWorkspaceMapping(ws.workspaceSlug, { action: 'create', newWorkspaceName: ws.workspaceName })
+                        onWorkspaceMapping(ws.workspaceSlug, { action: 'create' })
                       } else {
                         onWorkspaceMapping(ws.workspaceSlug, { action: 'skip' })
                       }
                     }}
                     className="text-xs border border-border rounded px-2 py-1 bg-background"
                   >
-                    {ws.existsLocally && (
-                      <option value="merge">合并到已有项目</option>
-                    )}
-                    {!ws.existsLocally && localWorkspaces.length > 0 && (
+                    {localWorkspaces.length > 0 && (
                       <option value="merge">合并到现有项目...</option>
                     )}
                     <option value="create">创建新项目</option>
                     <option value="skip">跳过</option>
                   </select>
 
-                  {action === 'merge' && !ws.existsLocally && (
+                  {action === 'merge' && (
                     <select
                       value={mapping?.targetWorkspaceId ?? ''}
+                      disabled={disabled}
                       onChange={(e) => onWorkspaceMapping(ws.workspaceSlug, { action: 'merge', targetWorkspaceId: e.target.value })}
                       className="text-xs border border-border rounded px-2 py-1 bg-background"
                     >
@@ -375,6 +361,37 @@ function V2ContentSummary({ preview, workspaceMappings, localWorkspaces, onWorks
                     </select>
                   )}
                 </div>
+                {action === 'create' && (
+                  <div className="pl-5 space-y-2">
+                    <label className="block text-xs text-muted-foreground">
+                      项目名称
+                      <input
+                        value={mapping?.newWorkspaceName ?? ws.workspaceName}
+                        disabled={disabled}
+                        onChange={(event) => onWorkspaceMapping(ws.workspaceSlug, { newWorkspaceName: event.target.value })}
+                        className="mt-1 block w-full rounded-md border border-input bg-background px-2 py-1.5 text-foreground"
+                      />
+                    </label>
+                    <p className="text-xs text-muted-foreground break-all">
+                      项目目录：{mapping?.projectRootPath ?? '未选择，将创建 Domi 管理的空白项目'}
+                    </p>
+                    <div className="flex items-center gap-3 text-xs">
+                      <button type="button" disabled={disabled} onClick={() => onSelectProjectDirectory(ws.workspaceSlug)} className="text-primary hover:underline disabled:opacity-50">
+                        选择本机项目目录
+                      </button>
+                      {mapping?.projectRootPath && (
+                        <button type="button" disabled={disabled} onClick={() => onWorkspaceMapping(ws.workspaceSlug, { projectRootPath: undefined })} className="text-muted-foreground hover:underline disabled:opacity-50">
+                          清除选择
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {action === 'merge' && targetWorkspace && (
+                  <p className="pl-5 text-xs text-muted-foreground break-all">
+                    使用所选项目的目录：{targetWorkspace.projectRootPath ?? 'Domi 管理的项目目录'}
+                  </p>
+                )}
               </div>
             )
           })}

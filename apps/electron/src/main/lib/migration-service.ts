@@ -29,7 +29,6 @@ import {
   getAgentSessionsDir,
   getAgentSessionMessagesPath,
   getAgentWorkspacePath,
-  getAgentSessionWorkspacePath,
   getWorkspaceMcpPath,
   getWorkspaceSkillsDir,
   getInactiveSkillsDir,
@@ -37,7 +36,7 @@ import {
   getUserProfilePath,
   getChatToolsConfigPath,
 } from './config-paths'
-import { listAgentWorkspaces, getAgentWorkspace, getAllWorkspaceSkills, getWorkspaceMcpConfig } from './agent-workspace-manager'
+import { listAgentWorkspaces, getAgentWorkspace, getAllWorkspaceSkills, getWorkspaceMcpConfig, getLocalProjectRootStatus } from './agent-workspace-manager'
 import { listChannels, decryptApiKey } from './channel-manager'
 import type { AgentWorkspace, MigrationFileMode } from '@domi/shared'
 import {
@@ -93,7 +92,6 @@ export interface ExportPreview {
 export interface PathCheckResult {
   path: string
   exists: boolean
-  suggested?: string
 }
 
 export interface ImportPreview {
@@ -105,6 +103,7 @@ export interface ImportPreview {
   crossPlatform: boolean
   pathCheckResults: PathCheckResult[]
   tempDir: string
+  workspaces?: WorkspaceImportPreview[]
 }
 
 export interface ConfirmImportOptions {
@@ -116,6 +115,7 @@ export interface ConfirmImportOptions {
   /** key: 原始路径, value: 新路径 (null = 移除) */
   pathMappings: Record<string, string | null>
   conflictResolution?: 'overwrite' | 'skip'
+  workspaceMappings?: WorkspaceImportMapping[]
 }
 
 interface MigrationManifest {
@@ -204,6 +204,8 @@ export interface WorkspaceImportMapping {
   action: 'merge' | 'create' | 'skip'
   targetWorkspaceId?: string
   newWorkspaceName?: string
+  /** 仅新建项目使用，由用户在当前电脑手动选择。 */
+  projectRootPath?: string
 }
 
 export interface ConfirmImportOptionsV2 {
@@ -754,6 +756,11 @@ export async function parseImportFile(filePath: string): Promise<ImportPreview |
 
   const hasMcp = existsSync(join(tempDir, 'config/mcp.json'))
   const pathCheckResults = _checkAttachedDirectories(tempDir, manifest)
+  const local = listAgentWorkspaces().find((workspace) => workspace.slug === manifest.workspaceSlug)
+  const mcp = readJsonSafe<{ servers?: Record<string, unknown> }>(join(tempDir, 'config/mcp.json'))
+  const mcpServerNames = Object.keys(mcp?.servers ?? {})
+  const localSkills = new Set(local ? getAllWorkspaceSkills(local.slug).map((skill) => skill.slug) : [])
+  const localMcp = local ? getWorkspaceMcpConfig(local.slug).servers ?? {} : {}
 
   return {
     manifest,
@@ -764,6 +771,16 @@ export async function parseImportFile(filePath: string): Promise<ImportPreview |
     crossPlatform,
     pathCheckResults,
     tempDir,
+    workspaces: [{
+      workspaceSlug: manifest.workspaceSlug,
+      workspaceName: manifest.workspaceName,
+      skillNames,
+      mcpServerNames,
+      existsLocally: !!local,
+      localWorkspaceId: local?.id,
+      conflictingSkills: skillNames.filter((name) => localSkills.has(name)),
+      conflictingMcpServers: mcpServerNames.filter((name) => name in localMcp),
+    }],
   }
 }
 
@@ -775,25 +792,10 @@ function _checkAttachedDirectories(tempDir: string, manifest: MigrationManifest)
   const attachedPaths = [...(config?.attachedDirectories ?? []), ...(config?.attachedFiles ?? [])]
   if (attachedPaths.length === 0) return []
 
-  const currentHome = homedir()
-
-  return attachedPaths.map((p) => {
-    let suggested: string | undefined
-    if (manifest.sourceHomeDir && p.startsWith(manifest.sourceHomeDir)) {
-      suggested = join(currentHome, p.slice(manifest.sourceHomeDir.length))
-    }
-
-    const checkPath = suggested ?? p
-    return {
-      path: p,
-      exists: existsSync(checkPath),
-      suggested,
-    }
-  })
+  return attachedPaths.map((path) => ({ path, exists: isAbsolute(path) && existsSync(path) }))
 }
 
 function _checkAttachedDirectoriesV2(tempDir: string, manifest: MigrationManifestV2): PathCheckResult[] {
-  const currentHome = homedir()
   const allResults: PathCheckResult[] = []
   const seen = new Set<string>()
 
@@ -809,12 +811,7 @@ function _checkAttachedDirectoriesV2(tempDir: string, manifest: MigrationManifes
       if (seen.has(p)) continue
       seen.add(p)
 
-      let suggested: string | undefined
-      if (manifest.sourceHomeDir && p.startsWith(manifest.sourceHomeDir)) {
-        suggested = join(currentHome, p.slice(manifest.sourceHomeDir.length))
-      }
-      const checkPath = suggested ?? p
-      allResults.push({ path: p, exists: existsSync(checkPath), suggested })
+      allResults.push({ path: p, exists: isAbsolute(p) && existsSync(p) })
     }
   }
 
@@ -825,6 +822,41 @@ function _checkAttachedDirectoriesV2(tempDir: string, manifest: MigrationManifes
 
 export async function confirmImport(options: ConfirmImportOptions | ConfirmImportOptionsV2): Promise<{ success: boolean }> {
   const { tempDir, manifest, pathMappings } = options
+
+  // 写入前检查用户选择；失败时保留预览目录，允许修改路径后再次确认。
+  for (const mapped of Object.values(pathMappings)) {
+    if (mapped !== null && (!isAbsolute(mapped) || !existsSync(mapped))) {
+      throw new Error(`映射路径不存在或不是绝对路径，请重新选择: ${mapped}`)
+    }
+  }
+
+  const sourceEntries = manifest.version === '2.0' && 'workspaces' in manifest
+    ? manifest.workspaces : [manifest as MigrationManifest]
+  const mappings = options.workspaceMappings ?? []
+  const sourceSlugs = new Set(sourceEntries.map((workspace) => workspace.workspaceSlug))
+  if (mappings.length !== sourceSlugs.size || new Set(mappings.map((mapping) => mapping.sourceSlug)).size !== sourceSlugs.size
+    || mappings.some((mapping) => !sourceSlugs.has(mapping.sourceSlug) || !['create', 'merge', 'skip'].includes(mapping.action))) {
+    throw new Error('请为每个项目明确选择导入方式')
+  }
+  const names = new Set(listAgentWorkspaces().map((workspace) => workspace.name))
+  for (const mapping of mappings) {
+    if (mapping.action !== 'create') continue
+    const entry = sourceEntries.find((workspace) => workspace.workspaceSlug === mapping.sourceSlug)!
+    const name = mapping.newWorkspaceName ?? entry.workspaceName
+    if (!name?.trim() || names.has(name)) throw new Error(`项目名称为空或已存在，请修改: ${name}`)
+    names.add(name)
+  }
+
+  for (const mapping of (options as ConfirmImportOptionsV2).workspaceMappings ?? []) {
+    if (mapping.action === 'create' && mapping.projectRootPath !== undefined) {
+      if (!isAbsolute(mapping.projectRootPath) || getLocalProjectRootStatus(mapping.projectRootPath) !== 'available') {
+        throw new Error(`项目目录不存在或不可访问，请重新选择: ${mapping.projectRootPath}`)
+      }
+    }
+    if (mapping.action === 'merge' && (!mapping.targetWorkspaceId || !getAgentWorkspace(mapping.targetWorkspaceId))) {
+      throw new Error('请选择要合并到的本机项目')
+    }
+  }
 
   try {
     assertMigrationManifest(manifest)
@@ -837,30 +869,25 @@ export async function confirmImport(options: ConfirmImportOptions | ConfirmImpor
     }
 
     // v1.0 原有逻辑
-    const { targetWorkspaceId, createNewWorkspace, newWorkspaceName, conflictResolution } = options as ConfirmImportOptions
-    const overwrite = conflictResolution === 'overwrite'
+    const overwrite = options.conflictResolution === 'overwrite'
+    const mapping = mappings[0]!
     let targetWorkspace: AgentWorkspace | undefined
-    if (createNewWorkspace) {
+    if (mapping.action === 'create') {
       const { createAgentWorkspace } = await import('./agent-workspace-manager')
-      // 迁移包不携带本地项目根；新项目始终从 Domi 托管根开始，避免跨机器误绑绝对路径。
-      targetWorkspace = createAgentWorkspace(newWorkspaceName ?? (manifest as MigrationManifest).workspaceName)
-    } else if (targetWorkspaceId) {
-      targetWorkspace = getAgentWorkspace(targetWorkspaceId)
-    } else {
-      const workspaces = listAgentWorkspaces()
-      targetWorkspace = workspaces.find((w) => w.slug === (manifest as MigrationManifest).workspaceSlug) ?? workspaces[0]
+      targetWorkspace = createAgentWorkspace({
+        name: mapping.newWorkspaceName ?? (manifest as MigrationManifest).workspaceName,
+        projectRootPath: mapping.projectRootPath,
+      })
+    } else if (mapping.action === 'merge') {
+      targetWorkspace = getAgentWorkspace(mapping.targetWorkspaceId!)
+      if (!targetWorkspace) throw new Error('所选项目已不存在，请重新选择')
     }
 
-    if (!targetWorkspace) throw new Error('无法确定目标项目')
-
-    if (manifest.components.includes('sessions')) {
-      await _importSessions(tempDir, targetWorkspace)
-    }
-    if (manifest.components.includes('skills')) {
-      _importSkills(tempDir, targetWorkspace, overwrite)
-    }
-    if (manifest.components.includes('mcp')) {
-      _importMcp(tempDir, targetWorkspace, overwrite)
+    if (targetWorkspace) {
+      if (manifest.components.includes('sessions')) await _importSessions(tempDir, targetWorkspace)
+      if (manifest.components.includes('skills')) _importSkills(tempDir, targetWorkspace, overwrite)
+      if (manifest.components.includes('mcp')) _importMcp(tempDir, targetWorkspace, overwrite)
+      _importWorkspaceConfig(tempDir, targetWorkspace, pathMappings)
     }
     if (manifest.components.includes('channels')) {
       _importChannels(tempDir, manifest.mode)
@@ -868,7 +895,6 @@ export async function confirmImport(options: ConfirmImportOptions | ConfirmImpor
     if (manifest.components.includes('chattools')) {
       _importChatTools(tempDir, manifest.mode)
     }
-    _importWorkspaceConfig(tempDir, targetWorkspace, pathMappings)
     if (manifest.mode === 'personal') {
       _importPersonalFiles(tempDir)
     }
@@ -890,36 +916,20 @@ async function _confirmImportV2(options: ConfirmImportOptionsV2): Promise<{ succ
 
   const { createAgentWorkspace } = await import('./agent-workspace-manager')
 
-  const localWorkspaces = listAgentWorkspaces()
-  const localBySlug = new Map(localWorkspaces.map((w) => [w.slug, w]))
-
   const resolvedMappings: Array<{ sourceSlug: string; target: AgentWorkspace }> = []
-
-  if (workspaceMappings && workspaceMappings.length > 0) {
-    for (const mapping of workspaceMappings) {
-      if (mapping.action === 'skip') continue
-      if (mapping.action === 'merge') {
-        const target = mapping.targetWorkspaceId
-          ? getAgentWorkspace(mapping.targetWorkspaceId)
-          : localBySlug.get(mapping.sourceSlug)
-        if (!target) continue
-        resolvedMappings.push({ sourceSlug: mapping.sourceSlug, target })
-      } else if (mapping.action === 'create') {
-        const wsEntry = v2Manifest.workspaces.find((w) => w.workspaceSlug === mapping.sourceSlug)
-        const name = mapping.newWorkspaceName ?? wsEntry?.workspaceName ?? mapping.sourceSlug
-        const target = createAgentWorkspace(name)
-        resolvedMappings.push({ sourceSlug: mapping.sourceSlug, target })
-      }
-    }
-  } else {
-    for (const wsEntry of v2Manifest.workspaces) {
-      const local = localBySlug.get(wsEntry.workspaceSlug)
-      if (local) {
-        resolvedMappings.push({ sourceSlug: wsEntry.workspaceSlug, target: local })
-      } else {
-        const target = createAgentWorkspace(wsEntry.workspaceName)
-        resolvedMappings.push({ sourceSlug: wsEntry.workspaceSlug, target })
-      }
+  for (const mapping of workspaceMappings ?? []) {
+    if (mapping.action === 'skip') continue
+    if (mapping.action === 'merge') {
+      const target = getAgentWorkspace(mapping.targetWorkspaceId!)
+      if (!target) throw new Error('所选项目已不存在，请重新选择')
+      resolvedMappings.push({ sourceSlug: mapping.sourceSlug, target })
+    } else {
+      const wsEntry = v2Manifest.workspaces.find((workspace) => workspace.workspaceSlug === mapping.sourceSlug)!
+      const target = createAgentWorkspace({
+        name: mapping.newWorkspaceName ?? wsEntry.workspaceName,
+        projectRootPath: mapping.projectRootPath,
+      })
+      resolvedMappings.push({ sourceSlug: mapping.sourceSlug, target })
     }
   }
 
@@ -939,7 +949,7 @@ async function _confirmImportV2(options: ConfirmImportOptionsV2): Promise<{ succ
       const resolved = resolvedMappings.find((r) => r.sourceSlug === wsEntry.workspaceSlug)
       if (resolved) wsIdMap.set(wsEntry.workspaceId, resolved.target)
     }
-    await _importSessionsV2(tempDir, wsIdMap, resolvedMappings[0]!.target)
+    await _importSessionsV2(tempDir, wsIdMap)
   }
   if (v2Manifest.components.includes('channels')) {
     _importChannels(tempDir, v2Manifest.mode)
@@ -991,7 +1001,7 @@ async function _importSessions(tempDir: string, targetWorkspace: AgentWorkspace)
   if (existsSync(workspaceDataDir)) {
     for (const sessionId of readdirSync(workspaceDataDir)) {
       const src = join(workspaceDataDir, sessionId)
-      const dest = getAgentSessionWorkspacePath(targetWorkspace.slug, sessionId)
+      const dest = join(getAgentWorkspacePath(targetWorkspace.slug), sessionId)
       if (!existsSync(dest)) {
         cpSync(src, dest, { recursive: true })
       }
@@ -1135,8 +1145,6 @@ function _importWorkspaceConfig(tempDir: string, targetWorkspace: AgentWorkspace
     if (mapped === null) continue // 用户选择移除
     if (mapped !== undefined) {
       newDirs.push(mapped) // 用户重新映射
-    } else if (existsSync(dir)) {
-      newDirs.push(dir) // 路径存在，直接保留
     }
     // 路径不存在且无映射：跳过（移除）
   }
@@ -1146,8 +1154,6 @@ function _importWorkspaceConfig(tempDir: string, targetWorkspace: AgentWorkspace
     if (mapped === null) continue
     if (mapped !== undefined) {
       newFiles.push(mapped)
-    } else if (existsSync(file)) {
-      newFiles.push(file)
     }
   }
 
@@ -1249,8 +1255,6 @@ function _importWorkspaceConfigV2(
     if (mapped === null) continue
     if (mapped !== undefined) {
       newDirs.push(mapped)
-    } else if (existsSync(dir)) {
-      newDirs.push(dir)
     }
   }
   const newFiles: string[] = []
@@ -1259,8 +1263,6 @@ function _importWorkspaceConfigV2(
     if (mapped === null) continue
     if (mapped !== undefined) {
       newFiles.push(mapped)
-    } else if (existsSync(file)) {
-      newFiles.push(file)
     }
   }
 
@@ -1276,48 +1278,30 @@ function _importWorkspaceConfigV2(
   writeFileSync(destConfigPath, JSON.stringify(merged, null, 2), 'utf-8')
 }
 
-async function _importSessionsV2(
-  tempDir: string,
-  wsIdMap: Map<string, AgentWorkspace>,
-  fallbackWorkspace: AgentWorkspace,
-) {
-  const agentDir = join(tempDir, 'sessions/agent')
+async function _importSessionsV2(tempDir: string, wsIdMap: Map<string, AgentWorkspace>) {
+  const importedIndexPath = join(tempDir, 'sessions/agent-sessions-index.json')
+  const imported = readJsonSafe<{ version?: number; sessions: Array<{ id: string; workspaceId: string }> }>(importedIndexPath)
+  const targets = (imported?.sessions ?? []).filter((session) => wsIdMap.has(session.workspaceId))
   const agentSessionsDir = getAgentSessionsDir()
-  if (existsSync(agentDir)) {
-    for (const file of readdirSync(agentDir)) {
-      if (!file.endsWith('.jsonl')) continue
-      const dest = join(agentSessionsDir, file)
-      if (!existsSync(dest)) {
-        cpSync(join(agentDir, file), dest)
-      }
-    }
+
+  // 会话消息与工作文件始终跟随所属项目；跳过的项目不回落到其他项目。
+  for (const session of targets) {
+    const target = wsIdMap.get(session.workspaceId)!
+    const sourceMessages = join(tempDir, 'sessions/agent', `${session.id}.jsonl`)
+    const destMessages = join(agentSessionsDir, `${session.id}.jsonl`)
+    if (existsSync(sourceMessages) && !existsSync(destMessages)) cpSync(sourceMessages, destMessages)
+    const sourceWorkspace = join(tempDir, 'sessions/workspace-data', session.id)
+    // 路径 getter 会自动建目录，不能用于下面的“目标是否已存在”判断。
+    const destWorkspace = join(getAgentWorkspacePath(target.slug), session.id)
+    if (existsSync(sourceWorkspace) && !existsSync(destWorkspace)) cpSync(sourceWorkspace, destWorkspace, { recursive: true })
   }
 
-  const importedIndexPath = join(tempDir, 'sessions/agent-sessions-index.json')
-  if (existsSync(importedIndexPath)) {
-    const imported = readJsonSafe<{ version?: number; sessions: Array<{ id: string; workspaceId: string }> }>(importedIndexPath)
+  if (imported) {
     const currentIndexPath = getAgentSessionsIndexPath()
     const current = readJsonSafe<{ version: number; sessions: Array<Record<string, unknown>> }>(currentIndexPath)
-    const mappedSessions = (imported?.sessions ?? []).map(session => {
-      const target = wsIdMap.get(session.workspaceId) ?? fallbackWorkspace
-      return { ...session, workspaceId: target.id }
-    })
-    const merged = mergePiOnlyAgentSessionIndex(current, {
-      version: imported?.version,
-      sessions: mappedSessions,
-    })
+    const mappedSessions = targets.map((session) => ({ ...session, workspaceId: wsIdMap.get(session.workspaceId)!.id }))
+    const merged = mergePiOnlyAgentSessionIndex(current, { version: imported.version, sessions: mappedSessions })
     writeJsonFileAtomic(currentIndexPath, merged)
-  }
-
-  const workspaceDataDir = join(tempDir, 'sessions/workspace-data')
-  if (existsSync(workspaceDataDir)) {
-    for (const sessionId of readdirSync(workspaceDataDir)) {
-      const src = join(workspaceDataDir, sessionId)
-      const dest = getAgentSessionWorkspacePath(fallbackWorkspace.slug, sessionId)
-      if (!existsSync(dest)) {
-        cpSync(src, dest, { recursive: true })
-      }
-    }
   }
 
   const chatDir = join(tempDir, 'sessions/chat')
