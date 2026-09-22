@@ -249,7 +249,7 @@ export function MigrationSettings(): React.ReactElement {
                 onClick={() => setExportMode('personal')}
                 title="个人备份"
                 subtitle=".domi-backup"
-                description="完整备份所有数据，含 API Key，用于换机迁移"
+                description="备份会话记录与配置，含 API Key，用于换机迁移"
               />
               <ModeCard
                 active={exportMode === 'share'}
@@ -420,7 +420,7 @@ export function MigrationSettings(): React.ReactElement {
           {exportMode === 'personal' && (
             <div className="rounded-lg bg-muted/30 border border-border/30 px-4 py-3">
               <p className="text-sm text-muted-foreground">
-                将导出所有会话、Skills、MCP 配置、渠道（含 API Key）及个人设置。
+                将导出会话记录、会话文件及附件、Skills、MCP 配置、渠道（含 API Key）及个人设置。会话文件保留文档、图片和产物，排除依赖及工具缓存；项目文件需单独迁移。
                 <br />
                 请妥善保管备份文件，避免泄露其中的 API Key。
               </p>

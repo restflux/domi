@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSy
 import { homedir, platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import AdmZip from 'adm-zip'
+import { randomBytes } from 'node:crypto'
 import { initialMigrationPathMappings } from '../../renderer/lib/migration-path-mappings.ts'
 import type { AgentWorkspace, CreateAgentWorkspaceInput } from '@domi/shared'
 
@@ -16,6 +17,11 @@ writeFileSync(join(root, 'agent-sessions.json'), JSON.stringify({
   version: 2, sessions: [{ id: 'session', workspaceId: workspace.id }],
 }))
 writeFileSync(join(root, 'session.jsonl'), '{"role":"user","content":"测试"}\n')
+const sessionFiles = ['report.md', 'image.png', '.context/notes.md', 'output/table.xlsx', 'dist/demo.html']
+for (const file of sessionFiles) {
+  mkdirSync(join(workspacePath, 'session', file, '..'), { recursive: true })
+  writeFileSync(join(workspacePath, 'session', file), `会话文件:${file}`)
+}
 for (let i = 0; i < 16; i++) {
   writeFileSync(join(workspacePath, 'session', `${i}.txt`), Buffer.alloc(1024 * 1024, i))
 }
@@ -61,6 +67,29 @@ const { exportData, exportDataV2, parseImportFile, confirmImport } = await impor
 afterAll(() => rmSync(root, { recursive: true, force: true }))
 
 describe('数据导出响应性', () => {
+  test('Given 大量不可压缩文件 When 导出 Then 保留会话文件但不读取或打包依赖', async () => {
+    const bulk = join(workspacePath, 'session', 'node_modules')
+    mkdirSync(bulk)
+    for (let i = 0; i < 24; i++) writeFileSync(join(bulk, `${i}.bin`), randomBytes(4 * 1024 * 1024))
+    Bun.gc(true)
+    const baseline = process.memoryUsage().arrayBuffers
+    let peak = baseline
+    const timer = setInterval(() => { peak = Math.max(peak, process.memoryUsage().arrayBuffers) }, 5)
+    try {
+      const outputPath = join(root, 'large.domi-backup')
+      const started = performance.now()
+      await exportDataV2({ mode: 'personal', components: ['sessions'], outputPath })
+      const memoryMB = (peak - baseline) / 1024 / 1024
+      console.log(`[导出性能测试] 96 MiB 随机文件，耗时 ${Math.round(performance.now() - started)} ms，额外 Buffer 峰值 ${Math.round(memoryMB)} MiB`)
+      expect(memoryMB).toBeLessThan(64)
+      expect(statSync(outputPath).size).toBeLessThan(1024 * 1024)
+      expect(new AdmZip(outputPath).getEntries().some(entry => entry.entryName.includes('/node_modules/'))).toBe(false)
+    } finally {
+      clearInterval(timer)
+      rmSync(bulk, { recursive: true, force: true })
+    }
+  }, 30000)
+
   for (const version of [1, 2]) {
     test(`Given 多文件会话 When v${version} 导出 Then 完成前事件循环仍可响应且归档完整`, async () => {
       const outputPath = join(root, `backup-v${version}.domi-backup`)
@@ -76,6 +105,7 @@ describe('数据导出响应性', () => {
         const archive = new AdmZip(outputPath)
         expect(JSON.parse(archive.readAsText('manifest.json')).version).toBe(`${version}.0`)
         expect(archive.readAsText('sessions/agent/session.jsonl')).toContain('测试')
+        for (const file of sessionFiles) expect(archive.readAsText(`sessions/workspace-data/session/${file}`)).toBe(`会话文件:${file}`)
         for (let i = 0; i < 16; i++) {
           expect(archive.readFile(`sessions/workspace-data/session/${i}.txt`)).toEqual(Buffer.alloc(1024 * 1024, i))
         }
@@ -110,11 +140,12 @@ describe('数据导出响应性', () => {
   })
 
   test('Given 目录内存在失效链接 When 个人备份 Then 返回警告且其他文件完整', async () => {
-    const brokenLink = join(workspacePath, 'session', 'broken-link')
+    mkdirSync(join(workspacePath, 'skills', 'selected'), { recursive: true })
+    const brokenLink = join(workspacePath, 'skills', 'selected', 'broken-link')
     symlinkSync(join(root, 'missing'), brokenLink, process.platform === 'win32' ? 'junction' : 'dir')
     try {
       const outputPath = join(root, 'partial.domi-backup')
-      const result = await exportDataV2({ mode: 'personal', components: ['sessions'], outputPath })
+      const result = await exportDataV2({ mode: 'personal', components: ['sessions', 'skills'], outputPath })
       expect(result.success).toBe(true)
       expect(result.warnings).toHaveLength(1)
       expect(result.warnings?.[0]).toContain('broken-link')
@@ -122,6 +153,104 @@ describe('数据导出响应性', () => {
       expect(archive.readAsText('sessions/agent/session.jsonl')).toContain('测试')
     } finally {
       unlinkSync(brokenLink)
+    }
+  })
+
+  for (const version of [1, 2]) {
+    test(`Given 会话附件及未选会话附件 When v${version} 导出再导入 Then 仅恢复所选记录的附件且不覆盖已有附件`, async () => {
+      const indexPath = join(root, 'agent-sessions.json')
+      const previousIndex = readFileSync(indexPath, 'utf-8')
+      writeFileSync(indexPath, JSON.stringify({ version: 2, sessions: [
+        { id: 'session', workspaceId: workspace.id }, { id: 'excluded', workspaceId: workspace.id },
+      ] }))
+      writeFileSync(join(root, 'excluded.jsonl'), '{"role":"user","content":"未选会话"}\n')
+      const attachmentDir = join(root, 'attachments', 'session')
+      mkdirSync(attachmentDir, { recursive: true })
+      writeFileSync(join(attachmentDir, 'image.png'), '图片内容')
+      writeFileSync(join(attachmentDir, 'keep.txt'), '备份内容')
+      mkdirSync(join(root, 'attachments', 'excluded'), { recursive: true })
+      writeFileSync(join(root, 'attachments', 'excluded', 'private.txt'), '不导出')
+      writeFileSync(join(root, 'conversations.json'), JSON.stringify({ version: 1, conversations: [{ id: 'chat' }] }))
+      writeFileSync(join(root, 'chat.jsonl'), '{"role":"user","content":"聊天"}\n')
+      mkdirSync(join(root, 'attachments', 'chat'), { recursive: true })
+      writeFileSync(join(root, 'attachments', 'chat', 'document.txt'), '聊天附件')
+      const outputPath = join(root, `attachments-v${version}.domi-backup`)
+      const options = { mode: 'personal' as const, components: ['sessions' as const], outputPath, sessionIds: ['session', 'chat'] }
+      await (version === 1 ? exportData({ ...options, workspaceId: workspace.id }) : exportDataV2(options))
+      const archive = new AdmZip(outputPath)
+      expect(archive.readAsText('sessions/attachments/session/image.png')).toBe('图片内容')
+      expect(archive.getEntry('sessions/attachments/excluded/private.txt')).toBeNull()
+      expect(archive.getEntry('sessions/agent/excluded.jsonl')).toBeNull()
+      expect(archive.readAsText('sessions/attachments/chat/document.txt')).toBe('聊天附件')
+      rmSync(join(root, 'attachments', 'chat', 'document.txt'))
+      rmSync(join(attachmentDir, 'image.png'))
+      for (const file of sessionFiles) rmSync(join(workspacePath, 'session', file))
+      writeFileSync(join(workspacePath, 'session', 'keep.md'), '本机文档')
+      writeFileSync(join(attachmentDir, 'keep.txt'), '本机内容')
+      archive.addFile('sessions/workspace-data/session/conflict/child.txt', Buffer.from('备份目录'))
+      archive.addFile('sessions/workspace-data/session/keep.md', Buffer.from('备份文档'))
+      archive.writeZip(outputPath)
+      writeFileSync(join(workspacePath, 'session', 'conflict'), '本机同名文件')
+      const preview = await parseImportFile(outputPath)
+      try {
+        await confirmImport({
+          tempDir: preview.tempDir, manifest: preview.manifest, pathMappings: {},
+          workspaceMappings: [{ sourceSlug: workspace.slug, action: 'merge', targetWorkspaceId: workspace.id }],
+        })
+        for (const file of sessionFiles) expect(readFileSync(join(workspacePath, 'session', file), 'utf-8')).toBe(`会话文件:${file}`)
+        expect(readFileSync(join(workspacePath, 'session', 'keep.md'), 'utf-8')).toBe('本机文档')
+        expect(readFileSync(join(workspacePath, 'session', 'conflict'), 'utf-8')).toBe('本机同名文件')
+        expect(readFileSync(join(root, 'attachments', 'chat', 'document.txt'), 'utf-8')).toBe('聊天附件')
+        expect(readFileSync(join(attachmentDir, 'image.png'), 'utf-8')).toBe('图片内容')
+        expect(readFileSync(join(attachmentDir, 'keep.txt'), 'utf-8')).toBe('本机内容')
+      } finally {
+        rmSync(preview.tempDir, { recursive: true, force: true })
+        writeFileSync(indexPath, previousIndex)
+        rmSync(join(workspacePath, 'session', 'conflict'), { force: true })
+      }
+    })
+  }
+
+  test('Given 嵌套依赖缓存及外部目录链接 When 导出 Then 保留会话产物且不带入外部项目', async () => {
+    const sessionDir = join(workspacePath, 'session')
+    const excluded = ['.context/runtime/node_modules/pkg/index.js', 'nested/.cache/data.bin', '.venv/lib/runtime.py']
+    for (const file of excluded) {
+      mkdirSync(join(sessionDir, file, '..'), { recursive: true })
+      writeFileSync(join(sessionDir, file), '依赖缓存')
+    }
+    const external = join(root, 'external-project')
+    mkdirSync(external)
+    writeFileSync(join(external, 'private.txt'), '外部项目内容')
+    const link = join(sessionDir, 'linked-project')
+    symlinkSync(external, link, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      const outputPath = join(root, 'filtered.domi-backup')
+      const result = await exportDataV2({ mode: 'personal', components: ['sessions'], outputPath })
+      const archive = new AdmZip(outputPath)
+      for (const file of excluded) expect(archive.getEntry(`sessions/workspace-data/session/${file}`)).toBeNull()
+      expect(archive.getEntries().some(entry => entry.entryName.includes('linked-project'))).toBe(false)
+      expect(result.warnings?.some(warning => warning.includes('linked-project'))).toBe(true)
+      for (const file of sessionFiles) expect(archive.readAsText(`sessions/workspace-data/session/${file}`)).toBe(`会话文件:${file}`)
+    } finally { unlinkSync(link) }
+  })
+
+  test('Given 会话根目录是外部项目链接 When 导出 Then 跳过并警告而非打包项目', async () => {
+    const indexPath = join(root, 'agent-sessions.json')
+    const previousIndex = readFileSync(indexPath, 'utf-8')
+    const link = join(workspacePath, 'linked-session')
+    symlinkSync(join(root, 'external-project'), link, process.platform === 'win32' ? 'junction' : 'dir')
+    writeFileSync(join(root, 'linked-session.jsonl'), '{"role":"user","content":"测试"}\n')
+    writeFileSync(indexPath, JSON.stringify({ version: 2, sessions: [{ id: 'linked-session', workspaceId: workspace.id }] }))
+    try {
+      const outputPath = join(root, 'root-link.domi-backup')
+      const result = await exportDataV2({ mode: 'personal', components: ['sessions'], outputPath })
+      const archive = new AdmZip(outputPath)
+      expect(archive.getEntry('sessions/agent/linked-session.jsonl')).not.toBeNull()
+      expect(archive.getEntries().some(entry => entry.entryName.startsWith('sessions/workspace-data/'))).toBe(false)
+      expect(result.warnings?.some(warning => warning.includes('linked-session'))).toBe(true)
+    } finally {
+      unlinkSync(link)
+      writeFileSync(indexPath, previousIndex)
     }
   })
 

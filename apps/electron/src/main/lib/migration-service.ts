@@ -10,8 +10,8 @@
  * 导入时自动检测跨平台差异并提示用户处理路径映射。
  */
 
-import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync, readdirSync, type Dirent } from 'node:fs'
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { existsSync, lstatSync, mkdirSync, cpSync, readFileSync, writeFileSync, readdirSync, type Dirent } from 'node:fs'
+import { mkdir, readFile, readdir, lstat, stat, writeFile } from 'node:fs/promises'
 import { rmSyncWithRetry } from './fs-retry'
 import { writeJsonFileAtomic } from './safe-file'
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path'
@@ -398,45 +398,7 @@ export async function exportDataV2(options: ExportOptionsV2): Promise<ExportResu
 }
 
 async function _addSessions(zip: AdmZip, workspace: AgentWorkspace, filterIds: string[] | undefined, warnings: string[]) {
-  const sessionsIndexPath = getAgentSessionsIndexPath()
-  if (existsSync(sessionsIndexPath)) {
-    const index = readJsonSafe<{ version: number; sessions: Array<{ id: string; workspaceId: string }> }>(sessionsIndexPath)
-    const sessions = (index?.sessions ?? []).filter((s) => s.workspaceId === workspace.id)
-    const targets = filterIds ? sessions.filter((s) => filterIds.includes(s.id)) : sessions
-    const exportedIds = new Set<string>()
-
-    for (const session of targets) {
-      const msgPath = getAgentSessionMessagesPath(session.id)
-      if (existsSync(msgPath)) {
-        await addLocalFileToZip(zip, msgPath, 'sessions/agent')
-        exportedIds.add(session.id)
-      }
-      const workDir = join(getAgentWorkspacePath(workspace.slug), session.id)
-      if (existsSync(workDir)) {
-        await _addDirToZip(zip, workDir, `sessions/workspace-data/${session.id}`, warnings)
-      }
-    }
-
-    if (index) {
-      const filtered = { ...index, sessions: index.sessions.filter((s) => exportedIds.has(s.id)) }
-      zip.addFile('sessions/agent-sessions-index.json', Buffer.from(JSON.stringify(filtered, null, 2), 'utf-8'))
-    }
-  }
-
-  const convIndexPath = getConversationsIndexPath()
-  if (existsSync(convIndexPath)) {
-    const index = readJsonSafe<{ version: number; conversations: Array<{ id: string }> }>(convIndexPath)
-    const conversations = index?.conversations ?? []
-    const targets = filterIds ? conversations.filter((c) => filterIds.includes(c.id)) : conversations
-
-    for (const conv of targets) {
-      const msgPath = getConversationMessagesPath(conv.id)
-      if (existsSync(msgPath)) {
-        await addLocalFileToZip(zip, msgPath, 'sessions/chat')
-      }
-    }
-    zip.addFile('sessions/conversations-index.json', Buffer.from(JSON.stringify({ ...index, conversations: targets }, null, 2), 'utf-8'))
-  }
+  await _addSessionsMultiWorkspace(zip, [workspace], filterIds, warnings)
 }
 
 async function _addSessionsMultiWorkspace(zip: AdmZip, workspaces: AgentWorkspace[], filterIds: string[] | undefined, warnings: string[]) {
@@ -454,12 +416,11 @@ async function _addSessionsMultiWorkspace(zip: AdmZip, workspaces: AgentWorkspac
       if (existsSync(msgPath)) {
         await addLocalFileToZip(zip, msgPath, 'sessions/agent')
         exportedIds.add(session.id)
-      }
-      const ws = workspaces.find((w) => w.id === session.workspaceId)
-      if (ws) {
-        const workDir = join(getAgentWorkspacePath(ws.slug), session.id)
+        await addSessionAttachments(zip, session.id, warnings)
+        const workspace = workspaces.find((item) => item.id === session.workspaceId)!
+        const workDir = join(getAgentWorkspacePath(workspace.slug), session.id)
         if (existsSync(workDir)) {
-          await _addDirToZip(zip, workDir, `sessions/workspace-data/${session.id}`, warnings)
+          await _addDirToZip(zip, workDir, `sessions/workspace-data/${session.id}`, warnings, true)
         }
       }
     }
@@ -480,10 +441,49 @@ async function _addSessionsMultiWorkspace(zip: AdmZip, workspaces: AgentWorkspac
       const msgPath = getConversationMessagesPath(conv.id)
       if (existsSync(msgPath)) {
         await addLocalFileToZip(zip, msgPath, 'sessions/chat')
+        await addSessionAttachments(zip, conv.id, warnings)
       }
     }
     zip.addFile('sessions/conversations-index.json', Buffer.from(JSON.stringify({ ...index, conversations: targets }, null, 2), 'utf-8'))
   }
+}
+
+// 仅备份产品管理的会话附件，不扫描项目或会话工作目录。
+async function addSessionAttachments(zip: AdmZip, sessionId: string, warnings: string[]): Promise<void> {
+  assertAttachmentSessionId(sessionId)
+  const source = join(getConfigDir(), 'attachments', sessionId)
+  if (existsSync(source)) await _addDirToZip(zip, source, `sessions/attachments/${sessionId}`, warnings)
+}
+
+function assertAttachmentSessionId(sessionId: string): void {
+  if (!sessionId || sessionId === '.' || sessionId === '..' || /[\\/:]/.test(sessionId)) {
+    throw new Error('会话附件 ID 无效')
+  }
+}
+
+/** 只补齐缺失文件；类型冲突与链接均保留本机内容，不进入链接目标。 */
+function mergeMissingSessionFiles(source: string, destination: string): void {
+  cpSync(source, destination, {
+    recursive: true, force: false, errorOnExist: false,
+    filter: (src, dest) => {
+      const sourceInfo = lstatSync(src)
+      if (sourceInfo.isSymbolicLink()) return false
+      let destinationInfo
+      try { destinationInfo = lstatSync(dest) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+        throw error
+      }
+      return sourceInfo.isDirectory() && destinationInfo.isDirectory() && !destinationInfo.isSymbolicLink()
+    },
+  })
+}
+
+function importSessionAttachments(tempDir: string, sessionId: string): void {
+  assertAttachmentSessionId(sessionId)
+  const source = join(tempDir, 'sessions/attachments', sessionId)
+  if (!existsSync(source)) return
+  const destination = join(getConfigDir(), 'attachments', sessionId)
+  mergeMissingSessionFiles(source, destination)
 }
 
 async function _addSkills(zip: AdmZip, workspace: AgentWorkspace, warnings: string[]) {
@@ -971,6 +971,7 @@ async function _importSessions(tempDir: string, targetWorkspace: AgentWorkspace)
   if (existsSync(agentDir)) {
     for (const file of readdirSync(agentDir)) {
       if (!file.endsWith('.jsonl')) continue
+      importSessionAttachments(tempDir, file.slice(0, -6))
       const src = join(agentDir, file)
       const dest = join(agentSessionsDir, file)
       if (!existsSync(dest)) {
@@ -1002,9 +1003,7 @@ async function _importSessions(tempDir: string, targetWorkspace: AgentWorkspace)
     for (const sessionId of readdirSync(workspaceDataDir)) {
       const src = join(workspaceDataDir, sessionId)
       const dest = join(getAgentWorkspacePath(targetWorkspace.slug), sessionId)
-      if (!existsSync(dest)) {
-        cpSync(src, dest, { recursive: true })
-      }
+      mergeMissingSessionFiles(src, dest)
     }
   }
 
@@ -1014,6 +1013,7 @@ async function _importSessions(tempDir: string, targetWorkspace: AgentWorkspace)
   if (existsSync(chatDir)) {
     for (const file of readdirSync(chatDir)) {
       if (!file.endsWith('.jsonl')) continue
+      importSessionAttachments(tempDir, file.slice(0, -6))
       const src = join(chatDir, file)
       const dest = join(convDir, file)
       if (!existsSync(dest)) {
@@ -1287,13 +1287,14 @@ async function _importSessionsV2(tempDir: string, wsIdMap: Map<string, AgentWork
   // 会话消息与工作文件始终跟随所属项目；跳过的项目不回落到其他项目。
   for (const session of targets) {
     const target = wsIdMap.get(session.workspaceId)!
+    importSessionAttachments(tempDir, session.id)
     const sourceMessages = join(tempDir, 'sessions/agent', `${session.id}.jsonl`)
     const destMessages = join(agentSessionsDir, `${session.id}.jsonl`)
     if (existsSync(sourceMessages) && !existsSync(destMessages)) cpSync(sourceMessages, destMessages)
     const sourceWorkspace = join(tempDir, 'sessions/workspace-data', session.id)
     // 路径 getter 会自动建目录，不能用于下面的“目标是否已存在”判断。
     const destWorkspace = join(getAgentWorkspacePath(target.slug), session.id)
-    if (existsSync(sourceWorkspace) && !existsSync(destWorkspace)) cpSync(sourceWorkspace, destWorkspace, { recursive: true })
+    if (existsSync(sourceWorkspace)) mergeMissingSessionFiles(sourceWorkspace, destWorkspace)
   }
 
   if (imported) {
@@ -1309,6 +1310,7 @@ async function _importSessionsV2(tempDir: string, wsIdMap: Map<string, AgentWork
   if (existsSync(chatDir)) {
     for (const file of readdirSync(chatDir)) {
       if (!file.endsWith('.jsonl')) continue
+      importSessionAttachments(tempDir, file.slice(0, -6))
       const dest = join(convDir, file)
       if (!existsSync(dest)) {
         cpSync(join(chatDir, file), dest)
@@ -1357,10 +1359,20 @@ function addExportWarning(warnings: string[], message: string): void {
   console.warn(`[数据迁移] ${message}`)
 }
 
-/** 递归将本地目录的所有文件加入 zip 指定前缀路径 */
-async function _addDirToZip(zip: AdmZip, srcDir: string, zipPrefix: string, warnings: string[]): Promise<void> {
+// 只排除明确的依赖与工具缓存；dist/build/out 可能是用户交付产物，不能按名称丢弃。
+const SESSION_BACKUP_EXCLUDED_DIRECTORIES = new Set([
+  'node_modules', '.git', '.venv', 'venv', '__pycache__', '.cache', '.next', '.nuxt',
+  '.parcel-cache', '.turbo', '.pytest_cache', '.mypy_cache', '.ruff_cache',
+])
+
+/** 会话文件保留文档、图片、上下文及产物，只在会话目录启用依赖过滤。 */
+async function _addDirToZip(zip: AdmZip, srcDir: string, zipPrefix: string, warnings: string[], sessionFiles = false): Promise<void> {
   let entries: Dirent[]
   try {
+    if (sessionFiles && (await lstat(srcDir)).isSymbolicLink()) {
+      addExportWarning(warnings, `已跳过会话文件链接，请单独迁移其目标: ${srcDir}`)
+      return
+    }
     entries = await readdir(srcDir, { withFileTypes: true })
   } catch (error) {
     addExportWarning(warnings, `已跳过无法读取的目录: ${srcDir} (${formatErrorMessage(error)})`)
@@ -1368,10 +1380,16 @@ async function _addDirToZip(zip: AdmZip, srcDir: string, zipPrefix: string, warn
   }
 
   for (const entry of entries) {
+    if (sessionFiles && SESSION_BACKUP_EXCLUDED_DIRECTORIES.has(entry.name.toLowerCase())
+      && (entry.isDirectory() || entry.isSymbolicLink())) continue
+    if (sessionFiles && entry.isSymbolicLink()) {
+      addExportWarning(warnings, `已跳过会话文件链接，请单独迁移其目标: ${join(srcDir, entry.name)}`)
+      continue
+    }
     const fullPath = join(srcDir, entry.name)
     const entryZipPath = `${zipPrefix}/${entry.name}`
     if (entry.isDirectory()) {
-      await _addDirToZip(zip, fullPath, entryZipPath, warnings)
+      await _addDirToZip(zip, fullPath, entryZipPath, warnings, sessionFiles)
     } else {
       try {
         await addLocalFileToZip(zip, fullPath, zipPrefix)
