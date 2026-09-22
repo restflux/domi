@@ -291,11 +291,11 @@ export interface SessionCheckoutRegistryPort {
 }
 
 export interface SessionCheckoutTimingEvent {
-  phase: 'worktree_create' | 'checkout_bind'
+  phase: 'worktree_create' | 'checkout_bind' | 'cleanup_validate' | 'cleanup_snapshot' | 'cleanup_git_remove' | 'cleanup_directory_remove'
   sessionId: string
   iteration: number
   attempt: number
-  outcome: 'success' | 'error'
+  outcome: 'success' | 'error' | 'started' | 'long_running'
   timestamp: string
   durationMs: number
 }

@@ -55,6 +55,7 @@ interface TestContext {
   timingEvents: SessionCheckoutTimingEvent[]
   setSessionProject(sessionId: string, projectId: string): void
   setProjectRoot(projectId: string, root: string): void
+  addProject(projectId: string, root: string): void
   addSession(sessionId: string, projectId: string, title?: string): void
   setSessionParent(sessionId: string, parentSessionId: string): void
   setSessionActive(sessionId: string, active: boolean): void
@@ -344,6 +345,7 @@ function createContext(options: {
       const session = sessions.get(sessionId)
       if (session) session.projectId = projectId
     },
+    addProject: (projectId, root) => { projects.set(projectId, { id: projectId, name: projectId, root }) },
     setProjectRoot: (projectId, projectRoot) => {
       const project = projects.get(projectId)
       if (project) project.root = projectRoot
@@ -3918,6 +3920,83 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(existsSync(lease.cwd)).toBe(true)
   }, 90_000)
 
+  test('Given 三个到期保留项 When 一轮自动维护 Then 最多处理两项并记录清理阶段', async () => {
+    const context = createContext()
+    const ids: string[] = []
+    for (let index = 0; index < 3; index += 1) {
+      const sessionId = `batch-${index}`
+      context.addSession(sessionId, 'project-1')
+      const target = await context.module.bind(sessionId, { kind: 'isolated' })
+      const lease = await context.module.lease(sessionId)
+      writeFileSync(join(lease.cwd, `batch-${index}.txt`), 'batch\n')
+      const result = await context.module.operate({
+        action: 'finish', sessionId, expectedRevision: target.revision,
+        commitMessage: 'test: bounded maintenance', retention: 'retain_24h',
+      })
+      expect(result.status).toBe('finished')
+      ids.push(target.checkout.id)
+    }
+    const cleaned = await context.module.cleanupExpiredRetained(Date.now() + 48 * 60 * 60 * 1000)
+    expect(cleaned).toHaveLength(2)
+    expect(cleaned.every((id) => ids.includes(id))).toBe(true)
+    expect(context.timingEvents.some((event) => event.phase === 'cleanup_git_remove' && event.outcome === 'success')).toBe(true)
+  }, 120_000)
+
+  test('Given 项目写事务挂起 When 不同项目或同仓库别名绑定 Then 只让独立仓库并行', async () => {
+    const context = createContext()
+    const otherRoot = join(context.root, 'independent')
+    cpSync(getRepositoryTemplate(), otherRoot, { recursive: true })
+    context.addProject('independent', otherRoot)
+    context.addProject('alias', context.projectRoot)
+    context.addSession('independent-session', 'independent')
+    context.addSession('alias-session', 'alias')
+    await context.module.bind('session-1', { kind: 'local' })
+    let started = (): void => undefined
+    const entered = new Promise<void>((resolve) => { started = resolve })
+    let resume = (): void => undefined
+    const gate = new Promise<void>((resolve) => { resume = resolve })
+    const mutation = context.module.runExclusiveSessionMutation('session-1', async () => { started(); await gate })
+    await entered
+    let aliasFinished = false
+    const alias = context.module.bind('alias-session', { kind: 'local' }).then((view) => { aliasFinished = true; return view })
+    try {
+      const independent = await context.module.bind('independent-session', { kind: 'isolated' })
+      expect(independent.checkout.kind).toBe('isolated')
+      expect(aliasFinished).toBe(false)
+      // 等待中的请求不能把旧仓库锁用于新项目目标。
+      context.setProjectRoot('alias', otherRoot)
+    } finally {
+      resume()
+      await Promise.allSettled([mutation, alias])
+    }
+    await expect(alias).rejects.toThrow('身份在等待期间变化')
+  }, 60_000)
+
+  test('Given 自动清理巡检挂起 When 同仓库新会话绑定 Then 新会话可启动且清理记录不丢失', async () => {
+    const context = createContext({ removeWorktreeFailures: 1 })
+    const target = await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'new-session.txt'), 'content\n')
+    const finished = await context.module.operate({
+      action: 'finish', sessionId: 'session-1', expectedRevision: target.revision, commitMessage: 'test: cleanup isolation',
+    })
+    expect(finished.status).toBe('finished')
+    context.addSession('session-new', 'project-1')
+    const pause = context.pauseNextGitInspect(lease.cwd)
+    const cleanup = context.module.cleanupRetryableManagedWorktrees()
+    await pause.started
+    try {
+      const bound = await context.module.bind('session-new', { kind: 'isolated' })
+      expect(bound.checkout.kind).toBe('isolated')
+      expect(bound.checkout.id).not.toBe(target.checkout.id)
+    } finally {
+      pause.resume()
+      await cleanup
+    }
+    expect((await context.module.inspect('session-new')).checkout.phase).toBe('ready')
+    expect(existsSync(lease.cwd)).toBe(false)
+  }, 90_000)
+
   test('Given bulk cleanup is deleting a worktree When an unrelated session inspects Then the read completes without queue timeout', async () => {
     const context = createContext({ removeWorktreeFailures: 1 })
     context.addSession('session-2', 'project-1', '无关 local 会话')
@@ -4167,7 +4246,7 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect((await context.module.inspect('session-1')).checkout.phase).toBe('discarded')
   }, 90_000)
 
-  test('Given maintenance is queued behind an inspect When another session opens Then it waits for maintenance to start and bypasses it', async () => {
+  test('Given 前台检查尚未结束 When 后台维护触发 Then 跳过维护且新检查可完成', async () => {
     const context = createContext()
     context.addSession('session-2', 'project-1', '前置检查会话')
     context.addSession('session-3', 'project-1', '后到工作会话')
@@ -4188,17 +4267,15 @@ describe.concurrent('SessionCheckoutModule', () => {
     const firstPause = context.pauseNextGitInspect()
     const firstInspection = context.module.inspect('session-2')
     await firstPause.started
-    const maintenancePause = context.pauseNextGitInspect(lease.cwd)
     const maintenance = context.module.cleanupExpiredRetained(retained.target.delivery.expiresAt + 1)
     const secondInspection = context.module.inspect('session-3')
 
     firstPause.resume()
-    await maintenancePause.started
+    expect(await maintenance).toEqual([])
     const winner = await Promise.race([
       secondInspection.then(() => 'resolved' as const),
       Bun.sleep(2_000).then(() => 'timeout' as const),
     ])
-    maintenancePause.resume()
     await Promise.all([firstInspection, secondInspection, maintenance])
 
     expect(winner).toBe('resolved')

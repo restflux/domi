@@ -1,3 +1,4 @@
+import { createRetentionMaintenance } from './retention-maintenance.ts'
 import { join } from 'node:path'
 import { getConfigDir } from '../config-paths.ts'
 import { AuditWriter } from '../audit/audit-writer.ts'
@@ -110,18 +111,13 @@ export async function reconcileProductionSessionCheckouts(): Promise<void> {
     )
   }
   if (!retentionMaintenanceTimer) {
-    retentionMaintenanceTimer = setInterval(() => {
-      // 到期保留与瞬时占用失败两类维护都只在空闲窗口运行，并各自独立 catch；
-      // 每轮仅处理少量项目，用户会话出现后立即停止调度后续项目。
-      const shouldContinue = (): boolean => canRunRetentionMaintenance(module)
-      if (!shouldContinue()) return
-      void module.cleanupExpiredRetained(Date.now(), shouldContinue).catch((error) => {
-        console.warn('[session-checkout] retained Worktree 到期维护失败:', error)
-      })
-      void module.cleanupRetryableManagedWorktrees(2, shouldContinue).catch((error) => {
-        console.warn('[session-checkout] 占用失败 Worktree 自动重试清理失败:', error)
-      })
-    }, RETENTION_MAINTENANCE_INTERVAL_MS)
+    const runMaintenance = createRetentionMaintenance({
+      isIdle: () => canRunRetentionMaintenance(module),
+      cleanupExpired: (shouldContinue) => module.cleanupExpiredRetained(Date.now(), shouldContinue),
+      cleanupRetryable: (shouldContinue) => module.cleanupRetryableManagedWorktrees(2, shouldContinue),
+      onError: (error) => console.warn('[session-checkout] 后台维护未完成:', error),
+    })
+    retentionMaintenanceTimer = setInterval(() => { void runMaintenance() }, RETENTION_MAINTENANCE_INTERVAL_MS)
     retentionMaintenanceTimer.unref?.()
   }
 }

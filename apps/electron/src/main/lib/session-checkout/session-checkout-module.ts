@@ -996,6 +996,8 @@ export function createSessionCheckoutModule(
   interface BindingLockOptions {
     operation: string
     allowConcurrentInspect?: boolean
+    background?: boolean
+    cleanupOnly?: boolean
     sessionIds?: readonly string[]
     targetKeys?: readonly string[]
   }
@@ -1012,9 +1014,9 @@ export function createSessionCheckoutModule(
     waitTimeoutMs: queueWaitTimeoutMs,
     onEvent: dependencies.onQueueEvent,
   })
-  let activeBindingOperation: BindingOperationMode | null = null
-  let activeBindingOperationScope: BindingOperationScope | null = null
+  const activeBindingOperations = new Set<{ mode: BindingOperationMode; scope: BindingOperationScope | null }>()
   let pendingMaintenanceOperations = 0
+  let foregroundRequests = 0
   let signalBindingStateChanged = (): void => undefined
   let bindingStateChanged = new Promise<void>((resolveChanged) => { signalBindingStateChanged = resolveChanged })
   const activeConcurrentInspects = new Set<ConcurrentInspect>()
@@ -1049,8 +1051,7 @@ export function createSessionCheckoutModule(
     }
   }
 
-  function inspectConflictsWithActiveOperation(sessionId: string): boolean {
-    const scope = activeBindingOperationScope
+  function inspectConflictsWithActiveOperation(sessionId: string, scope: BindingOperationScope | null): boolean {
     if (!scope) return true
     if (scope.sessionIds.has(sessionId)) return true
     const binding = dependencies.registry.read().sessionBindings[sessionId]
@@ -1091,33 +1092,73 @@ export function createSessionCheckoutModule(
     if (blockers.length > 0) await Promise.all(blockers)
   }
 
+  /** 共享 Git 元数据的写入仍按仓库串行；不同项目 ID 指向同一 canonical 仓库也不能并行。 */
+  async function bindingResources(lockOptions: BindingLockOptions): Promise<string[] | undefined> {
+    const scope = createBindingOperationScope(lockOptions)
+    if (!scope) return undefined
+    const registry = dependencies.registry.read()
+    const roots = new Set<string>()
+    const commonDirs = new Set<string>()
+    const keys = new Set([...scope.sessionIds].map((id) => `session:${id}`))
+    for (const key of scope.targetKeys) {
+      keys.add(key)
+      if (!key.startsWith('isolated:')) continue
+      const record = registry.managedCheckouts[key.slice('isolated:'.length)]
+      if (!record) return undefined
+      roots.add(record.localRoot)
+      commonDirs.add(record.gitCommonDir)
+    }
+    for (const sessionId of scope.sessionIds) {
+      const session = dependencies.lookup.getSession(sessionId)
+      const project = session?.projectId ? dependencies.lookup.getProject(session.projectId) : undefined
+      if (!project) return undefined
+      roots.add(project.root)
+    }
+    if (lockOptions.cleanupOnly) return [...keys].sort()
+    for (const root of roots) {
+      const canonicalRoot = await dependencies.files.canonicalize(root)
+      keys.add(`root:${process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot}`)
+      // 从当前 Git 身份取得 common-dir，不按 projectId 猜测仓库独立性。
+      const snapshot = await dependencies.git.inspect(root)
+      if (!snapshot) return undefined
+      commonDirs.add(snapshot.commonDir)
+    }
+    for (const dir of commonDirs) {
+      const canonicalDir = await dependencies.files.canonicalize(dir)
+      keys.add(`git:${process.platform === 'win32' ? canonicalDir.toLowerCase() : canonicalDir}`)
+    }
+    return [...keys].sort()
+  }
+
   async function withBindingLock<T>(
     operation: () => Promise<T>,
     lockOptions: BindingLockOptions,
   ): Promise<T> {
     const maintenance = lockOptions.allowConcurrentInspect === true
     if (maintenance) pendingMaintenanceOperations += 1
+    if (!lockOptions.background) foregroundRequests += 1
     try {
-      return await bindingQueue.run(lockOptions.operation, lockOptions.sessionIds?.[0], async () => {
-        try {
-          // 初始化、冲突读取等待和实际操作共享异常安全边界；失败不能毒化全局队列。
-          activeBindingOperationScope = createBindingOperationScope(lockOptions)
-          activeBindingOperation = maintenance ? 'maintenance' : 'exclusive'
-          notifyBindingStateChanged()
-          // 尚未开始写入时可放弃等待；底层只读任务无需取消，后续写入仍会重新检查冲突。
-          await waitForSessionCheckoutSignal(waitForConflictingInspects(activeBindingOperationScope), queueWaitTimeoutMs)
-          return await operation()
-        } finally {
-          // 只有真正执行的事务能释放 active 状态，排队超时的请求无权动它。
-          activeBindingOperationScope = null
-          activeBindingOperation = null
-          notifyBindingStateChanged()
-        }
-      })
+      const resources = await bindingResources(lockOptions)
+      const active = { mode: maintenance ? 'maintenance' as const : 'exclusive' as const, scope: createBindingOperationScope(lockOptions) }
+      activeBindingOperations.add(active)
+      notifyBindingStateChanged()
+      try {
+        // 先阻止新的冲突读取并等已有读取完成，再申请 Git 写锁，避免占着 Git 等读者造成锁反转。
+        await waitForSessionCheckoutSignal(waitForConflictingInspects(active.scope), queueWaitTimeoutMs)
+        return await bindingQueue.run(lockOptions.operation, lockOptions.sessionIds?.[0], async () => {
+          if (resources && JSON.stringify(await bindingResources(lockOptions)) !== JSON.stringify(resources)) {
+            throw new SessionCheckoutError('operation_not_allowed', '工作环境身份在等待期间变化，请重试')
+          }
+          return operation()
+        }, { resources, priority: lockOptions.background ? 'maintenance' : 'foreground' })
+      } finally {
+        activeBindingOperations.delete(active)
+        notifyBindingStateChanged()
+      }
     } finally {
+      if (!lockOptions.background) foregroundRequests -= 1
       if (maintenance) {
         pendingMaintenanceOperations -= 1
-        // 排队超时也必须唤醒读取者，不能留下永远等不到启动的 maintenance 信号。
         notifyBindingStateChanged()
       }
     }
@@ -1142,13 +1183,10 @@ export function createSessionCheckoutModule(
   async function inspectAvailable(sessionId: string): Promise<SessionTargetView> {
     const deadline = Date.now() + queueWaitTimeoutMs
     while (true) {
-      if (activeBindingOperation === 'maintenance') return inspectConcurrently(sessionId)
-      if (
-        activeBindingOperation === 'exclusive'
-        && !inspectConflictsWithActiveOperation(sessionId)
-      ) return inspectConcurrently(sessionId)
-      if (activeBindingOperation !== null || pendingMaintenanceOperations > 0) {
-        // 只终止当前只读等待，不释放底层事务；同一次检查的预算不随状态变化重新计时。
+      const active = [...activeBindingOperations]
+      const conflicts = active.some((entry) => entry.mode === 'exclusive' && inspectConflictsWithActiveOperation(sessionId, entry.scope))
+      if (active.length > 0 && !conflicts) return inspectConcurrently(sessionId)
+      if (active.length > 0 || pendingMaintenanceOperations > 0) {
         await waitForSessionCheckoutSignal(bindingStateChanged, deadline - Date.now())
         continue
       }
@@ -2406,12 +2444,49 @@ export function createSessionCheckoutModule(
     })
   }
 
+  /** 清理只在真正修改共享 Git 元数据时占用仓库；慢速只读巡检和 quarantine 删除不持有仓库锁。 */
+  async function withCleanupGitLock<T>(record: ManagedCheckoutRecord, operation: () => Promise<T>): Promise<T> {
+    const root = await dependencies.files.canonicalize(record.localRoot)
+    const common = await dependencies.files.canonicalize(record.gitCommonDir)
+    const key = (path: string): string => process.platform === 'win32' ? path.toLowerCase() : path
+    return bindingQueue.run('cleanup_git', record.ownerSessionId, async () => {
+      const snapshot = await dependencies.git.inspect(record.localRoot)
+      if (!snapshot || !pathsEqual(snapshot.commonDir, common)
+        || !pathsEqual(await dependencies.files.canonicalize(record.localRoot), root)) {
+        throw new SessionCheckoutError('checkout_mismatch', '清理等待期间 Local 身份变化，已保留现场')
+      }
+      return operation()
+    }, { resources: [`root:${key(root)}`, `git:${key(common)}`], priority: 'maintenance' })
+  }
+
+  async function cleanupStage<T>(record: ManagedCheckoutRecord,
+    phase: 'cleanup_validate' | 'cleanup_snapshot' | 'cleanup_git_remove' | 'cleanup_directory_remove',
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const startedAt = Date.now()
+    const emit = (outcome: 'started' | 'long_running' | 'success' | 'error'): void => emitTiming({
+      phase, outcome, sessionId: record.ownerSessionId, iteration: managedIteration(record), attempt: 1,
+      timestamp: new Date().toISOString(), durationMs: Date.now() - startedAt,
+    })
+    emit('started')
+    const timer = setTimeout(() => emit('long_running'), 15_000)
+    try {
+      const result = await operation()
+      emit('success')
+      return result
+    } catch (error) {
+      emit('error')
+      throw error
+    } finally { clearTimeout(timer) }
+  }
+
   async function cleanupFinalized(
     record: ManagedCheckoutRecord,
     options: {
       allowLegacyResidue?: boolean
       /** 与同一请求内前置巡检共享的只读证据；仅 allowLegacyResidue: true 的批量路径传入，删除前全部安全校验仍会执行。 */
       shared?: ManagedWorktreeSharedDiagnostics
+      separateGitLock?: boolean
     } = {},
   ): Promise<{ cleaned: boolean; message?: string; reason?: WorktreeCleanupReason }> {
     const block = (message: string, reason = cleanupReasonForMessage(message)): { cleaned: false; message: string; reason: WorktreeCleanupReason } => {
@@ -2518,25 +2593,25 @@ export function createSessionCheckoutModule(
       }
       const validatedQuarantine = await validateCleanupQuarantine(quarantining)
       if (!validatedQuarantine) throw new SessionCheckoutError('checkout_mismatch', 'Worktree quarantine 身份无法验证')
-      await retryTransientCleanup(() => dependencies.files.removeDirectoryTree(validatedQuarantine))
+      await cleanupStage(record, 'cleanup_directory_remove', () => retryTransientCleanup(() => dependencies.files.removeDirectoryTree(validatedQuarantine)))
     }
 
     try {
       const existingQuarantine = await (options.shared ? options.shared.quarantine() : validateCleanupQuarantine(record))
       if (existingQuarantine) {
-        await retryTransientCleanup(() => dependencies.files.removeDirectoryTree(existingQuarantine))
+        await cleanupStage(record, 'cleanup_directory_remove', () => retryTransientCleanup(() => dependencies.files.removeDirectoryTree(existingQuarantine)))
       } else if (record.journal?.operation === 'cleanup' && record.journal.cleanupQuarantinePath && dependencies.files.exists(record.journal.cleanupQuarantinePath)) {
         return block(CLEANUP_IDENTITY_CHANGED_MESSAGE)
       } else if (dependencies.files.exists(record.managedGitRoot)) {
         const validated = dependencies.files.exists(record.managedRoot)
-          ? await validateManagedCheckout(binding, record, false)
+          ? await cleanupStage(record, 'cleanup_validate', () => validateManagedCheckout(binding, record, false))
           : undefined
         if (validated) {
-          const snapshot = await (options.shared ? options.shared.inspectReview() : dependencies.applyEngine.inspectReview({
+          const snapshot = await cleanupStage(record, 'cleanup_snapshot', () => (options.shared ? options.shared.inspectReview() : dependencies.applyEngine.inspectReview({
             baseOid: record.applyBaseOid ?? record.baseOid,
             isolatedPath: record.managedRoot,
             localPath: record.localRoot,
-          }))
+          })))
           if (snapshot.status !== 'ready' || snapshot.isolatedFingerprint !== record.delivery.isolatedFingerprint) {
             return block('Worktree 在提交后出现了新修改，未执行清理。')
           }
@@ -2544,7 +2619,9 @@ export function createSessionCheckoutModule(
           if (!directoryIdentity) return block(CLEANUP_IDENTITY_CHANGED_MESSAGE)
           const removing = beginRemoval(record, directoryIdentity)
           if (!removing) return block('Worktree 记录在清理前丢失，未执行清理。')
-          await retryTransientCleanup(() => dependencies.git.removeWorktree(removing.localRoot, removing.managedGitRoot))
+          const remove = () => cleanupStage(record, 'cleanup_git_remove', () => retryTransientCleanup(() => dependencies.git.removeWorktree(removing.localRoot, removing.managedGitRoot)))
+          if (options.separateGitLock) await withCleanupGitLock(removing, remove)
+          else await remove()
           if (dependencies.files.exists(removing.managedGitRoot)) {
             const residue = await validateDetachedCleanupResidue(removing)
             if (!residue) return block(CLEANUP_IDENTITY_CHANGED_MESSAGE)
@@ -2562,7 +2639,8 @@ export function createSessionCheckoutModule(
           await quarantineAndRemove(removing, revalidatedResidue)
         }
       }
-      await releaseApplyBaseBestEffort(record)
+      if (options.separateGitLock) await withCleanupGitLock(record, () => releaseApplyBaseBestEffort(record))
+      else await releaseApplyBaseBestEffort(record)
       updateManagedCheckout(record.checkoutId, (current) => {
         if (current.delivery.state !== 'finalized' && current.delivery.state !== 'retained') return current
         return {
@@ -3897,7 +3975,7 @@ export function createSessionCheckoutModule(
             })
             return 'retained'
           }
-          const result = await cleanupFinalized(latest, { allowLegacyResidue: true, shared })
+          const result = await cleanupFinalized(latest, { allowLegacyResidue: true, shared, separateGitLock: true })
           const updated = dependencies.registry.read().managedCheckouts[candidate.checkoutId]
           if (result.cleaned) {
             cleaned.push({
@@ -3915,7 +3993,7 @@ export function createSessionCheckoutModule(
             })
           }
           return 'retained'
-        }, { operation: 'bulkCleanupManagedWorktrees', allowConcurrentInspect: true, targetKeys: [`isolated:${candidate.checkoutId}`] })
+        }, { operation: 'bulkCleanupManagedWorktrees', cleanupOnly: true, allowConcurrentInspect: true, targetKeys: [`isolated:${candidate.checkoutId}`] })
       } catch (error) {
         // 单项异常不再中断整批；registry 已持久化该项状态，管理面板刷新即可见。
         console.warn('[session-checkout] 批量清理单项失败:', error)
@@ -4033,20 +4111,22 @@ export function createSessionCheckoutModule(
       && record.delivery.expiresAt <= now
   }
 
-  async function cleanupExpiredRetained(now = Date.now(), shouldContinue: () => boolean = () => true): Promise<string[]> {
+  async function cleanupExpiredRetained(now = Date.now(), shouldContinue: () => boolean = () => true, limit = 2): Promise<string[]> {
     const expired = Object.values(dependencies.registry.read().managedCheckouts)
       .filter((record) => isExpiredRetained(record, now))
+      .slice(0, Math.max(0, limit))
     const cleaned: string[] = []
     for (const record of expired) {
-      if (!shouldContinue()) break
+      if (!shouldContinue() || foregroundRequests > 0 || bindingQueue.hasForegroundWork) break
       try {
         // 按单个 checkout 取得队列位置，让用户请求能在两项后台维护之间执行。
         const didClean = await withBindingLock(async () => {
+          if (!shouldContinue() || foregroundRequests > 0 || bindingQueue.hasForegroundWork) return false
           const current = dependencies.registry.read().managedCheckouts[record.checkoutId]
           if (!current || !isExpiredRetained(current, now)) return false
           // race 超时不会取消底层删除，必须等清理真正结束后才能交出事务位置。
-          return (await cleanupFinalized(current)).cleaned
-        }, { operation: 'cleanupExpiredRetained', allowConcurrentInspect: true, targetKeys: [`isolated:${record.checkoutId}`] })
+          return (await cleanupFinalized(current, { separateGitLock: true })).cleaned
+        }, { operation: 'cleanupExpiredRetained', cleanupOnly: true, background: true, allowConcurrentInspect: true, targetKeys: [`isolated:${record.checkoutId}`] })
         if (didClean) cleaned.push(record.checkoutId)
       } catch (error) {
         console.warn(`[session-checkout] 到期保留清理未完成: ${error instanceof Error ? error.message : String(error)}`)
@@ -4084,14 +4164,15 @@ export function createSessionCheckoutModule(
     const cleaned: string[] = []
     for (const record of retryable) {
       // 后台维护只在空闲窗口运行；用户会话一旦出现，停止调度后续清理项。
-      if (!shouldContinue()) break
+      if (!shouldContinue() || foregroundRequests > 0 || bindingQueue.hasForegroundWork) break
       try {
         // 按单个 checkout 取得队列位置，让用户请求能在两项后台维护之间执行。
         const didClean = await withBindingLock(async () => {
+          if (!shouldContinue() || foregroundRequests > 0 || bindingQueue.hasForegroundWork) return false
           const current = dependencies.registry.read().managedCheckouts[record.checkoutId]
           if (!current || !isRetryableCleanupFailure(current)) return false
-          return (await cleanupFinalized(current)).cleaned
-        }, { operation: 'cleanupRetryableManagedWorktrees', allowConcurrentInspect: true, targetKeys: [`isolated:${record.checkoutId}`] })
+          return (await cleanupFinalized(current, { separateGitLock: true })).cleaned
+        }, { operation: 'cleanupRetryableManagedWorktrees', cleanupOnly: true, background: true, allowConcurrentInspect: true, targetKeys: [`isolated:${record.checkoutId}`] })
         if (didClean) cleaned.push(record.checkoutId)
       } catch (error) {
         console.warn(`[session-checkout] 占用失败清理自动重试未完成: ${error instanceof Error ? error.message : String(error)}`)

@@ -8,6 +8,24 @@ function gate() {
 }
 
 describe('Session Checkout 排队恢复', () => {
+  test('Given 清理挂起 When 无关资源请求到达 Then 不等待清理且同资源仍互斥', async () => {
+    const queue = new SessionCheckoutOperationQueue({ waitTimeoutMs: 100 })
+    const active = gate()
+    const started = gate()
+    const first = queue.run('cleanup', 'a', async () => { started.release(); await active.promise }, { resources: ['repo:a'] })
+    await started.promise
+    let sameRan = false
+    const same = queue.run('bind', 'a', async () => { sameRan = true }, { resources: ['repo:a'] })
+    try {
+      await expect(queue.run('bind', 'b', async () => 'ready', { resources: ['repo:b'] })).resolves.toBe('ready')
+      expect(sameRan).toBe(false)
+    } finally {
+      active.release()
+      await Promise.allSettled([first, same])
+    }
+    expect(sameRan).toBe(true)
+  })
+
   test('Given 操作运行超过告警时间 When 后项等待 Then 只告警不解锁并记录真实失败及恢复', async () => {
     const events: SessionCheckoutQueueEvent[] = []
     const warned = gate()
@@ -36,6 +54,36 @@ describe('Session Checkout 排队恢复', () => {
       .toEqual(['queued', 'started', 'finished'])
     expect(JSON.stringify(events)).not.toContain('不可记录')
     expect(events.every((event) => event.waitMs >= 0 && event.executionMs >= 0)).toBe(true)
+  })
+
+  test('Given 同资源维护已排队 When 用户请求到达 Then 用户优先且维护随后执行', async () => {
+    const queue = new SessionCheckoutOperationQueue()
+    const active = gate()
+    const started = gate()
+    const order: string[] = []
+    const first = queue.run('active', 'a', async () => { started.release(); await active.promise }, { resources: ['local:a'] })
+    await started.promise
+    const maintenance = queue.run('cleanup', 'a', async () => { order.push('maintenance') }, { resources: ['local:a'], priority: 'maintenance' })
+    const user = queue.run('preview', 'b', async () => { order.push('user') }, { resources: ['local:a'] })
+    active.release()
+    await Promise.all([first, maintenance, user])
+    expect(order).toEqual(['user', 'maintenance'])
+  })
+
+  test('Given 清理持 checkout 且前台等待该 checkout When 清理申请 Git 锁 Then 不发生等待队列反转死锁', async () => {
+    const queue = new SessionCheckoutOperationQueue({ waitTimeoutMs: 500 })
+    const start = gate()
+    const proceed = gate()
+    const cleanup = queue.run('cleanup', 'a', async () => {
+      start.release()
+      await proceed.promise
+      await queue.run('cleanup_git', 'a', async () => undefined, { resources: ['git:a'], priority: 'maintenance' })
+    }, { resources: ['checkout:a'], priority: 'maintenance' })
+    await start.promise
+    const user = queue.run('finish', 'a', async () => 'done', { resources: ['checkout:a', 'git:a'] })
+    proceed.release()
+    await cleanup
+    expect(await user).toBe('done')
   })
 
   test('Given 审计同步或异步失败 When 连续操作 Then 不污染队列', async () => {

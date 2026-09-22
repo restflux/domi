@@ -38,14 +38,53 @@ export async function waitForSessionCheckoutSignal(signal: Promise<void>, timeou
   }
 }
 
-/** FIFO 的请求等待与事务所有权分离：超时请求跳过，但绝不提前释放正在执行的前项。 */
+export interface SessionCheckoutQueueScope {
+  /** 缺失资源表示全局屏障；空数组也不能获得无锁写入权限。 */
+  resources?: readonly string[]
+  priority?: 'foreground' | 'maintenance'
+}
+
+interface PendingOperation {
+  resources: ReadonlySet<string> | null
+  maintenance: boolean
+  start(): void
+}
+
+function conflicts(left: PendingOperation, right: PendingOperation): boolean {
+  return !left.resources || !right.resources || [...left.resources].some((key) => right.resources!.has(key))
+}
+
+/** 按资源保留事务所有权：只取消尚未执行的请求，绝不以超时释放正在执行的写事务。 */
 export class SessionCheckoutOperationQueue {
-  private tail: Promise<void> = Promise.resolve()
+  private readonly pending: PendingOperation[] = []
+  private readonly active = new Set<PendingOperation>()
+  private pumping = false
+
+  get hasForegroundWork(): boolean {
+    return [...this.active, ...this.pending].some((entry) => !entry.maintenance)
+  }
+
+  private pump(): void {
+    if (this.pumping) return
+    this.pumping = true
+    queueMicrotask(() => {
+      this.pumping = false
+      const ordered = [...this.pending].sort((a, b) => Number(a.maintenance) - Number(b.maintenance))
+      for (const entry of ordered) {
+        if ([...this.active].some((other) => conflicts(entry, other))) {
+          continue
+        }
+        this.pending.splice(this.pending.indexOf(entry), 1)
+        this.active.add(entry)
+        entry.start()
+      }
+    })
+  }
   private nextId = 0
 
   constructor(private readonly options: SessionCheckoutOperationQueueOptions = {}) {}
 
-  run<T>(operationName: string, sessionId: string | undefined, operation: () => Promise<T>): Promise<T> {
+  run<T>(operationName: string, sessionId: string | undefined, operation: () => Promise<T>, scope: SessionCheckoutQueueScope = {}): Promise<T> {
     const operationId = ++this.nextId
     const queuedAt = Date.now()
     let startedAt: number | undefined
@@ -62,34 +101,49 @@ export class SessionCheckoutOperationQueue {
     }
     emit('queued')
     return new Promise<T>((resolve, reject) => {
-      let expired = false
       const waitTimeoutMs = this.options.waitTimeoutMs ?? SESSION_CHECKOUT_QUEUE_WAIT_MS
-      const expire = (): void => {
-        if (expired) return
-        expired = true
+      const entry: PendingOperation = {
+        resources: scope.resources?.length ? new Set(scope.resources) : null,
+        maintenance: scope.priority === 'maintenance',
+        start: () => {
+          clearTimeout(waitTimer)
+          // Promise 微任务先于超时 timer 时仍遵守原截止时间。
+          if (Date.now() - queuedAt >= waitTimeoutMs) {
+            emit('queue_timeout')
+            reject(queueTimeoutError())
+            this.active.delete(entry)
+            this.pump()
+            return
+          }
+          startedAt = Date.now()
+          emit('started')
+          const executionTimer = setTimeout(() => emit('long_running'), this.options.longRunningMs ?? 15_000)
+          void (async () => {
+            try {
+              const result = await operation()
+              emit('finished')
+              resolve(result)
+            } catch (error) {
+              emit('failed')
+              reject(error)
+            } finally {
+              clearTimeout(executionTimer)
+              this.active.delete(entry)
+              this.pump()
+            }
+          })()
+        },
+      }
+      const waitTimer = setTimeout(() => {
+        const index = this.pending.indexOf(entry)
+        if (index < 0) return
+        this.pending.splice(index, 1)
         emit('queue_timeout')
         reject(queueTimeoutError())
-      }
-      const waitTimer = setTimeout(expire, waitTimeoutMs)
-      this.tail = this.tail.then(async () => {
-        clearTimeout(waitTimer)
-        // 事件循环繁忙时 Promise 回调可能先于超时 timer 获得执行，也必须遵守同一截止时间。
-        if (Date.now() - queuedAt >= waitTimeoutMs) expire()
-        if (expired) return
-        startedAt = Date.now()
-        emit('started')
-        const executionTimer = setTimeout(() => emit('long_running'), this.options.longRunningMs ?? 15_000)
-        try {
-          const result = await operation()
-          emit('finished')
-          resolve(result)
-        } catch (error) {
-          emit('failed')
-          reject(error)
-        } finally {
-          clearTimeout(executionTimer)
-        }
-      })
+        this.pump()
+      }, waitTimeoutMs)
+      this.pending.push(entry)
+      this.pump()
     })
   }
 }
