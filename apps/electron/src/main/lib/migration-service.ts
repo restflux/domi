@@ -11,7 +11,8 @@
  */
 
 import { existsSync, lstatSync, mkdirSync, cpSync, readFileSync, writeFileSync, readdirSync, type Dirent } from 'node:fs'
-import { mkdir, readFile, readdir, lstat, stat, writeFile } from 'node:fs/promises'
+import { readdir, lstat } from 'node:fs/promises'
+import { writeMigrationArchive, type MigrationExportArchive } from './migration-export-archive.ts'
 import { rmSyncWithRetry } from './fs-retry'
 import { writeJsonFileAtomic } from './safe-file'
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path'
@@ -307,19 +308,17 @@ export async function exportData(options: ExportOptions): Promise<ExportResult> 
     workspaceSlug: workspace.slug,
   }
 
-  const zip = new AdmZip()
+  await writeMigrationArchive(outputPath, async (zip) => {
+    zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'))
 
-  zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'))
-
-  if (components.includes('sessions')) await _addSessions(zip, workspace, sessionIds, warnings)
-  if (components.includes('skills')) await _addSkills(zip, workspace, warnings)
-  if (components.includes('mcp')) await _addMcp(zip, workspace, mode)
-  if (components.includes('channels')) _addChannels(zip, mode)
-  if (components.includes('chattools')) _addChatTools(zip, mode)
-  await _addWorkspaceConfig(zip, workspace)
-  if (mode === 'personal') await _addPersonalFiles(zip)
-
-  await writeExportZip(zip, outputPath)
+    if (components.includes('sessions')) await _addSessions(zip, workspace, sessionIds, warnings)
+    if (components.includes('skills')) await _addSkills(zip, workspace, warnings)
+    if (components.includes('mcp')) await _addMcp(zip, workspace, mode)
+    if (components.includes('channels')) _addChannels(zip, mode)
+    if (components.includes('chattools')) _addChatTools(zip, mode)
+    await _addWorkspaceConfig(zip, workspace)
+    if (mode === 'personal') await _addPersonalFiles(zip)
+  })
   return buildExportResult(outputPath, warnings)
 }
 
@@ -366,42 +365,41 @@ export async function exportDataV2(options: ExportOptionsV2): Promise<ExportResu
     workspaces: workspaceEntries,
   }
 
-  const zip = new AdmZip()
-  zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'))
+  await writeMigrationArchive(outputPath, async (zip) => {
+    zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'))
 
-  if (components.includes('sessions')) {
-    await _addSessionsMultiWorkspace(zip, targetWorkspaces.map((t) => t.workspace), sessionIds, warnings)
-  }
-
-  if (components.includes('skills')) {
-    for (const { workspace, skillSlugs } of targetWorkspaces) {
-      await _addSkillsV2(zip, workspace, skillSlugs, warnings)
+    if (components.includes('sessions')) {
+      await _addSessionsMultiWorkspace(zip, targetWorkspaces.map((t) => t.workspace), sessionIds, warnings)
     }
-  }
 
-  if (components.includes('mcp')) {
-    for (const { workspace, mcpServerNames } of targetWorkspaces) {
-      _addMcpV2(zip, workspace, mode, mcpServerNames)
+    if (components.includes('skills')) {
+      for (const { workspace, skillSlugs } of targetWorkspaces) {
+        await _addSkillsV2(zip, workspace, skillSlugs, warnings)
+      }
     }
-  }
 
-  for (const { workspace } of targetWorkspaces) {
-    await _addWorkspaceConfigV2(zip, workspace)
-  }
+    if (components.includes('mcp')) {
+      for (const { workspace, mcpServerNames } of targetWorkspaces) {
+        _addMcpV2(zip, workspace, mode, mcpServerNames)
+      }
+    }
 
-  if (components.includes('channels')) _addChannels(zip, mode)
-  if (components.includes('chattools')) _addChatTools(zip, mode)
-  if (mode === 'personal') await _addPersonalFiles(zip)
+    for (const { workspace } of targetWorkspaces) {
+      await _addWorkspaceConfigV2(zip, workspace)
+    }
 
-  await writeExportZip(zip, outputPath)
+    if (components.includes('channels')) _addChannels(zip, mode)
+    if (components.includes('chattools')) _addChatTools(zip, mode)
+    if (mode === 'personal') await _addPersonalFiles(zip)
+  })
   return buildExportResult(outputPath, warnings)
 }
 
-async function _addSessions(zip: AdmZip, workspace: AgentWorkspace, filterIds: string[] | undefined, warnings: string[]) {
+async function _addSessions(zip: MigrationExportArchive, workspace: AgentWorkspace, filterIds: string[] | undefined, warnings: string[]) {
   await _addSessionsMultiWorkspace(zip, [workspace], filterIds, warnings)
 }
 
-async function _addSessionsMultiWorkspace(zip: AdmZip, workspaces: AgentWorkspace[], filterIds: string[] | undefined, warnings: string[]) {
+async function _addSessionsMultiWorkspace(zip: MigrationExportArchive, workspaces: AgentWorkspace[], filterIds: string[] | undefined, warnings: string[]) {
   const wsIds = new Set(workspaces.map((w) => w.id))
 
   const sessionsIndexPath = getAgentSessionsIndexPath()
@@ -449,7 +447,7 @@ async function _addSessionsMultiWorkspace(zip: AdmZip, workspaces: AgentWorkspac
 }
 
 // 仅备份产品管理的会话附件，不扫描项目或会话工作目录。
-async function addSessionAttachments(zip: AdmZip, sessionId: string, warnings: string[]): Promise<void> {
+async function addSessionAttachments(zip: MigrationExportArchive, sessionId: string, warnings: string[]): Promise<void> {
   assertAttachmentSessionId(sessionId)
   const source = join(getConfigDir(), 'attachments', sessionId)
   if (existsSync(source)) await _addDirToZip(zip, source, `sessions/attachments/${sessionId}`, warnings)
@@ -486,14 +484,14 @@ function importSessionAttachments(tempDir: string, sessionId: string): void {
   mergeMissingSessionFiles(source, destination)
 }
 
-async function _addSkills(zip: AdmZip, workspace: AgentWorkspace, warnings: string[]) {
+async function _addSkills(zip: MigrationExportArchive, workspace: AgentWorkspace, warnings: string[]) {
   const skillsDir = getWorkspaceSkillsDir(workspace.slug)
   if (existsSync(skillsDir)) await _addDirToZip(zip, skillsDir, 'skills/active', warnings)
   const inactiveDir = getInactiveSkillsDir(workspace.slug)
   if (existsSync(inactiveDir)) await _addDirToZip(zip, inactiveDir, 'skills/inactive', warnings)
 }
 
-async function _addMcp(zip: AdmZip, workspace: AgentWorkspace, mode: MigrationMode) {
+async function _addMcp(zip: MigrationExportArchive, workspace: AgentWorkspace, mode: MigrationMode) {
   const mcpPath = getWorkspaceMcpPath(workspace.slug)
   if (!existsSync(mcpPath)) return
 
@@ -525,7 +523,7 @@ function _scrubMcpCredentials(config: Record<string, unknown>): Record<string, u
   return scrub(config) as Record<string, unknown>
 }
 
-function _addChannels(zip: AdmZip, mode: MigrationMode) {
+function _addChannels(zip: MigrationExportArchive, mode: MigrationMode) {
   const channelsPath = getChannelsPath()
   if (!existsSync(channelsPath)) return
 
@@ -544,7 +542,7 @@ function _addChannels(zip: AdmZip, mode: MigrationMode) {
   }
 }
 
-function _addChatTools(zip: AdmZip, mode: MigrationMode) {
+function _addChatTools(zip: MigrationExportArchive, mode: MigrationMode) {
   const toolsPath = getChatToolsConfigPath()
   if (!existsSync(toolsPath)) return
 
@@ -557,7 +555,7 @@ function _addChatTools(zip: AdmZip, mode: MigrationMode) {
   )
 }
 
-async function _addWorkspaceConfig(zip: AdmZip, workspace: AgentWorkspace) {
+async function _addWorkspaceConfig(zip: MigrationExportArchive, workspace: AgentWorkspace) {
   const configPath = join(getAgentWorkspacePath(workspace.slug), 'config.json')
   if (existsSync(configPath)) {
     await addLocalFileToZip(zip, configPath, 'config', 'workspace-config.json')
@@ -567,7 +565,7 @@ async function _addWorkspaceConfig(zip: AdmZip, workspace: AgentWorkspace) {
 
 // ─── v2 导出辅助函数 ─────────────────────────────────────────────────────────
 
-async function _addSkillsV2(zip: AdmZip, workspace: AgentWorkspace, selectedSlugs: string[] | undefined, warnings: string[]) {
+async function _addSkillsV2(zip: MigrationExportArchive, workspace: AgentWorkspace, selectedSlugs: string[] | undefined, warnings: string[]) {
   const prefix = `workspaces/${workspace.slug}`
   const skillsDir = getWorkspaceSkillsDir(workspace.slug)
   if (existsSync(skillsDir)) {
@@ -587,7 +585,7 @@ async function _addSkillsV2(zip: AdmZip, workspace: AgentWorkspace, selectedSlug
   }
 }
 
-function _addMcpV2(zip: AdmZip, workspace: AgentWorkspace, mode: MigrationMode, selectedNames?: string[]) {
+function _addMcpV2(zip: MigrationExportArchive, workspace: AgentWorkspace, mode: MigrationMode, selectedNames?: string[]) {
   const prefix = `workspaces/${workspace.slug}`
   const mcpPath = getWorkspaceMcpPath(workspace.slug)
   if (!existsSync(mcpPath)) return
@@ -609,7 +607,7 @@ function _addMcpV2(zip: AdmZip, workspace: AgentWorkspace, mode: MigrationMode, 
   zip.addFile(`${prefix}/config/mcp.json`, Buffer.from(JSON.stringify(output, null, 2), 'utf-8'))
 }
 
-async function _addWorkspaceConfigV2(zip: AdmZip, workspace: AgentWorkspace) {
+async function _addWorkspaceConfigV2(zip: MigrationExportArchive, workspace: AgentWorkspace) {
   const prefix = `workspaces/${workspace.slug}`
   const configPath = join(getAgentWorkspacePath(workspace.slug), 'config.json')
   if (existsSync(configPath)) {
@@ -618,7 +616,7 @@ async function _addWorkspaceConfigV2(zip: AdmZip, workspace: AgentWorkspace) {
   zip.addFile(`${prefix}/config/workspace-meta.json`, Buffer.from(JSON.stringify(serializeWorkspaceMetadataForMigration(workspace), null, 2), 'utf-8'))
 }
 
-async function _addPersonalFiles(zip: AdmZip) {
+async function _addPersonalFiles(zip: MigrationExportArchive) {
   const files: Array<[string, string, string]> = [
     [getSettingsPath(), 'auth', 'settings.json'],
     [getUserProfilePath(), 'auth', 'user-profile.json'],
@@ -1366,7 +1364,7 @@ const SESSION_BACKUP_EXCLUDED_DIRECTORIES = new Set([
 ])
 
 /** 会话文件保留文档、图片、上下文及产物，只在会话目录启用依赖过滤。 */
-async function _addDirToZip(zip: AdmZip, srcDir: string, zipPrefix: string, warnings: string[], sessionFiles = false): Promise<void> {
+async function _addDirToZip(zip: MigrationExportArchive, srcDir: string, zipPrefix: string, warnings: string[], sessionFiles = false): Promise<void> {
   let entries: Dirent[]
   try {
     if (sessionFiles && (await lstat(srcDir)).isSymbolicLink()) {
@@ -1394,6 +1392,7 @@ async function _addDirToZip(zip: AdmZip, srcDir: string, zipPrefix: string, warn
       try {
         await addLocalFileToZip(zip, fullPath, zipPrefix)
       } catch (error) {
+        zip.checkError()
         addExportWarning(warnings, `已跳过无法读取的备份项目: ${fullPath} (${formatErrorMessage(error)})`)
       }
     }
@@ -1413,19 +1412,7 @@ function _safeExtractAll(zip: AdmZip, targetDir: string): void {
   zip.extractAllTo(targetDir, true)
 }
 
-/** 异步读取文件并保留时间戳和权限；特殊文件不能按普通文件读取。 */
-async function addLocalFileToZip(zip: AdmZip, localPath: string, zipPath: string, zipName = basename(localPath)): Promise<void> {
-  const info = await stat(localPath)
-  if (!info.isFile() && !info.isDirectory()) throw new Error(`不支持备份特殊文件: ${localPath}`)
-  const content = info.isFile() ? await readFile(localPath) : Buffer.alloc(0)
-  const entryName = `${zipPath}/${zipName}${info.isDirectory() ? '/' : ''}`
-  const entry = zip.addFile(entryName, content, '', info.mode)
-  entry.header.time = info.mtime
-}
-
-async function writeExportZip(zip: AdmZip, outputPath: string): Promise<void> {
-  const content = await zip.toBufferPromise()
-  await mkdir(dirname(outputPath), { recursive: true })
-  // 使用原生 Promise 写入，避免 adm-zip 异步写入失败时漏传错误、导致导出一直等待。
-  await writeFile(outputPath, content)
+/** 流式读取文件，保留时间戳与权限。 */
+async function addLocalFileToZip(zip: MigrationExportArchive, localPath: string, zipPath: string, zipName = basename(localPath)): Promise<void> {
+  await zip.addLocalFile(localPath, `${zipPath}/${zipName}`)
 }

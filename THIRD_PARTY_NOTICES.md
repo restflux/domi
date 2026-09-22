@@ -156,3 +156,9 @@ Before adding a vendored file, default Skill, native binary, font, icon collecti
 3. add or update this notice;
 4. verify that commercial redistribution and modification are permitted;
 5. do not copy material with an unknown, non-commercial or source-available-only license.
+
+## Streaming backup archive
+
+- Archiver 7.0.1 (MIT), https://github.com/archiverjs/node-archiver/tree/7.0.1. Used to stream ZIP backups without buffering the entire archive. Version 7 retains the CommonJS API required by the bundled Electron main process.
+- Archiver and its production dependency license texts are included in `third-party-licenses/Archiver-dependencies.txt`, shipped with the application. EastAsianWidth’s MIT text is supplied from its upstream `MIT-LICENSE.txt` because the npm package omits it.
+- Development typings: @types/archiver 7.0.0 (MIT); not included in the runtime bundle.

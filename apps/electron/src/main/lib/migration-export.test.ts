@@ -89,6 +89,28 @@ describe('数据导出响应性', () => {
       rmSync(bulk, { recursive: true, force: true })
     }
   }, 30000)
+  test('Given 大体积会话产物 When 导出 Then 内存有界且文件完整', async () => {
+    const bulk = join(workspacePath, 'session', 'large-outputs')
+    mkdirSync(bulk)
+    for (let i = 0; i < 24; i++) writeFileSync(join(bulk, `${i}.bin`), randomBytes(4 * 1024 * 1024))
+    Bun.gc(true)
+    const baseline = process.memoryUsage().arrayBuffers
+    let peak = baseline
+    const timer = setInterval(() => { peak = Math.max(peak, process.memoryUsage().arrayBuffers) }, 5)
+    try {
+      const outputPath = join(root, 'large.domi-backup')
+      const started = performance.now()
+      await exportDataV2({ mode: 'personal', components: ['sessions'], outputPath })
+      const memoryMB = (peak - baseline) / 1024 / 1024
+      console.log(`[导出性能测试] 96 MiB 随机文件，耗时 ${Math.round(performance.now() - started)} ms，额外 Buffer 峰值 ${Math.round(memoryMB)} MiB`)
+      expect(memoryMB).toBeLessThan(64)
+      expect(statSync(outputPath).size).toBeGreaterThan(90 * 1024 * 1024)
+      expect(new AdmZip(outputPath).getEntries().some(entry => entry.entryName.includes('/node_modules/'))).toBe(false)
+    } finally {
+      clearInterval(timer)
+      rmSync(bulk, { recursive: true, force: true })
+    }
+  }, 30000)
 
   for (const version of [1, 2]) {
     test(`Given 多文件会话 When v${version} 导出 Then 完成前事件循环仍可响应且归档完整`, async () => {
@@ -187,9 +209,12 @@ describe('数据导出响应性', () => {
       for (const file of sessionFiles) rmSync(join(workspacePath, 'session', file))
       writeFileSync(join(workspacePath, 'session', 'keep.md'), '本机文档')
       writeFileSync(join(attachmentDir, 'keep.txt'), '本机内容')
-      archive.addFile('sessions/workspace-data/session/conflict/child.txt', Buffer.from('备份目录'))
-      archive.addFile('sessions/workspace-data/session/keep.md', Buffer.from('备份文档'))
-      archive.writeZip(outputPath)
+      // adm-zip 不支持原地重写带 data descriptor 的流式条目，测试修改需从内容重建。
+      const editedArchive = new AdmZip()
+      for (const entry of archive.getEntries()) editedArchive.addFile(entry.entryName, entry.getData())
+      editedArchive.addFile('sessions/workspace-data/session/conflict/child.txt', Buffer.from('备份目录'))
+      editedArchive.addFile('sessions/workspace-data/session/keep.md', Buffer.from('备份文档'))
+      editedArchive.writeZip(outputPath)
       writeFileSync(join(workspacePath, 'session', 'conflict'), '本机同名文件')
       const preview = await parseImportFile(outputPath)
       try {
