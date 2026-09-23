@@ -47,14 +47,6 @@ import {
 import { cn } from '@/lib/utils.ts'
 import { openDialogAfterDropdownMenu } from '@/lib/open-dialog-after-dropdown-menu.ts'
 
-function formatBytes(bytes: number | null): string {
-  if (bytes === null) return '占用未知'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
-
 function stateLabel(item: ManagedWorktreeSummaryView): string {
   if (item.state === 'working') return '正在修改'
   if (item.state === 'ready_for_review') return '等待验收'
@@ -299,9 +291,6 @@ export function WorktreeManagerSheet(): React.ReactElement {
     }
   }
 
-  const knownSizeItems = items.filter((item) => item.approximateBytes !== null)
-  const totalBytes = knownSizeItems.reduce((total, item) => total + (item.approximateBytes ?? 0), 0)
-  const sizeSummary = knownSizeItems.length > 0 ? `约 ${formatBytes(totalBytes)}` : '占用未知'
   const bulkCleanupItems = partitionManagedWorktreesForBulkCleanup(items)
   const eligibleCleanupItems = bulkCleanupItems.safe
   const safeCleanupItems = eligibleCleanupItems.filter((item) => selectedCheckoutIds.has(item.checkoutId))
@@ -321,7 +310,7 @@ export function WorktreeManagerSheet(): React.ReactElement {
             <p className="mt-1 text-xs text-muted-foreground">
               {bulkCleaning && bulkProgress
                 ? `正在清理 ${bulkProgress.done}/${bulkProgress.total} · 已清理 ${bulkProgress.cleanedCount} · 保留 ${bulkProgress.retainedCount}`
-                : `${items.length} 个物理环境 · ${sizeSummary}`}
+                : `${items.length} 个物理环境`}
             </p>
           </div>
           <div className="flex items-center gap-1">
@@ -452,17 +441,12 @@ export function WorktreeManagerSheet(): React.ReactElement {
                                     <StateBadge state={item.state} />
                                     <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{item.project.name}</span>
                                     <span className="text-[10px] text-muted-foreground">Iteration {item.iteration}</span>
-                                    {bulkCleaning && bulkProgress?.currentCheckoutId === item.checkoutId ? (
-                                      <span className="inline-flex items-center gap-1 text-[10px] text-primary">
-                                        <Loader2 className="size-3 animate-spin" />正在清理…
-                                      </span>
-                                    ) : null}
+                                    {/* 批量进度显示在标题栏，避免把已完成项误标为正在清理。 */}
                                   </div>
                                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                                     {item.autoCleanupScheduled ? (
                                       <span className="inline-flex items-center rounded-full bg-amber-500/15 px-1.5 py-0 text-[10px] font-medium text-amber-700 dark:text-amber-300">将自动重试清理</span>
                                     ) : null}
-                                    <span>{formatBytes(item.approximateBytes)}</span>
                                     {item.commitOid ? <span>Commit {item.commitOid.slice(0, 8)}</span> : null}
                                     {retentionLabel(item) ? <span>{retentionLabel(item)}</span> : null}
                                   </div>

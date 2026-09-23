@@ -3943,7 +3943,10 @@ export function createSessionCheckoutModule(
       .sort((left, right) => left.checkoutId.localeCompare(right.checkoutId))
     const total = uniqueCandidates.length
     let done = 0
-    for (const candidate of uniqueCandidates) {
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < uniqueCandidates.length) {
+        const candidate = uniqueCandidates[cursor++]
       let outcome: 'cleaned' | 'retained' | 'skipped' = 'skipped'
       try {
         // 每项独立 maintenance 锁：无关会话的 inspect 永不阻塞，项间让出队列供用户请求插队；
@@ -3959,7 +3962,7 @@ export function createSessionCheckoutModule(
             })
             return 'retained'
           }
-          // 同一项内的巡检与删除共享同一批只读证据，避免双份全树扫描；删除前全部安全校验仍会执行。
+          // 保留交付证明与保留期限检查；共享快照避免重复扫描修改内容。
           const shared = createSharedManagedDiagnostics(record)
           const inspection = await inspectCleanupForRecord(record, shared)
           if (inspection.eligibility !== 'safe') {
@@ -3989,7 +3992,11 @@ export function createSessionCheckoutModule(
             retained.push({
               checkoutId: updated.checkoutId,
               iteration: managedIteration(updated),
-              cleanup: await inspectCleanupForRecord(updated),
+              cleanup: cleanupBlocked(
+                'cleanup_failed',
+                result.message ?? '清理未完成，已保留并安排后续重试。',
+                updated.revision,
+              ),
             })
           }
           return 'retained'
@@ -4019,6 +4026,8 @@ export function createSessionCheckoutModule(
         })
       }
     }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, total) }, () => worker()))
     return { cleaned, retained }
   }
 

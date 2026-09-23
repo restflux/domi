@@ -1,12 +1,13 @@
 import { GitCommandInterruptedError, gitLongPathArgs, gitTimeoutMs, requestGitTermination } from './git-execution-policy.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync } from 'node:fs'
-import { lstat, readdir, realpath, rename, rm } from 'node:fs/promises'
+import { lstat, readdir, realpath, rename } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { readJsonFileSafe, writeJsonFileAtomic } from '../safe-file.ts'
 import { SessionCheckoutError } from './index.ts'
+import { removeDirectoryBounded } from './bounded-directory-removal.ts'
 import { createSessionCheckoutApplyEngine } from './session-checkout-apply.ts'
 import type {
   DirectoryIdentity,
@@ -137,12 +138,7 @@ async function removeDirectoryTree(path: string): Promise<void> {
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw new SessionCheckoutError('checkout_mismatch', '拒绝删除非目录或符号链接形式的 Worktree 残余')
   }
-  await rm(path, {
-    recursive: true,
-    force: true,
-    maxRetries: process.platform === 'win32' ? 6 : 2,
-    retryDelay: 150,
-  })
+  await removeDirectoryBounded(path)
 }
 
 function runGit(cwd: string, args: string[], options: GitCommandOptions): Promise<GitCommandResult> {
