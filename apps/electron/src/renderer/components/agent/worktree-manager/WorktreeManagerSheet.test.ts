@@ -31,14 +31,14 @@ function item(
 }
 
 describe('WorktreeManagerSheet bulk cleanup', () => {
-  test('Given mixed cleanup diagnostics When confirmation is prepared Then only proven-safe items are submitted and every other item stays visible', () => {
+  test('Given managed cleanup states When confirmation is prepared Then eligible retained items are submitted and active items stay visible', () => {
     const safe = item('safe', 'safe')
     const retained = item('retained', 'retained')
     const blocked = item('blocked', 'blocked')
 
     expect(partitionManagedWorktreesForBulkCleanup([safe, retained, blocked])).toEqual({
-      safe: [safe],
-      retained: [retained, blocked],
+      safe: [safe, retained],
+      retained: [blocked],
     })
   })
 })

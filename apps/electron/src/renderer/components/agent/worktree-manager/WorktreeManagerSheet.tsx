@@ -91,14 +91,22 @@ function retentionLabel(item: ManagedWorktreeSummaryView): string | null {
   return `保留至 ${new Date(item.expiresAt).toLocaleString()}`
 }
 
+/**
+ * 批量清理候选只依据 registry 状态，不提前执行昂贵的占用/身份巡检。
+ * 真正删除前仍由 main 进程逐项重新校验，不能清理的项目会进入 retained。
+ */
 export function partitionManagedWorktreesForBulkCleanup(items: ManagedWorktreeSummaryView[]): {
   safe: ManagedWorktreeSummaryView[]
   retained: ManagedWorktreeSummaryView[]
 } {
   return {
-    safe: items.filter((item) => item.cleanup?.eligibility === 'safe'),
-    retained: items.filter((item) => item.cleanup?.eligibility !== 'safe'),
+    safe: items.filter(isBulkCleanupEligible),
+    retained: items.filter((item) => !isBulkCleanupEligible(item)),
   }
+}
+
+function isBulkCleanupEligible(item: ManagedWorktreeSummaryView): boolean {
+  return item.state === 'retained' || item.state === 'cleanup_pending' || canRetryCleanup(item)
 }
 
 function cleanupReasonLabel(item: ManagedWorktreeSummaryView): string | null {
@@ -139,14 +147,13 @@ export function WorktreeManagerSheet(): React.ReactElement {
   const openSession = useOpenSession()
   const [items, setItems] = React.useState<ManagedWorktreeSummaryView[]>([])
   const [loading, setLoading] = React.useState(false)
-  const [diagnosticsLoading, setDiagnosticsLoading] = React.useState(false)
-  const [diagnosedCheckoutIds, setDiagnosedCheckoutIds] = React.useState<Set<string>>(new Set())
   const [pendingCheckoutId, setPendingCheckoutId] = React.useState<string | null>(null)
   const [respondingRequestId, setRespondingRequestId] = React.useState<string | null>(null)
   const [cleanupTarget, setCleanupTarget] = React.useState<ManagedWorktreeSummaryView | null>(null)
   const [bulkCleanupOpen, setBulkCleanupOpen] = React.useState(false)
   const [bulkCleaning, setBulkCleaning] = React.useState(false)
   const [bulkProgress, setBulkProgress] = React.useState<BulkCleanupProgressPayload | null>(null)
+  const [selectedCheckoutIds, setSelectedCheckoutIds] = React.useState<Set<string>>(new Set())
   const loadGenerationRef = React.useRef(0)
 
   const load = React.useCallback(async (): Promise<void> => {
@@ -160,11 +167,9 @@ export function WorktreeManagerSheet(): React.ReactElement {
       ...(manager.scope === 'attention' ? { needsAttention: true } : {}),
     }
     setLoading(true)
-    setDiagnosticsLoading(false)
-    setDiagnosedCheckoutIds(new Set())
 
     try {
-      // 首屏只读 registry 与同步文件存在性，不扫描大型目录，也不占用 mutation lock。
+      // 管理页只读取 registry 快照；占用、身份和修改检查统一延迟到实际操作前。
       const result = await listManaged(baseInput)
       if (generation !== loadGenerationRef.current) return
       if (!result.ok) {
@@ -172,43 +177,23 @@ export function WorktreeManagerSheet(): React.ReactElement {
         toast.error('无法读取 Worktrees', { description: result.error.message })
         return
       }
-
       setItems(result.value)
-      setLoading(false)
-      if (result.value.length === 0) return
-
-      // 磁盘大小与 Git/fingerprint 安全检查按单项、最多双并发渐进回填。
-      // 即使大型 node_modules 扫描较慢，返回会话、打开目录和其他条目也始终可操作。
-      setDiagnosticsLoading(true)
-      const queue = [...result.value]
-      let cursor = 0
-      const worker = async (): Promise<void> => {
-        while (cursor < queue.length) {
-          const item = queue[cursor++]
-          if (!item || generation !== loadGenerationRef.current) return
-          const detail = await listManaged({ checkoutId: item.checkoutId, includeDiagnostics: true })
-          if (generation !== loadGenerationRef.current) return
-          setDiagnosedCheckoutIds((current) => {
-            const next = new Set(current)
-            next.add(item.checkoutId)
-            return next
-          })
-          if (!detail.ok || !detail.value[0]) continue
-          const diagnosed = detail.value[0]
-          setItems((current) => current.map((candidate) => (
-            candidate.checkoutId === diagnosed.checkoutId && candidate.revision <= diagnosed.revision
-              ? diagnosed
-              : candidate
-          )))
-        }
-      }
-      void Promise.all([worker(), worker()]).finally(() => {
-        if (generation === loadGenerationRef.current) setDiagnosticsLoading(false)
-      })
+      setSelectedCheckoutIds((current) => new Set(result.value
+        .filter((item) => isBulkCleanupEligible(item) && current.has(item.checkoutId))
+        .map((item) => item.checkoutId)))
     } finally {
       if (generation === loadGenerationRef.current) setLoading(false)
     }
   }, [manager.open, manager.projectId, manager.scope])
+
+  const toggleSelected = (checkoutId: string): void => {
+    setSelectedCheckoutIds((current) => {
+      const next = new Set(current)
+      if (next.has(checkoutId)) next.delete(checkoutId)
+      else next.add(checkoutId)
+      return next
+    })
+  }
 
   React.useEffect(() => { void load() }, [load])
 
@@ -241,7 +226,7 @@ export function WorktreeManagerSheet(): React.ReactElement {
   const bulkCleanup = async (): Promise<void> => {
     const execute = window.electronAPI.sessionCheckout.bulkCleanupManaged
     const subscribeProgress = window.electronAPI.sessionCheckout.onBulkCleanupProgress
-    const candidates = items.filter((item) => item.cleanup?.eligibility === 'safe')
+    const candidates = items.filter((item) => selectedCheckoutIds.has(item.checkoutId) && isBulkCleanupEligible(item))
     if (!execute || candidates.length === 0 || bulkCleaning) return
     setBulkCleaning(true)
     setBulkCleanupOpen(false)
@@ -316,13 +301,10 @@ export function WorktreeManagerSheet(): React.ReactElement {
 
   const knownSizeItems = items.filter((item) => item.approximateBytes !== null)
   const totalBytes = knownSizeItems.reduce((total, item) => total + (item.approximateBytes ?? 0), 0)
-  const sizeSummary = diagnosticsLoading
-    ? `正在后台检查 ${diagnosedCheckoutIds.size}/${items.length}`
-    : knownSizeItems.length > 0
-      ? `约 ${formatBytes(totalBytes)}`
-      : '占用未知'
+  const sizeSummary = knownSizeItems.length > 0 ? `约 ${formatBytes(totalBytes)}` : '占用未知'
   const bulkCleanupItems = partitionManagedWorktreesForBulkCleanup(items)
-  const safeCleanupItems = bulkCleanupItems.safe
+  const eligibleCleanupItems = bulkCleanupItems.safe
+  const safeCleanupItems = eligibleCleanupItems.filter((item) => selectedCheckoutIds.has(item.checkoutId))
   const retainedCleanupItems = bulkCleanupItems.retained
   const targetIsDiscard = cleanupTarget !== null
     && (cleanupTarget.phase === 'ready' || cleanupTarget.phase === 'recovery_required')
@@ -343,11 +325,14 @@ export function WorktreeManagerSheet(): React.ReactElement {
             </p>
           </div>
           <div className="flex items-center gap-1">
-            <Button type="button" variant="outline" size="sm" disabled={bulkCleaning || diagnosticsLoading || safeCleanupItems.length === 0} onClick={() => setBulkCleanupOpen(true)}>
+            <Button type="button" variant="ghost" size="sm" disabled={bulkCleaning || eligibleCleanupItems.length === 0} onClick={() => setSelectedCheckoutIds((current) => current.size === eligibleCleanupItems.length ? new Set() : new Set(eligibleCleanupItems.map((item) => item.checkoutId)))}>
+              {selectedCheckoutIds.size === eligibleCleanupItems.length ? '取消全选' : `全选可清理项（${eligibleCleanupItems.length}）`}
+            </Button>
+            <Button type="button" variant="outline" size="sm" disabled={bulkCleaning || safeCleanupItems.length === 0} onClick={() => setBulkCleanupOpen(true)}>
               {bulkCleaning ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
               {bulkCleaning && bulkProgress
                 ? `清理中 ${bulkProgress.done}/${bulkProgress.total}`
-                : bulkCleaning ? '清理中…' : `清理安全项${safeCleanupItems.length > 0 ? `（${safeCleanupItems.length}）` : ''}`}
+                : bulkCleaning ? '清理中…' : `清理选中项${safeCleanupItems.length > 0 ? `（${safeCleanupItems.length}）` : ''}`}
             </Button>
             <Button type="button" variant="ghost" size="icon-sm" disabled={loading} onClick={() => void load()} aria-label="刷新 Worktrees">
               <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
@@ -434,7 +419,6 @@ export function WorktreeManagerSheet(): React.ReactElement {
                     <h3 className="text-xs font-semibold text-muted-foreground">{group.label} · {grouped.length}</h3>
                     {grouped.map((item) => {
                       const pending = pendingCheckoutId === item.checkoutId
-                      const diagnosed = diagnosedCheckoutIds.has(item.checkoutId)
                       const attention = item.state === 'needs_attention' || item.state === 'cleanup_pending'
                       const retryCleanup = canRetryCleanup(item)
                       const discardStateAllowed = (item.phase === 'ready' || item.phase === 'recovery_required')
@@ -442,20 +426,24 @@ export function WorktreeManagerSheet(): React.ReactElement {
                       const cleanupStateAllowed = item.state === 'retained' || retryCleanup
                       const destructiveAction = discardStateAllowed ? 'discard' : retryCleanup ? 'retry_cleanup' : 'cleanup_retained'
                       const cleanupDisabledReason = discardStateAllowed
-                        ? !diagnosed
-                          ? '正在检查 Worktree 身份、修改和协作占用'
-                          : undefined
+                        ? undefined
                         : !cleanupStateAllowed
                           ? '当前状态不支持清理或放弃'
-                          : !diagnosed
-                            ? '正在检查 Worktree 身份、修改和协作占用'
-                            : !item.canCleanup
-                              ? '检测到修改、身份异常或其他安全占用，暂不能清理'
-                              : undefined
+                          : undefined
                       return (
                         <div key={item.checkoutId} className={cn('rounded-lg bg-card p-3 shadow-sm', attention && 'border border-amber-500/30 bg-amber-500/5')}>
                           <div className="flex items-start gap-3">
                             {attention ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" /> : <HardDrive className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
+                            {isBulkCleanupEligible(item) ? (
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 size-4 shrink-0 accent-primary"
+                                checked={selectedCheckoutIds.has(item.checkoutId)}
+                                disabled={bulkCleaning || pending}
+                                onChange={() => toggleSelected(item.checkoutId)}
+                                aria-label={`选择清理 ${item.ownerSessionTitle}`}
+                              />
+                            ) : null}
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start gap-2">
                                 <div className="min-w-0 flex-1">
@@ -474,7 +462,7 @@ export function WorktreeManagerSheet(): React.ReactElement {
                                     {item.autoCleanupScheduled ? (
                                       <span className="inline-flex items-center rounded-full bg-amber-500/15 px-1.5 py-0 text-[10px] font-medium text-amber-700 dark:text-amber-300">将自动重试清理</span>
                                     ) : null}
-                                    <span>{diagnosed ? formatBytes(item.approximateBytes) : '正在检查占用…'}</span>
+                                    <span>{formatBytes(item.approximateBytes)}</span>
                                     {item.commitOid ? <span>Commit {item.commitOid.slice(0, 8)}</span> : null}
                                     {retentionLabel(item) ? <span>{retentionLabel(item)}</span> : null}
                                   </div>
@@ -555,9 +543,9 @@ export function WorktreeManagerSheet(): React.ReactElement {
       <AlertDialog open={bulkCleanupOpen} onOpenChange={setBulkCleanupOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>清理全部已证明安全的 Worktree？</AlertDialogTitle>
+            <AlertDialogTitle>批量清理已保留的 Worktree？</AlertDialogTitle>
             <AlertDialogDescription>
-              这里只展示只读巡检结论。确认后 main 会重新校验 revision、checkout identity、交付状态、保留期限、协作占用和提交后修改；任何变化都会使对应项继续保留。
+              确认后 main 会逐项重新校验 revision、checkout identity、交付状态、保留期限、协作占用和提交后修改；任何不满足条件的项目都会继续保留。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="max-h-72 space-y-3 overflow-y-auto scrollbar-thin text-xs">
@@ -579,7 +567,7 @@ export function WorktreeManagerSheet(): React.ReactElement {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction disabled={safeCleanupItems.length === 0 || bulkCleaning} onClick={() => void bulkCleanup()}>
-              确认清理 {safeCleanupItems.length} 个安全项
+              确认清理 {safeCleanupItems.length} 个 Worktree
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
