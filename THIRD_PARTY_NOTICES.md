@@ -159,6 +159,7 @@ Before adding a vendored file, default Skill, native binary, font, icon collecti
 
 ## Streaming backup archive
 
+- `@electron-internal/extract-zip` 1.0.4 (BSD-2-Clause), https://github.com/electron/extract-zip. Used for bounded-memory migration import so archives larger than 2 GiB do not require a single in-memory buffer. The native package and platform binaries retain their upstream license files in the runtime dependency tree.
 - Archiver 7.0.1 (MIT), https://github.com/archiverjs/node-archiver/tree/7.0.1. Used to stream ZIP backups without buffering the entire archive. Version 7 retains the CommonJS API required by the bundled Electron main process.
 - Archiver and its production dependency license texts are included in `third-party-licenses/Archiver-dependencies.txt`, shipped with the application. EastAsianWidth’s MIT text is supplied from its upstream `MIT-LICENSE.txt` because the npm package omits it.
 - Development typings: @types/archiver 7.0.0 (MIT); not included in the runtime bundle.

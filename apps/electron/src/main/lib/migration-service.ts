@@ -15,10 +15,10 @@ import { readdir, lstat } from 'node:fs/promises'
 import { writeMigrationArchive, type MigrationExportArchive } from './migration-export-archive.ts'
 import { rmSyncWithRetry } from './fs-retry'
 import { writeJsonFileAtomic } from './safe-file'
-import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path'
+import { basename, dirname, join, resolve, isAbsolute } from 'node:path'
 import { homedir, platform, arch, tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import AdmZip from 'adm-zip'
+import extractZip from '@electron-internal/extract-zip'
 import { safeStorage } from 'electron'
 import {
   getConfigDir,
@@ -633,8 +633,12 @@ export async function parseImportFile(filePath: string): Promise<ImportPreview |
   const tempDir = join(tmpdir(), `domi-import-${randomUUID()}`)
   mkdirSync(tempDir, { recursive: true })
 
-  const zip = new AdmZip(filePath)
-  _safeExtractAll(zip, tempDir)
+  try {
+    await _safeExtractAll(filePath, tempDir)
+  } catch (error) {
+    rmSyncWithRetry(tempDir, { recursive: true, force: true })
+    throw error
+  }
 
   const manifestPath = join(tempDir, 'manifest.json')
   if (!existsSync(manifestPath)) {
@@ -1399,17 +1403,13 @@ async function _addDirToZip(zip: MigrationExportArchive, srcDir: string, zipPref
   }
 }
 
-/** Zip Slip 安全解压：校验每个条目的路径不会逃逸 targetDir */
-function _safeExtractAll(zip: AdmZip, targetDir: string): void {
-  const resolvedTarget = resolve(targetDir)
-  for (const entry of zip.getEntries()) {
-    const entryPath = resolve(targetDir, entry.entryName)
-    const relativeEntryPath = relative(resolvedTarget, entryPath)
-    if (relativeEntryPath === '..' || relativeEntryPath.startsWith(`..${sep}`) || isAbsolute(relativeEntryPath)) {
-      throw new Error(`迁移文件包含非法路径，已拒绝解压: ${entry.entryName}`)
-    }
+/** 使用原生解压器读取大文件归档；原生实现同时拒绝 Zip Slip、链接逃逸和 Zip Bomb。 */
+async function _safeExtractAll(filePath: string, targetDir: string): Promise<void> {
+  try {
+    await extractZip(filePath, { dir: resolve(targetDir) })
+  } catch (error) {
+    throw new Error(`迁移文件解压失败: ${formatErrorMessage(error)}`, { cause: error })
   }
-  zip.extractAllTo(targetDir, true)
 }
 
 /** 流式读取文件，保留时间戳与权限。 */
