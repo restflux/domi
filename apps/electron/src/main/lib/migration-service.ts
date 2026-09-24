@@ -18,7 +18,7 @@ import { writeJsonFileAtomic } from './safe-file'
 import { basename, dirname, join, resolve, isAbsolute } from 'node:path'
 import { homedir, platform, arch, tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import extractZip from '@electron-internal/extract-zip'
+import { extract as extractZip } from '@electron-internal/extract-zip'
 import { safeStorage } from 'electron'
 import {
   getConfigDir,
