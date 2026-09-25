@@ -130,7 +130,7 @@
   }
 
   :root {
-    /* 默认浅色（Codex 风灰白）：导航区低饱和冷灰，内容区纯白，层次清晰但边界柔和 */
+    /* 浅色基底；现代界面的中性白灰色阶在下方单独覆写，经典界面保持原有层次。 */
     --background: 210 10% 95%;            /* #f1f2f4 导航区：明显区分纯白内容面 */
     --foreground: 0 0% 3.9%;
     --muted: 210 10% 94%;
@@ -1865,10 +1865,59 @@
     inset 0 1px 0 hsl(var(--foreground) / 0.045);
 }
 
-/* 默认现代浅色：普通输入框聚焦只保留单层柔和描边，避免双重外圈。
- * Plan Mode 继续使用自身的动态虚线边框，特殊主题与暗色保留各自质感。 */
+/* 默认现代浅色：参考对话工作台的中性白底与轻灰侧栏；仅作用于这一组合，
+ * 不改经典、深色和特殊主题的表面层级。 */
+:root.ui-modern:not(.dark):not([class*="theme-"]) {
+  --background: 0 0% 98.5%;
+  --foreground: 0 0% 11%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 43%;
+  --border: 0 0% 89%;
+  --input: 0 0% 89%;
+  --secondary: 0 0% 96%;
+  --accent: 0 0% 95%;
+  --sidebar-surface: 0 0% 98.5%;
+  --tabbar-surface: 0 0% 100%;
+  --sidebar-control-surface: 0 0% 96%;
+  --sidebar-control-surface-hover: 0 0% 93.5%;
+  --sidebar-control-stroke: 0 0% 15% / 0.055;
+  --input-surface: 0 0% 100%;
+  --shell-bg: #ffffff;
+}
+
+/* 宽屏收束正文与输入区，窄屏继续占满可用空间；侧栏、右工作区不受影响。 */
+:root.ui-modern:not(.dark):not([class*="theme-"]) .conversation-column {
+  max-width: min(48rem, 100%);
+}
+
+:root.ui-modern:not(.dark):not([class*="theme-"]) .sidebar-nav-entry-selected,
+:root.ui-modern:not(.dark):not([class*="theme-"]) .agent-project-item-current {
+  background-color: hsl(0 0% 94%);
+  box-shadow: none;
+}
+
+:root.ui-modern:not(.dark):not([class*="theme-"]) .agent-session-item-active-surface::before,
+:root.ui-modern:not(.dark):not([class*="theme-"]) .agent-project-session-list .agent-session-item-active-surface::before {
+  background-color: hsl(0 0% 94%);
+  box-shadow: none;
+}
+
+/* 输入框用一层细描边与柔和圆角代替偏硬的方形卡片；保留拖放与 Plan 状态样式。 */
+:root.ui-modern:not(.dark):not([class*="theme-"]) .agent-composer-surface:not(.plan-mode-border),
+:root.ui-modern:not(.dark):not([class*="theme-"]) [data-input-mode="chat"] > div:first-child:not(.border-dashed) {
+  border-radius: 20px;
+  border-color: hsl(0 0% 88%);
+  background-color: hsl(var(--input-surface));
+  box-shadow: 0 2px 12px hsl(0 0% 0% / 0.035);
+}
+
+:root.ui-modern:not(.dark):not([class*="theme-"]) [data-input-mode] .ProseMirror {
+  min-height: 56px;
+}
+
+/* 普通输入聚焦只保留单层柔和描边；Plan Mode 使用自身的动态虚线。 */
 :root.ui-modern:not(.dark):not([class*="theme-"]) .agent-composer-surface:not(.plan-mode-border):focus-within {
-  border-color: hsl(210 7% 68%);
+  border-color: hsl(0 0% 71%);
   box-shadow:
     0 2px 10px -7px hsl(var(--foreground) / 0.22),
     inset 0 1px 0 hsl(var(--foreground) / 0.025);

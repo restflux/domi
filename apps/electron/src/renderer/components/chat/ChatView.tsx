@@ -662,7 +662,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       <div className="flex flex-col h-full flex-1 min-w-0">
         {/* Header 在 max-w 外，按钮可到达最右侧 */}
         <ChatHeader conversation={conversation} />
-        <div className="flex flex-col flex-1 w-full max-w-[min(72rem,100%)] mx-auto overflow-hidden min-h-0">
+        <div className="conversation-column flex flex-col flex-1 w-full max-w-[min(72rem,100%)] mx-auto overflow-hidden min-h-0">
           {/* Hero 布局顶部弹性占位：把问候语 + 输入框组合推向视觉中心，品牌水印从中垂下 */}
           {isChatSessionEmpty && (
             <div aria-hidden="true" className="relative min-h-4 flex-1">
