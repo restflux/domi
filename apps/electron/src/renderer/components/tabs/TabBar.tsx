@@ -38,11 +38,17 @@ import { interfaceVariantAtom } from '@/atoms/theme'
 import { registerShortcut } from '@/lib/shortcut-registry'
 import { cn } from '@/lib/utils'
 import { shortcutGuideOpenAtom } from '@/atoms/shortcut-guide'
-import { rightWorkspaceOpenAtom } from '@/atoms/right-workspace-atoms'
+import {
+  activateSessionRightWorkspaceTool,
+  rightWorkspaceOpenAtom,
+  rightWorkspaceSessionStateMapAtom,
+} from '@/atoms/right-workspace-atoms'
 import { terminalDockOpenMapAtom, terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
 import { toast } from 'sonner'
 import { selectRunningAgentTerminals } from '@/components/terminal/running-terminals-model.ts'
 import { RunningTerminalsPopover } from '@/components/terminal/RunningTerminalsPopover.tsx'
+import { SessionFilesPopover } from '@/components/right-workspace/SessionFilesPopover'
+import { resolveRightWorkspaceToolAfterSessionFilesClose } from '@/components/right-workspace/session-files-popover-model'
 import { canCloseMainTab } from '@/lib/tab-close-policy.ts'
 import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 
@@ -225,6 +231,7 @@ function TabBarInner({
 
   // Right Workspace 开关固定在中间主区域的右上角。
   const [isPanelOpen, setSidePanelOpen] = useAtom(rightWorkspaceOpenAtom)
+  const setRightWorkspaceSessionStateMap = useSetAtom(rightWorkspaceSessionStateMapAtom)
   const setShortcutGuideOpen = useSetAtom(shortcutGuideOpenAtom)
   const activeTab = React.useMemo(() => tabs.find((t) => t.id === activeTabId), [tabs, activeTabId])
   const showPanelButton = activeTab?.type === 'agent'
@@ -243,8 +250,16 @@ function TabBarInner({
 
   const togglePanel = React.useCallback(() => {
     if (activeTab?.type !== 'agent') return
-    setSidePanelOpen((v) => !v)
-  }, [setSidePanelOpen, activeTab])
+    if (!isPanelOpen) {
+      setRightWorkspaceSessionStateMap((current) => {
+        const currentState = current.get(activeTab.sessionId)
+        const nextTool = resolveRightWorkspaceToolAfterSessionFilesClose(currentState?.activeTool)
+        if (currentState?.activeTool === nextTool) return current
+        return activateSessionRightWorkspaceTool(current, activeTab.sessionId, nextTool)
+      })
+    }
+    setSidePanelOpen((value) => !value)
+  }, [activeTab, isPanelOpen, setRightWorkspaceSessionStateMap, setSidePanelOpen])
 
   const creatingTerminalRef = React.useRef<ManualTerminalCreationGuard>({ pending: false })
   const createDockTerminal = React.useCallback(async (): Promise<void> => {
@@ -365,9 +380,9 @@ function TabBarInner({
           isModern ? 'items-center' : 'items-end',
           // 为固定在标签栏右侧的全局按钮预留空间；Windows 面板关闭时还需避开 WindowControls（~126px）。
           isWindows && (showPanelButton
-            ? (isPanelOpen ? "pr-28" : "pr-[226px]")
-            : "pr-[162px]"),
-          !isWindows && (showPanelButton ? "pr-28" : "pr-10"),
+            ? (isPanelOpen ? 'pr-28' : 'pr-[258px]')
+            : 'pr-[162px]'),
+          !isWindows && (showPanelButton ? (isPanelOpen ? 'pr-28' : 'pr-36') : 'pr-10'),
         )}
       >
         {tabs.map((tab) => (
@@ -488,6 +503,13 @@ function TabBarActions({
           tooltipLabel={hasRunningServiceTerminal ? '查看运行中的服务' : '手动终端'}
           active={isTerminalOpen || runningPopoverOpen}
           hasRunningDot={hasRunningServiceTerminal}
+        />
+      )}
+
+      {activeAgentSessionId && (
+        <SessionFilesPopover
+          sessionId={activeAgentSessionId}
+          rightWorkspaceOpen={isPanelOpen}
         />
       )}
 
