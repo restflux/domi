@@ -15,6 +15,7 @@ import {
   tabsAtom,
   activeTabIdAtom,
   tabIndicatorMapAtom,
+  sidebarCollapsedAtom,
 } from '@/atoms/tab-atoms'
 import type { TabItem } from '@/atoms/tab-atoms'
 import type { SessionIndicatorStatus } from '@/atoms/agent-atoms'
@@ -32,7 +33,8 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TabBarItem } from './TabBarItem'
 import { useCloseTab } from '@/hooks/useCloseTab'
-import { detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
+import { detectIsMac, detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
+import { interfaceVariantAtom } from '@/atoms/theme'
 import { registerShortcut } from '@/lib/shortcut-registry'
 import { cn } from '@/lib/utils'
 import { shortcutGuideOpenAtom } from '@/atoms/shortcut-guide'
@@ -45,6 +47,7 @@ import { canCloseMainTab } from '@/lib/tab-close-policy.ts'
 import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 
 export function TabBar(): React.ReactElement {
+  const isModern = useAtomValue(interfaceVariantAtom) === 'modern'
   const tabs = useAtomValue(tabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
   const indicatorMap = useAtomValue(tabIndicatorMapAtom)
@@ -164,7 +167,7 @@ export function TabBar(): React.ReactElement {
     document.addEventListener('pointerup', handleUp)
   }, [tabs])
 
-  if (tabs.length === 0) return <div className="h-[34px] titlebar-drag-region" />
+  if (tabs.length === 0) return <div className={cn('titlebar-drag-region', isModern ? 'h-[46px]' : 'h-[34px]')} />
 
   return (
     <>
@@ -181,6 +184,10 @@ export function TabBar(): React.ReactElement {
       />
     </>
   )
+}
+
+export function shouldInsetMacCollapsedTabs(isMac: boolean, modern: boolean, collapsed: boolean): boolean {
+  return isMac && modern && collapsed
 }
 
 /** 内部组件：管理全局 hover 状态，确保同一时刻只有一个预览面板 */
@@ -211,6 +218,10 @@ function TabBarInner({
   const leaveTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
   const fadeTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
   const isWindows = React.useMemo(() => detectIsWindows(), [])
+  const isMac = React.useMemo(() => detectIsMac(), [])
+  const isModern = useAtomValue(interfaceVariantAtom) === 'modern'
+  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
+  const insetForWindowControls = shouldInsetMacCollapsedTabs(isMac, isModern, sidebarCollapsed)
 
   // Right Workspace 开关固定在中间主区域的右上角。
   const [isPanelOpen, setSidePanelOpen] = useAtom(rightWorkspaceOpenAtom)
@@ -338,17 +349,20 @@ function TabBarInner({
   }, [])
 
   return (
-    <div className="chrome-tabbar main-tabbar flex items-end h-[34px] tabbar-bg relative">
+    <div className={cn('chrome-tabbar main-tabbar flex tabbar-bg relative', isModern ? 'h-[46px] items-center' : 'h-[34px] items-end')}>
       {/* 顶部 TabBar 的空白区域必须保持可拖拽，尤其是 macOS/Windows 自定义标题栏。
           注意：不要把 titlebar-no-drag 加到下面的整条 flex 容器上，否则标签右侧空白会再次失去拖拽能力。
           Windows 上背景拖拽层避开右上角 WindowControls 区域（126px），防止 hitmask 重叠。
           需要交互的单个 Tab 会在 TabBarItem 内部自己声明 titlebar-no-drag。 */}
-      <div className={cn("absolute inset-0 titlebar-drag-region", isWindows && WINDOW_CONTROLS_INSET_RIGHT)} />
+      <div className={cn('absolute inset-0 titlebar-drag-region', isMac && insetForWindowControls && 'left-[76px]', isWindows && WINDOW_CONTROLS_INSET_RIGHT)} />
 
+      {/* macOS 折叠态给红绿灯与顶部固定展开按钮留出空间；留白在滚动标签之外。 */}
+      {insetForWindowControls && <div aria-hidden="true" className="h-full w-[76px] shrink-0" />}
       <div
         ref={scrollRef}
         className={cn(
-          "main-tabbar-track relative flex items-end flex-1 min-w-0 overflow-x-auto scrollbar-none",
+          'main-tabbar-track relative flex flex-1 min-w-0 overflow-x-auto scrollbar-none',
+          isModern ? 'items-center' : 'items-end',
           // 为固定在标签栏右侧的全局按钮预留空间；Windows 面板关闭时还需避开 WindowControls（~126px）。
           isWindows && (showPanelButton
             ? (isPanelOpen ? "pr-28" : "pr-[226px]")
@@ -385,6 +399,7 @@ function TabBarInner({
 
       <TabBarActions
         isWindows={isWindows}
+        isModern={isModern}
         showPanelButton={showPanelButton}
         isPanelOpen={isPanelOpen}
         isTerminalOpen={isTerminalOpen}
@@ -403,6 +418,7 @@ function TabBarInner({
 /** 顶部标签栏右侧的全局操作区；Windows 主区铺满时避开窗口控制按钮。 */
 function TabBarActions({
   isWindows,
+  isModern,
   showPanelButton,
   isPanelOpen,
   isTerminalOpen,
@@ -415,6 +431,7 @@ function TabBarActions({
   onSetRunningPopoverOpen,
 }: {
   isWindows: boolean
+  isModern: boolean
   showPanelButton: boolean
   isPanelOpen: boolean
   isTerminalOpen: boolean
@@ -431,8 +448,9 @@ function TabBarActions({
   return (
     <div
       className={cn(
-        "absolute inset-y-0 z-10 flex items-end gap-1 pb-[3px] titlebar-no-drag",
-        isWindows && (!showPanelButton || !isPanelOpen) ? "right-[130px]" : "right-1",
+        'absolute inset-y-0 z-10 flex gap-1 titlebar-no-drag',
+        isModern ? 'items-center' : 'items-end pb-[3px]',
+        isWindows && (!showPanelButton || !isPanelOpen) ? 'right-[130px]' : 'right-1',
       )}
     >
       <Tooltip>

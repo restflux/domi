@@ -9,6 +9,8 @@
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { LeftSidebar } from './LeftSidebar'
+import { SidebarTitlebarToggle } from './SidebarTitlebarToggle'
+import { shouldCloseSidebarHoverPreview } from './sidebar-hover-preview'
 import { RightSidePanel } from './RightSidePanel'
 import { CommandPalette } from './CommandPalette'
 import { MainArea } from '@/components/tabs/MainArea'
@@ -24,7 +26,7 @@ import { settingsOpenAtom } from '@/atoms/settings-tab'
 import { WindowControls } from '@/components/WindowControls'
 import { SettingsPanel } from '@/components/settings/SettingsPanel'
 import { WorktreeManagerSheet } from '@/components/agent/worktree-manager/WorktreeManagerSheet.tsx'
-import { detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
+import { detectIsMac, detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
   clampRightWorkspaceWidth,
@@ -77,6 +79,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     : null
   const lastAutoWidthActivationRef = React.useRef<string | null>(null)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
+  const isMac = React.useMemo(() => detectIsMac(), [])
 
   React.useEffect(() => {
     const decision = resolveRightWorkspaceAutoWidthActivation(
@@ -90,7 +93,94 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
   // 左侧边栏可拖拽宽度
   const [leftSidebarWidth, setLeftSidebarWidth] = useAtom(leftSidebarWidthAtom)
-  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
+  const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
+  const [sidebarPreviewOpen, setSidebarPreviewOpen] = React.useState(false)
+  const hoverTimerRef = React.useRef<number | null>(null)
+  const closeTimerRef = React.useRef<number | null>(null)
+  const lastPointerRef = React.useRef({ x: 0, y: 0 })
+  const keyboardPreviewRef = React.useRef(false)
+  const sidebarFrameRef = React.useRef<HTMLDivElement>(null)
+  const previewActive = sidebarCollapsed && !isClassic && sidebarPreviewOpen && !settingsOpen
+  const clearHoverTimer = React.useCallback(() => {
+    if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current)
+    hoverTimerRef.current = null
+  }, [])
+  const clearCloseTimer = React.useCallback(() => {
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+  }, [])
+  const schedulePreviewClose = (): void => {
+    if (keyboardPreviewRef.current || closeTimerRef.current !== null) return
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null
+      const bounds = sidebarFrameRef.current?.querySelector('[data-sidebar-preview]')?.getBoundingClientRect() ?? null
+      const popupOpen = Boolean(document.querySelector('[data-radix-popper-content-wrapper] [role="menu"], [role="dialog"]'))
+      if (shouldCloseSidebarHoverPreview(lastPointerRef.current, bounds, popupOpen)) {
+        setSidebarPreviewOpen(false)
+      }
+    }, 160)
+  }
+  const scheduleSidebarHover = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (!sidebarCollapsed || isClassic || settingsOpen || previewActive) return
+    if (event.pointerType !== 'mouse' || (isMac && event.clientY < 50)) return
+    // 轨道上的搜索/工作动态/设置仍是可点击控件，不能在按下前换成错位的浮层按钮。
+    const button = event.target instanceof Element ? event.target.closest('button') : null
+    if (button && button.getAttribute('aria-label') !== 'Domi，预览或固定展开侧边栏') {
+      clearHoverTimer()
+      return
+    }
+    if (hoverTimerRef.current !== null) return
+    keyboardPreviewRef.current = false
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null
+      setSidebarPreviewOpen(true)
+    }, 140)
+  }
+
+  React.useEffect(() => () => {
+    clearHoverTimer()
+    clearCloseTimer()
+  }, [clearHoverTimer, clearCloseTimer])
+  React.useEffect(() => {
+    if (!sidebarCollapsed || isClassic || settingsOpen) {
+      clearHoverTimer()
+      clearCloseTimer()
+      setSidebarPreviewOpen(false)
+      keyboardPreviewRef.current = false
+    }
+  }, [sidebarCollapsed, isClassic, settingsOpen, clearHoverTimer, clearCloseTimer])
+  React.useEffect(() => {
+    if (!previewActive || !keyboardPreviewRef.current) return
+    const frame = requestAnimationFrame(() => {
+      sidebarFrameRef.current?.querySelector<HTMLButtonElement>('[data-sidebar-preview] button')?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [previewActive])
+  React.useEffect(() => {
+    if (!previewActive) return
+    const handleOutsidePointer = (event: PointerEvent): void => {
+      if (event.pointerType !== 'mouse' || keyboardPreviewRef.current || !(event.target instanceof Element)) return
+      lastPointerRef.current = { x: event.clientX, y: event.clientY }
+      if (sidebarFrameRef.current?.contains(event.target) || event.target.closest('[data-radix-popper-content-wrapper], [role="menu"], [role="dialog"]')) {
+        clearCloseTimer()
+        return
+      }
+      schedulePreviewClose()
+    }
+    const closeOnWindowBlur = (): void => {
+      keyboardPreviewRef.current = false
+      clearCloseTimer()
+      setSidebarPreviewOpen(false)
+    }
+    document.addEventListener('pointermove', handleOutsidePointer)
+    window.addEventListener('blur', closeOnWindowBlur)
+    return () => {
+      document.removeEventListener('pointermove', handleOutsidePointer)
+      window.removeEventListener('blur', closeOnWindowBlur)
+      clearCloseTimer()
+    }
+  }, [previewActive, clearCloseTimer])
+
   const leftDragging = React.useRef(false)
   const [isDraggingLeftSidebar, setIsDraggingLeftSidebar] = React.useState(false)
   const clampedLeftSidebarWidth = clampLeftSidebarWidth(leftSidebarWidth)
@@ -202,10 +292,25 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
           表现为"按钮要双击才响应"。 */}
       <div
         className={cn(
-          'titlebar-drag-region fixed top-0 left-0 h-[50px] z-50',
+          'titlebar-drag-region fixed top-0 h-[50px] z-50',
+          isClassic ? 'left-0' : isMac ? 'left-[128px]' : 'left-[48px]',
           isWindows ? WINDOW_CONTROLS_INSET_RIGHT : 'right-0'
         )}
       />
+
+      {!isClassic && !settingsOpen && (
+        <SidebarTitlebarToggle
+          isMac={isMac}
+          collapsed={sidebarCollapsed}
+          previewActive={previewActive}
+          onToggle={() => {
+            setSidebarPreviewOpen(false)
+            setSidebarCollapsed(!sidebarCollapsed)
+          }}
+        />
+      )}
+
+      {!isClassic && !settingsOpen && <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-[45px] z-[75] h-px bg-border/35" />}
 
       {/* Windows 自定义窗口控制按钮（最小化/最大化/关闭） */}
       <WindowControls />
@@ -213,8 +318,47 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
       <div className="shell-bg relative h-screen w-screen overflow-hidden">
         <div className={cn('flex h-full w-full', settingsOpen && 'hidden')} aria-hidden={settingsOpen}>
             {/* 左侧边栏：可折叠，可拖拽调整宽度 */}
-            <div className={cn(isClassic ? 'p-2 pr-0' : '', 'relative z-[60] crt-sidebar')}>
-              <LeftSidebar width={clampedLeftSidebarWidth} noTransition={isDraggingLeftSidebar} />
+            <div
+              ref={sidebarFrameRef}
+              className={cn(isClassic ? 'p-2 pr-0' : '', 'relative z-[60] crt-sidebar', previewActive && 'z-[70] w-[52px] flex-none')}
+              onPointerEnter={scheduleSidebarHover}
+              onPointerMove={(event) => {
+                lastPointerRef.current = { x: event.clientX, y: event.clientY }
+                clearCloseTimer()
+                scheduleSidebarHover(event)
+              }}
+              onPointerLeave={(event) => {
+                clearHoverTimer()
+                lastPointerRef.current = { x: event.clientX, y: event.clientY }
+                schedulePreviewClose()
+              }}
+              onFocusCapture={(event) => {
+                if (!sidebarCollapsed || isClassic || previewActive || !event.target.matches(':focus-visible')) return
+                if (event.target.getAttribute('aria-label') !== 'Domi，预览或固定展开侧边栏') return
+                clearHoverTimer()
+                keyboardPreviewRef.current = true
+                setSidebarPreviewOpen(true)
+              }}
+              onBlurCapture={(event) => {
+                if (!keyboardPreviewRef.current || !previewActive) return
+                const next = event.relatedTarget
+                if (next instanceof Node && event.currentTarget.contains(next)) return
+                if (next instanceof Element && next.closest('[role="menu"], [role="dialog"], [data-radix-popper-content-wrapper]')) return
+                requestAnimationFrame(() => {
+                  if (!sidebarFrameRef.current?.contains(document.activeElement)) {
+                    keyboardPreviewRef.current = false
+                    setSidebarPreviewOpen(false)
+                  }
+                })
+              }}
+            >
+              {previewActive ? (
+                <div data-sidebar-preview="true" className="absolute inset-y-0 left-0 z-30 w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-r-xl border-r border-border/50 bg-[hsl(var(--sidebar-surface))] shadow-xl">
+                  <LeftSidebar width={clampedLeftSidebarWidth} previewExpanded noTransition />
+                </div>
+              ) : (
+                <LeftSidebar width={clampedLeftSidebarWidth} noTransition={isDraggingLeftSidebar} />
+              )}
               {/* 侧边栏展开时显示拖拽手柄，折叠态隐藏 */}
               {!sidebarCollapsed && (
                 <div

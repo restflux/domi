@@ -19,7 +19,7 @@ describe('DomiBrand', () => {
     expect(html).toContain('aria-label="domi"')
     expect(html).toContain('domi-wordmark')
     expect(html).toContain('mask-image')
-    // 字标本身是蒙版图而非文本样式；AI 铭牌是独立元素，允许使用自己的字重
+    expect(html).not.toContain('domi-ai-badge')
     const wordmarkTag = /<span[^>]*domi-wordmark[^>]*>/.exec(html)?.[0] ?? ''
     expect(wordmarkTag).not.toBe('')
     expect(wordmarkTag).not.toContain('font-semibold')

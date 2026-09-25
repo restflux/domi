@@ -31,7 +31,7 @@ const sessions = [
   }),
 ]
 
-function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project', modernLayout = false, view: 'planning' | 'agent-skills' | null = null, theme: 'light' | 'dark' | 'special' = 'light', width = 260): string {
+function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project', modernLayout = false, view: 'planning' | 'agent-skills' | null = null, theme: 'light' | 'dark' | 'special' = 'light', width = 260, previewExpanded = false): string {
   const store = createStore()
   store.set(appModeAtom, 'agent')
   store.set(interfaceVariantAtom, modernLayout ? 'modern' : 'classic')
@@ -48,7 +48,7 @@ function renderSidebar(archived = false, collapsed = false, groupMode: 'project'
   store.set(sidebarCollapsedAtom, collapsed)
   store.set(workSidebarPreferencesAtom, { ...store.get(workSidebarPreferencesAtom), groupMode })
   const html = renderToStaticMarkup(
-    <Provider store={store}><TooltipProvider><LeftSidebar width={width} /></TooltipProvider></Provider>,
+    <Provider store={store}><TooltipProvider><LeftSidebar width={width} previewExpanded={previewExpanded} /></TooltipProvider></Provider>,
   )
   expect(store.get(agentSessionsAtom)).toEqual(sessions)
   return html
@@ -110,6 +110,53 @@ describe('LeftSidebar 侧聊用途隔离', () => {
     expect(html).toContain('aria-label="当前为 Work，切换工作模式"')
     expect(html).toContain('aria-label="选择新会话项目"')
     expect(html).toContain('aria-controls="sidebar-secondary-links"')
+  })
+
+  test.each(['light', 'dark', 'special'] as const)('%s 现代折叠态只保留必要锚点和工作状态，悬浮时恢复完整项目列表', (theme) => {
+    const rail = renderSidebar(false, true, 'project', true, null, theme)
+    expect(rail).toContain('sidebar-hover-rail')
+    expect(rail).toContain('aria-label="Domi，预览或固定展开侧边栏"')
+    expect(rail).toContain('aria-label="搜索"')
+    expect(rail).toContain('工作动态')
+    expect(rail).not.toContain('用途测试-parent')
+    expect(rail).not.toContain('切换到 Chat 模式')
+    const preview = renderSidebar(false, true, 'project', true, null, theme, 300, true)
+    expect(preview).toContain('id="modern-left-sidebar"')
+    expect(preview).not.toContain('sidebar-collapse-button')
+    expect(preview).toContain('aria-label="当前为 Work，切换工作模式"')
+    expect(preview).toContain('用途测试-parent')
+    expect(preview).toContain('min(300px, calc(100vw - 16px))')
+  })
+
+  test('现代侧栏折叠与展开的品牌图标保持相同尺寸，经典折叠不变', () => {
+    const collapsed = renderSidebar(false, true, 'project', true)
+    const expanded = renderSidebar(false, false, 'project', true)
+    expect(collapsed).toContain('id="modern-left-sidebar"')
+    expect(collapsed).toMatch(/domi-brand-mark[^\"]*size-6/)
+    expect(expanded).toMatch(/domi-brand-mark[^\"]*size-6/)
+    expect(renderSidebar(false, true)).not.toContain('sidebar-hover-rail')
+  })
+
+  test.each(['light', 'dark', 'special'] as const)('%s 现代主题折叠 Logo、展开品牌行与会话工具栏共用第二行中心线', (theme) => {
+    const collapsed = renderSidebar(false, true, 'project', true, null, theme)
+    const expanded = renderSidebar(false, false, 'project', true, null, theme)
+    const preview = renderSidebar(false, true, 'project', true, null, theme, 260, true)
+    const railSpacer = Number(collapsed.match(/class="h-\[(\d+)px\] w-full flex-shrink-0"/)?.[1])
+    const brandSpacer = Number(expanded.match(/class="w-full flex-shrink-0 h-\[(\d+)px\]"/)?.[1])
+    // AgentHeader 从 46px 顶栏下开始，高 40px；轨道按钮高 40px，品牌行高 36px。
+    const toolbarCenter = 46 + 40 / 2
+    expect(collapsed).toContain('flex size-10 items-center justify-center')
+    expect(expanded).toContain('sidebar-quiet-header h-9')
+    expect(railSpacer + 40 / 2).toBe(toolbarCenter)
+    expect(brandSpacer + 36 / 2).toBe(toolbarCenter)
+    expect(preview).toContain('w-full flex-shrink-0 h-[48px]')
+    expect(expanded).toContain(`style="height:46px;left:${navigator.platform.includes('Mac') ? 128 : 48}px"`)
+  })
+
+  test('经典折叠态保留原结构', () => {
+    const classic = renderSidebar(false, true)
+    expect(classic).not.toContain('sidebar-hover-rail')
+    expect(classic).toContain('切换到 Chat 模式')
   })
 
   test('Given 折叠侧栏 When 渲染最近会话 Then 不显示侧聊', () => {

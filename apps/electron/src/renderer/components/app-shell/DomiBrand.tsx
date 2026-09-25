@@ -63,12 +63,7 @@ export function DomiBrandLockup({
   return (
     <span className={cn('inline-flex min-w-0 items-center gap-2 select-none', className)}>
       <DomiBrandMark className={cn('size-7', markClassName)} />
-      <span className="inline-flex min-w-0 items-center gap-1.5">
-        <DomiWordmark className={wordmarkClassName} />
-        <span className="domi-ai-badge inline-flex h-[17px] flex-shrink-0 items-center rounded-full px-1.5 text-[9px] font-semibold leading-none tracking-[0.08em] text-foreground/75">
-          AI
-        </span>
-      </span>
+      <DomiWordmark className={wordmarkClassName} />
     </span>
   )
 }

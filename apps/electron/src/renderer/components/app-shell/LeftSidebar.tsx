@@ -722,6 +722,8 @@ export interface LeftSidebarProps {
   width?: number
   /** 拖拽过程中禁用 CSS transition，保证即时响应 */
   noTransition?: boolean
+  /** 折叠态悬浮预览：不更改用户保存的展开偏好。 */
+  previewExpanded?: boolean
 }
 
 /** 日期分组标签 */
@@ -1106,12 +1108,12 @@ function RailRecentButton({
   )
 }
 
-function SidebarWindowDragStrip({ height }: { height: number }): React.ReactElement {
+function SidebarWindowDragStrip({ height, left = 0 }: { height: number; left?: number }): React.ReactElement {
   return (
     <div
       aria-hidden="true"
       className="sidebar-window-drag-strip"
-      style={{ height }}
+      style={{ height, left }}
     />
   )
 }
@@ -1135,7 +1137,7 @@ function deleteSetEntry<T>(prev: Set<T>, value: T): Set<T> {
   return next
 }
 
-export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.ReactElement {
+export function LeftSidebar({ width, noTransition, previewExpanded = false }: LeftSidebarProps): React.ReactElement {
   const [activeView, setActiveView] = useAtom(activeViewAtom)
   const setAgentSkillsTab = useSetAtom(agentSkillsTabAtom)
   const setAutomationForm = useSetAtom(automationFormAtom)
@@ -3117,8 +3119,59 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
     />
   )
 
-  // ===== 折叠状态：精简图标视图 =====
-  if (sidebarCollapsed) {
+  // 现代折叠态只保留导航锚点与必要的工作状态；完整操作在悬浮预览中复用展开视图。
+  if (sidebarCollapsed && modernLayout && !previewExpanded) {
+    return (
+      <div
+        ref={sidebarRootRef}
+        id="modern-left-sidebar"
+        className="sidebar-hover-rail relative flex h-full w-[52px] flex-col items-center bg-[hsl(var(--sidebar-surface))]"
+      >
+        <div className="h-[46px] w-full flex-shrink-0" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label="Domi，预览或固定展开侧边栏"
+              aria-expanded={false}
+              onClick={() => setSidebarCollapsed(false)}
+              className="titlebar-no-drag flex size-10 items-center justify-center rounded-md hover:bg-foreground/[0.055] focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <DomiBrandMark className="size-6" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">展开侧边栏（悬停可预览）</TooltipContent>
+        </Tooltip>
+        <div className="mt-4 flex flex-col items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" aria-label="搜索" onClick={() => setSearchDialogOpen(true)} className="titlebar-no-drag flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                <Search size={16} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">搜索</TooltipContent>
+          </Tooltip>
+          {mode === 'agent' && (
+            <WorkActivitySidebarRailButton active={activeView === 'work-activity'} onClick={handleOpenWorkActivity} />
+          )}
+        </div>
+        <div className="flex-1" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" aria-label="打开设置" onClick={handleOpenSettings} className="titlebar-no-drag relative mb-3 flex size-9 items-center justify-center rounded-md hover:bg-foreground/[0.055] focus-visible:ring-2 focus-visible:ring-ring">
+              <UserAvatar avatar={userProfile.avatar} size={26} />
+              {hasEnvironmentIssues && <span className="absolute right-0 top-0 size-2 rounded-full bg-red-500" />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">设置</TooltipContent>
+        </Tooltip>
+        <SearchDialog />
+      </div>
+    )
+  }
+
+  // 经典折叠状态保持原有图标列。
+  if (sidebarCollapsed && !previewExpanded) {
     return (
       <div
         ref={sidebarRootRef}
@@ -3385,6 +3438,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   return (
     <div
       ref={sidebarRootRef}
+      id={modernLayout ? 'modern-left-sidebar' : undefined}
       data-session-switch-hints={quickSwitchHintsVisible ? 'true' : undefined}
       className={cn(
         'relative h-full flex flex-col',
@@ -3394,17 +3448,18 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
           ? 'bg-background rounded-2xl shadow-xl dark:shadow-md'
           : 'bg-[hsl(var(--sidebar-surface))]'
       )}
-      style={{ width: width ?? 300, minWidth: 200, flexShrink: 0 }}
+      style={{ width: previewExpanded ? `min(${width ?? 300}px, calc(100vw - 16px))` : width ?? 300, minWidth: 200, flexShrink: 0 }}
     >
       <SidebarWindowDragStrip
-        height={isMac ? SIDEBAR_DRAG_STRIP_HEIGHT.expandedMac : SIDEBAR_DRAG_STRIP_HEIGHT.expanded}
+        height={modernLayout ? 46 : isMac ? SIDEBAR_DRAG_STRIP_HEIGHT.expandedMac : SIDEBAR_DRAG_STRIP_HEIGHT.expanded}
+        left={modernLayout ? (isMac ? 128 : 48) : 0}
       />
 
-      {/* macOS 需要避开左上角红绿灯；边栏覆盖全局标题栏拖拽层，因此留白自身也要可拖拽。 */}
-      <div className={cn('w-full flex-shrink-0 titlebar-drag-region', isMac ? 'h-[30px]' : 'h-1')} />
+      {/* 现代侧栏从统一顶栏下方开始；固定按钮区域不再被第二层拖拽热区覆盖。 */}
+      <div className={cn('w-full flex-shrink-0', !modernLayout && 'titlebar-drag-region', modernLayout ? 'h-[48px]' : isMac ? 'h-[30px]' : 'h-1')} />
 
       {/* 品牌栏：建立 Domi 视觉锚点，同时承载全局搜索与侧栏布局控制。 */}
-      <div className={cn('titlebar-drag-region flex h-11 flex-shrink-0 items-center gap-2 px-3', modernLayout && 'sidebar-quiet-header h-9 gap-1 px-2')}>
+      <div className={cn('titlebar-drag-region flex flex-shrink-0 items-center', modernLayout ? 'sidebar-quiet-header h-9 gap-1 px-2' : 'h-11 gap-2 px-3', isMac && modernLayout && 'mb-2')}>
         {modernLayout ? <ModeSwitcher compact /> : <DomiBrandLockup />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <Tooltip>
@@ -3420,19 +3475,21 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
             </TooltipTrigger>
             <TooltipContent side="bottom">搜索 ({getAcceleratorDisplay(getActiveAccelerator('global-search'))})</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="收起侧边栏"
-                onClick={() => setSidebarCollapsed(true)}
-                className={cn('sidebar-collapse-button flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 titlebar-no-drag transition-[background-color,color] duration-150', modernLayout && 'size-7')}
-              >
-                <PanelLeftClose size={14} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">收起侧边栏 ({navigator.platform.includes('Mac') ? '⌘B' : 'Ctrl+B'})</TooltipContent>
-          </Tooltip>
+          {!modernLayout && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="收起侧边栏"
+                  onClick={() => setSidebarCollapsed(true)}
+                  className="sidebar-collapse-button flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 titlebar-no-drag transition-[background-color,color] duration-150"
+                >
+                  <PanelLeftClose size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">收起侧边栏 ({navigator.platform.includes('Mac') ? '⌘B' : 'Ctrl+B'})</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
 
