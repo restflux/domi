@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Provider, createStore } from 'jotai'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { AgentSessionMeta } from '@domi/shared'
@@ -7,7 +9,8 @@ import { agentSessionsAtom, agentWorkspacesAtom, currentAgentSessionIdAtom, curr
 import { appModeAtom } from '@/atoms/app-mode'
 import { activeTabIdAtom, sidebarCollapsedAtom, tabsAtom } from '@/atoms/tab-atoms'
 import { sidebarViewModeAtom, workSidebarPreferencesAtom } from '@/atoms/sidebar-atoms'
-import { interfaceVariantAtom } from '@/atoms/theme'
+import { interfaceVariantAtom, themeModeAtom } from '@/atoms/theme'
+import { activeViewAtom } from '@/atoms/active-view'
 import { LeftSidebar } from './LeftSidebar'
 
 function session(id: string, overrides: Partial<AgentSessionMeta> = {}): AgentSessionMeta {
@@ -28,10 +31,12 @@ const sessions = [
   }),
 ]
 
-function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project'): string {
+function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project', quietLight = false, view: 'planning' | 'agent-skills' | null = null): string {
   const store = createStore()
   store.set(appModeAtom, 'agent')
-  store.set(interfaceVariantAtom, 'classic')
+  store.set(interfaceVariantAtom, quietLight ? 'modern' : 'classic')
+  if (quietLight) store.set(themeModeAtom, 'light')
+  if (view) store.set(activeViewAtom, view)
   store.set(agentSessionsAtom, sessions)
   store.set(agentWorkspacesAtom, [{ id: 'workspace', name: '测试项目', slug: 'workspace', createdAt: 1, updatedAt: 2 }])
   store.set(currentAgentWorkspaceIdAtom, 'workspace')
@@ -67,6 +72,33 @@ describe('LeftSidebar 侧聊用途隔离', () => {
     expect(html).toContain('用途测试-archive')
     expect(html).not.toContain('用途测试-side-')
     expect(renderSidebar()).toContain('已归档 (1)')
+  })
+
+  test('浅色现代侧栏收起次级入口，打开规划页时仍保持对应入口可见', () => {
+    const quiet = renderSidebar(false, false, 'project', true)
+    expect(quiet).toContain('更多工具')
+    expect(quiet).toContain('aria-expanded="false"')
+    expect(quiet).toMatch(/id="sidebar-secondary-links"[^>]*hidden=""/)
+
+    const planning = renderSidebar(false, false, 'project', true, 'planning')
+    expect(planning).toContain('aria-expanded="true"')
+    expect(planning).not.toMatch(/id="sidebar-secondary-links"[^>]*hidden=""/)
+  })
+
+  test('默认浅色把 Work／Chat 收进品牌菜单并提前展示项目，其余主题保留模式切换轨道', () => {
+    const quiet = renderSidebar(false, false, 'project', true)
+    const classic = renderSidebar()
+    expect(quiet).toContain('aria-label="当前为 Work，切换工作模式"')
+    expect(quiet).toContain('sidebar-quiet-mode-trigger')
+    expect(quiet).toContain('sidebar-quiet-new-session')
+    expect(quiet).toContain('sidebar-quiet-workspace-name')
+    expect(quiet.indexOf('新会话')).toBeLessThan(quiet.indexOf('更多工具'))
+    expect(quiet).not.toContain('mode-switcher-track')
+    expect(classic).toContain('mode-switcher-track')
+    expect(classic).not.toContain('sidebar-quiet-header')
+    const css = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
+    expect(css).toContain('container: sidebar-quiet / inline-size;')
+    expect(css).toContain('@container sidebar-quiet (max-width: 220px)')
   })
 
   test('Given 折叠侧栏 When 渲染最近会话 Then 不显示侧聊', () => {

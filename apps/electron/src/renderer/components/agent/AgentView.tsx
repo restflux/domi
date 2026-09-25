@@ -190,7 +190,7 @@ import {
 import type { AgentContextStatus } from '@/atoms/agent-atoms'
 import { settingsOpenAtom } from '@/atoms/settings-tab'
 import { longTextPasteAsAttachmentEnabledAtom } from '@/atoms/ui-preferences'
-import { interfaceVariantAtom, themeStyleAtom } from '@/atoms/theme'
+import { interfaceVariantAtom, isDefaultModernLightAtom, themeStyleAtom } from '@/atoms/theme'
 import { channelsAtom, modelSelectorOpenAtom } from '@/atoms/chat-atoms'
 import { todoPlanningGroupsAtom } from '@/atoms/planning-atoms'
 import { tabsAtom, updateTabTitle } from '@/atoms/tab-atoms'
@@ -629,6 +629,7 @@ function AgentThinkingPopover({
 export function AgentView({ sessionId }: { sessionId: string }): React.ReactElement {
   const imageSelections = useAtomValue(imageGenerationSelectionsAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
+  const quietLight = useAtomValue(isDefaultModernLightAtom)
   const themeStyle = useAtomValue(themeStyleAtom)
   const useModernComposerRail = interfaceVariant !== 'classic' && themeStyle !== 'terminal-dark'
   const [persistedSDKMessages, setPersistedSDKMessages] = React.useState<SDKMessage[]>([])
@@ -4285,6 +4286,15 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           onSideChat={openSideChat}
           onInsertTrigger={(char) => richTextInputRef.current?.insertMentionTrigger(char)}
           disabled={!agentChannelId || !hasAvailableModel || workspaceSendDeferred}
+          tools={quietLight ? {
+            onAttachFile: () => { void handleAttachContent('file') },
+            onAttachDirectory: () => { void handleAttachContent('directory') },
+            onOpenSessionStatus: () => setSlashStatusOpen(true),
+            minimalPresetEnabled,
+            presetDisabled: streaming || backgroundWaiting,
+            onSetPreset: (preset) => { void setModelPresentationPreset(preset) },
+            imageGeneration: imageSelections[`work:${sessionId}`] ? undefined : <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} menuRow />,
+          } : undefined}
         />
       ),
     },
@@ -4379,7 +4389,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       key: 'session-status',
       node: <AgentStatusShortcut running={streaming || backgroundWaiting} onOpen={() => setSlashStatusOpen(true)} />,
     },
-  ], [
+  ].filter((item) => !quietLight || item.key === 'composer-plus' || item.key === 'execution-controls' || (item.key === 'session-status' && (streaming || backgroundWaiting))), [
     openSideChat,
     minimalPresetEnabled,
     setModelPresentationPreset,
@@ -4389,6 +4399,12 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     handleAttachContent,
     attachmentMenuOpen,
     targetProtectionReason,
+    quietLight,
+    imageSelections,
+    inputContent,
+    agentChannelId,
+    hasAvailableModel,
+    workspaceSendDeferred,
   ])
 
   const stopControl = (
@@ -4859,7 +4875,15 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
 
             {/* Footer 工具栏 — 容器变窄时尾部按钮自动折叠进「更多」Popover */}
-            <InputToolbarOverflow items={[...inputToolbarItems, { key: 'image-generation', menuOnly: !imageSelections[`work:${sessionId}`], node: <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} /> }]} trailing={inputTrailingNode} />
+            <InputToolbarOverflow
+              items={[
+                ...inputToolbarItems,
+                ...(!quietLight || imageSelections[`work:${sessionId}`]
+                  ? [{ key: 'image-generation', menuOnly: !quietLight && !imageSelections[`work:${sessionId}`], node: <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} /> }]
+                  : []),
+              ]}
+              trailing={inputTrailingNode}
+            />
           </div>
           </div>
         </div>

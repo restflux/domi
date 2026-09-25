@@ -229,6 +229,29 @@ describe('Agent Composer controls', () => {
     expect(statusSource).toContain("'legacy-worktree-review-status mx-3 mt-2 rounded-md border-blue-500/20 bg-blue-500/5'")
   })
 
+  test('quiet light keeps execution mode visible while secondary controls use the plus menu', () => {
+    const view = readFileSync(resolve(import.meta.dir, 'AgentView.tsx'), 'utf8')
+    const plusMenu = readFileSync(resolve(import.meta.dir, '../ai-elements/composer-plus-menu.tsx'), 'utf8')
+
+    expect(view).toContain("item.key === 'execution-controls'")
+    expect(view).toContain("item.key === 'session-status' && (streaming || backgroundWaiting)")
+    expect(view).toContain('imageSelections[`work:${sessionId}`] ? undefined : <ImageGenerationSelector')
+    expect(plusMenu).toContain('onSetPreset(\'standard\')')
+    expect(plusMenu).toContain('onSetPreset(\'minimal\')')
+    expect(plusMenu).toContain('closeThen(tools.onAttachFile)')
+    expect(plusMenu).toContain('closeThen(tools.onAttachDirectory)')
+    expect(plusMenu).toContain('toggleVoiceDictation()')
+    expect(plusMenu).toContain('voiceActive && <span aria-label="正在听写"')
+    expect(view).toContain('inputText={inputContent} menuRow')
+    expect(plusMenu.indexOf('添加内容</div>')).toBeLessThan(plusMenu.indexOf('引用与调用</div>'))
+    expect(plusMenu.indexOf('引用与调用</div>')).toBeLessThan(plusMenu.indexOf('会话与设置</div>'))
+    expect(plusMenu).toContain('aria-expanded={presetExpanded}')
+    expect(plusMenu).toContain('{presetExpanded && (')
+    const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
+    expect(styles).toContain('grid-template-columns: 1rem minmax(0, 1fr) auto;')
+    expect(styles).toContain('.composer-plus-group-label')
+  })
+
   test('keeps the modern metadata rail transparent while sharing the composer radius token', () => {
     const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
     const railSource = readFileSync(resolve(import.meta.dir, 'ComposerActionRail.tsx'), 'utf8')

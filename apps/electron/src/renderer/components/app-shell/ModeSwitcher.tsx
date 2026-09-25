@@ -17,7 +17,9 @@ import { conversationsAtom, currentConversationIdAtom } from '@/atoms/chat-atoms
 import { agentSessionsAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import { tabsAtom } from '@/atoms/tab-atoms'
 import { useOpenSession } from '@/hooks/useOpenSession'
-import { MessageSquare, Workflow } from 'lucide-react'
+import { ChevronDown, MessageSquare, Workflow } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DomiBrandLockup } from './DomiBrand'
 import { APP_MODE_DISPLAY } from '@/lib/app-mode-display'
 import { cn } from '@/lib/utils'
 
@@ -26,7 +28,7 @@ const modes: { value: AppMode; icon: React.ReactNode }[] = [
   { value: 'chat', icon: <MessageSquare size={15} /> },
 ]
 
-export function ModeSwitcher(): React.ReactElement {
+export function ModeSwitcher({ compact = false }: { compact?: boolean } = {}): React.ReactElement {
   const [mode, setMode] = useAtom(appModeAtom)
   const setActiveView = useSetAtom(activeViewAtom)
   const openSession = useOpenSession()
@@ -73,6 +75,33 @@ export function ModeSwitcher(): React.ReactElement {
     setActiveView('conversations')
     restoreSession(targetMode)
   }, [mode, restoreSession, setActiveView])
+
+  if (compact) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`当前为 ${APP_MODE_DISPLAY[mode].label}，切换工作模式`}
+            className="sidebar-quiet-mode-trigger titlebar-no-drag flex min-w-0 items-center gap-1.5 rounded-md px-1 py-1 text-foreground/80 outline-none hover:bg-foreground/[0.045] focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <DomiBrandLockup markClassName="size-6" wordmarkClassName="h-[15px] w-[48px]" />
+            <span className="sidebar-quiet-mode-label whitespace-nowrap text-xs text-muted-foreground">{APP_MODE_DISPLAY[mode].label}</span>
+            <ChevronDown size={13} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={4} className="z-[9999] min-w-40">
+          <DropdownMenuRadioGroup value={mode} onValueChange={(value) => { if (value === 'agent' || value === 'chat') handleModeSwitch(value) }}>
+            {modes.map(({ value, icon }) => (
+              <DropdownMenuRadioItem key={value} value={value} className="gap-2 text-xs">
+                {icon}<span>{APP_MODE_DISPLAY[value].label}</span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
 
   return (
     <div className="titlebar-drag-region select-none">

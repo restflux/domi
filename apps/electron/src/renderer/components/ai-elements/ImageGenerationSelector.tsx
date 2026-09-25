@@ -16,7 +16,7 @@ const imageCommandSeenAtom = atom<Record<string, boolean>>({})
 const labels: Record<string, string> = { auto: '自动', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', '1024x1024': '方形 · 1:1', '1536x1024': '横向 · 3:2', '1024x1536': '纵向 · 2:3' }
 const optionsFor = (values: readonly string[]) => values.map((value) => ({ value, label: labels[value] ?? value }))
 
-export function ImageGenerationSelector({ scope, defaultSettings = false, inputText }: { scope: string; defaultSettings?: boolean; inputText?: string }): React.ReactElement {
+export function ImageGenerationSelector({ scope, defaultSettings = false, inputText, menuRow = false }: { scope: string; defaultSettings?: boolean; inputText?: string; menuRow?: boolean }): React.ReactElement {
   const [channels, setChannels] = useAtom(imageGenerationChannelsAtom)
   const [defaults, setDefaults] = useAtom(imageGenerationDefaultAtom)
   const [selections, setSelections] = useAtom(imageGenerationSelectionsAtom)
@@ -97,11 +97,12 @@ export function ImageGenerationSelector({ scope, defaultSettings = false, inputT
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size="icon"
+        <Button type="button" variant="ghost" size={menuRow ? 'sm' : 'icon'}
           aria-label={selection ? '调整生图参数' : '图片生成'} aria-pressed={Boolean(selection)}
           title={selection ? `${selection.modelId} · ${channel?.name ?? '渠道不可用'}` : '图片生成'}
-          className={`${inputToolbarButtonClass} ${selection ? 'bg-primary/10 text-primary hover:bg-primary/15' : ''}`}>
+          className={`${menuRow ? 'composer-plus-item' : inputToolbarButtonClass} ${selection ? 'bg-primary/10 text-primary hover:bg-primary/15' : ''}`}>
           <ImagePlus className="size-4" />
+          {menuRow && <span>图片生成</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="w-72 max-w-[calc(100vw-2rem)] rounded-xl p-4 shadow-xl">{fields}</PopoverContent>

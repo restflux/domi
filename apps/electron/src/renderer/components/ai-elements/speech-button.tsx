@@ -24,7 +24,7 @@ interface SpeechButtonProps {
   className?: string
 }
 
-interface InlineVoiceStatus {
+export interface InlineVoiceStatus {
   status: 'idle' | 'connecting' | 'recording' | 'stopping' | 'completed' | 'error'
   message: string
   volume: number
@@ -36,14 +36,8 @@ const IDLE_VOICE_STATUS: InlineVoiceStatus = {
   volume: 0,
 }
 
-export function SpeechButton({
-  disabled = false,
-  className,
-}: SpeechButtonProps): React.ReactElement {
+export function useVoiceDictationStatus(): InlineVoiceStatus {
   const [voiceStatus, setVoiceStatus] = useState<InlineVoiceStatus>(IDLE_VOICE_STATUS)
-  const isRecording = voiceStatus.status === 'recording'
-  const isStopping = voiceStatus.status === 'connecting' || voiceStatus.status === 'stopping'
-  const isActive = isRecording || isStopping
 
   useEffect(() => {
     const handleStatus = (event: Event): void => {
@@ -59,22 +53,33 @@ export function SpeechButton({
     return () => window.removeEventListener(VOICE_DICTATION_STATUS_EVENT, handleStatus)
   }, [])
 
-  const handleClick = useCallback((): void => {
-    void (async () => {
-      try {
-        const settings = await window.electronAPI.getVoiceDictationSettings()
-        if (!settings.enabled) {
-          toast.info('请先在设置中打开语音输入开关')
-          return
-        }
+  return voiceStatus
+}
 
-        await window.electronAPI.toggleVoiceDictation()
-      } catch (error) {
-        console.error('[语音输入] 切换听写状态失败:', error)
-        toast.error('切换语音输入失败')
-      }
-    })()
-  }, [])
+export async function toggleVoiceDictation(): Promise<void> {
+  try {
+    const settings = await window.electronAPI.getVoiceDictationSettings()
+    if (!settings.enabled) {
+      toast.info('请先在设置中打开语音输入开关')
+      return
+    }
+
+    await window.electronAPI.toggleVoiceDictation()
+  } catch (error) {
+    console.error('[语音输入] 切换听写状态失败:', error)
+    toast.error('切换语音输入失败')
+  }
+}
+
+export function SpeechButton({
+  disabled = false,
+  className,
+}: SpeechButtonProps): React.ReactElement {
+  const voiceStatus = useVoiceDictationStatus()
+  const isRecording = voiceStatus.status === 'recording'
+  const isStopping = voiceStatus.status === 'connecting' || voiceStatus.status === 'stopping'
+  const isActive = isRecording || isStopping
+  const handleClick = useCallback((): void => { void toggleVoiceDictation() }, [])
 
   return (
     <Tooltip>

@@ -17,6 +17,13 @@ test('活动生图按钮只保留图标，模型与渠道放在悬停信息', ()
   expect(html).not.toContain('max-w-40')
 })
 
+test('加号菜单内的生图入口和其他操作使用同一行宽与文字列', () => {
+  const html = renderToStaticMarkup(<Provider store={createStore()}><ImageGenerationSelector scope="work:test" menuRow /></Provider>)
+  expect(html).toContain('composer-plus-item')
+  expect(html).toContain('>图片生成</span>')
+  expect(html).toContain('aria-label="图片生成"')
+})
+
 test('常驻更多项不会在工具栏初次测量时露出', () => {
   const html = renderToStaticMarkup(<TooltipProvider><InputToolbarOverflow items={[
     { key: 'normal', node: <button>普通工具</button> },

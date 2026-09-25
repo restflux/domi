@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Provider, createStore } from 'jotai'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { AgentSessionMeta } from '@domi/shared'
@@ -49,20 +51,29 @@ function renderSessionItem(
 }
 
 describe('AgentSessionItem layout', () => {
-  test('keeps the status gutter mounted and Flag/Star in one fixed marker slot', () => {
+  test('default light removes project background while keeping session selection', () => {
+    const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
+    const projectRule = styles.match(/:root\.ui-modern:not\(\.dark\):not\(\[class\*="theme-"\]\) \.agent-project-item-current,[\s\S]*?\}/)?.[0]
+    expect(projectRule).toContain('background-color: transparent')
+    expect(styles).toContain('.agent-project-session-list .agent-session-item-active-surface::before')
+    expect(styles).toContain('background-color: hsl(0 0% 94%)')
+  })
+  test('keeps status and marked Flag/Star in the row without altering their semantics', () => {
     const html = renderSessionItem({ needsFollowUp: true, starred: true })
 
     expect(html).toMatch(/data-session-status-slot="true"[^>]*\bw-3\.5\b/)
-    expect(html).toMatch(/data-session-marker-slot="true"[^>]*\bw-8\b/)
+    expect(html).toMatch(/data-session-marker-slot="true"[^>]*data-has-markers="true"/)
     expect(html).toContain('aria-label="取消待继续"')
     expect(html).toContain('aria-label="取消星标"')
     expect(html).toContain('aria-pressed="true"')
   })
 
-  test('keeps updated time in the far-right slot and replaces it with actions on hover', () => {
+  test('keeps update time accessible on the row and preserves actions on hover', () => {
     const html = renderSessionItem()
 
     expect(html).toContain('data-session-row-meta="true"')
+    expect(html).toContain('data-has-markers="false"')
+    expect(html).toContain('title="最后更新：')
     expect(html).toContain('data-session-right-slot="true"')
     expect(html).toMatch(/data-session-updated-at="true"[^>]*absolute[^>]*right-0[^>]*group-hover:opacity-0/)
     expect(html).toContain('data-session-inline-archive-action="true"')

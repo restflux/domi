@@ -86,7 +86,7 @@ import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { hasEnvironmentIssuesAtom } from '@/atoms/environment'
 import { conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
-import { interfaceVariantAtom } from '@/atoms/theme'
+import { interfaceVariantAtom, isDefaultModernLightAtom } from '@/atoms/theme'
 import { sessionHeaderCommandAtom } from '@/atoms/session-header-actions'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { useOpenSession } from '@/hooks/useOpenSession'
@@ -632,6 +632,7 @@ interface NewAgentSessionSidebarEntryProps {
   onCreateCurrent: () => Promise<void>
   onCreateInWorkspace: (workspaceId: string) => Promise<void>
   onCreateProject: () => void
+  quietLight?: boolean
 }
 
 function NewAgentSessionSidebarEntry({
@@ -640,14 +641,16 @@ function NewAgentSessionSidebarEntry({
   onCreateCurrent,
   onCreateInWorkspace,
   onCreateProject,
+  quietLight = false,
 }: NewAgentSessionSidebarEntryProps): React.ReactElement {
   const [menuOpen, setMenuOpen] = React.useState(false)
 
   return (
-    <div className="new-session-entry group flex w-full items-stretch overflow-hidden rounded-lg bg-primary/[0.055] text-[13px] text-foreground transition-colors duration-150 hover:bg-primary/[0.10]">
+    <div className={cn('new-session-entry group flex w-full items-stretch overflow-hidden rounded-lg bg-primary/[0.055] text-[13px] text-foreground transition-colors duration-150 hover:bg-primary/[0.10]', quietLight && 'sidebar-quiet-new-session')}>
       <button
         type="button"
         onClick={() => { void onCreateCurrent() }}
+        aria-label={currentWorkspace ? `在「${currentWorkspace.name}」中新会话` : '新会话'}
         className="titlebar-no-drag flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2 text-left outline-none focus-visible:bg-primary/[0.10]"
       >
         <span className="flex size-[18px] flex-shrink-0 items-center text-primary">
@@ -655,7 +658,7 @@ function NewAgentSessionSidebarEntry({
         </span>
         <span className="truncate font-medium">新会话</span>
         {currentWorkspace && (
-          <span className="ml-auto max-w-[112px] truncate text-[11px] text-foreground/[0.46] group-hover:text-foreground/65">
+          <span className={cn('ml-auto max-w-[112px] truncate text-[11px] text-foreground/[0.46] group-hover:text-foreground/65', quietLight && 'sidebar-quiet-workspace-name')}>
             {currentWorkspace.name}
           </span>
         )}
@@ -1188,6 +1191,9 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const isClassic = interfaceVariant === 'classic'
+  const isQuietLight = useAtomValue(isDefaultModernLightAtom)
+  const [secondaryLinksOpen, setSecondaryLinksOpen] = React.useState(false)
+  const showSecondaryLinks = !isQuietLight || secondaryLinksOpen || activeView === 'planning' || activeView === 'agent-skills'
   const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
 
   // Work 模式状态
@@ -3382,6 +3388,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       data-session-switch-hints={quickSwitchHintsVisible ? 'true' : undefined}
       className={cn(
         'relative h-full flex flex-col',
+        isQuietLight && 'sidebar-quiet-light',
         !noTransition && 'transition-[width] duration-300',
         isClassic
           ? 'bg-background rounded-2xl shadow-xl dark:shadow-md'
@@ -3397,16 +3404,16 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       <div className={cn('w-full flex-shrink-0 titlebar-drag-region', isMac ? 'h-[30px]' : 'h-1')} />
 
       {/* 品牌栏：建立 Domi 视觉锚点，同时承载全局搜索与侧栏布局控制。 */}
-      <div className="titlebar-drag-region flex h-11 flex-shrink-0 items-center gap-2 px-3">
-        <DomiBrandLockup />
-        <div className="ml-auto flex items-center gap-1">
+      <div className={cn('titlebar-drag-region flex h-11 flex-shrink-0 items-center gap-2 px-3', isQuietLight && 'sidebar-quiet-header h-9 gap-1 px-2')}>
+        {isQuietLight ? <ModeSwitcher compact /> : <DomiBrandLockup />}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 aria-label="搜索"
                 onClick={() => setSearchDialogOpen(true)}
-                className="flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 transition-[background-color,color] duration-150 titlebar-no-drag"
+                className={cn('flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 transition-[background-color,color] duration-150 titlebar-no-drag', isQuietLight && 'size-7')}
               >
                 <Search size={14} />
               </button>
@@ -3419,7 +3426,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                 type="button"
                 aria-label="收起侧边栏"
                 onClick={() => setSidebarCollapsed(true)}
-                className="sidebar-collapse-button flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 titlebar-no-drag transition-[background-color,color] duration-150"
+                className={cn('sidebar-collapse-button flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 titlebar-no-drag transition-[background-color,color] duration-150', isQuietLight && 'size-7')}
               >
                 <PanelLeftClose size={14} />
               </button>
@@ -3429,14 +3436,13 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         </div>
       </div>
 
-      {/* Agent / Chat 是工作模式，独立成行，避免与品牌和工具按钮争抢层级。 */}
-      <div className="px-3 pb-2">
-        <ModeSwitcher />
-      </div>
+      {/* 经典及其他主题仍保持独立的模式切换行。 */}
+      {!isQuietLight && <div className="px-3 pb-2"><ModeSwitcher /></div>}
 
       {mode === 'agent' && (
-        <div className="px-3 pb-1">
+        <div className={cn('px-3 pb-1', isQuietLight && 'px-2 pb-0')}>
           <NewAgentSessionSidebarEntry
+            quietLight={isQuietLight}
             currentWorkspace={currentWorkspace}
             workspaces={newSessionWorkspaces}
             onCreateCurrent={handleCreateAgentFromSidebar}
@@ -3448,7 +3454,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
       {/* 工作动态：共享宿主投影的跨项目常驻概览，仅 Work 模式可见。 */}
       {mode === 'agent' && (
-        <div className="px-3 pb-1 pt-0">
+        <div className={cn('px-3 pb-1 pt-0', isQuietLight && 'px-2 pb-0')}>
           <WorkActivitySidebarOverview
             active={activeView === 'work-activity'}
             onOpenAll={handleOpenWorkActivity}
@@ -3457,26 +3463,41 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         </div>
       )}
 
-      {/* 任务/日程入口：作为统一规划中心入口。 */}
-      <div className={cn('px-3 pb-0.5', mode === 'agent' ? 'pt-0' : 'pt-2')}>
-        <AutomationSidebarEntry
-          count={automationCount}
-          active={activeView === 'planning'}
-          onClick={handleOpenAutomations}
-        />
-      </div>
-
-      {/* Agent 技能入口：Skills / MCP 能力中心，仅 Work 模式可见 */}
-      {mode === 'agent' && (
-        <div className="px-3 pb-0.5">
-          <SkillsSidebarEntry
-            count={capabilities?.skills.length ?? 0}
-            updateCount={capabilities?.skills.filter((s) => s.hasUpdate).length ?? 0}
-            active={activeView === 'agent-skills'}
-            onClick={handleOpenSkills}
-          />
+      {isQuietLight && (
+        <div className="px-2 pb-0.5">
+          <button
+            type="button"
+            aria-expanded={showSecondaryLinks}
+            aria-controls="sidebar-secondary-links"
+            onClick={() => setSecondaryLinksOpen((open) => !open)}
+            className="sidebar-quiet-more-tools flex h-8 w-full items-center gap-2 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
+          >
+            <MoreHorizontal size={15} aria-hidden="true" />
+            <span>更多工具</span>
+            <ChevronDown size={13} aria-hidden="true" className={cn('ml-auto transition-transform', showSecondaryLinks && 'rotate-180')} />
+          </button>
         </div>
       )}
+      {/* 规划和技能在普通浅色下按需展开；当前正打开的页面始终可见。 */}
+      <div id="sidebar-secondary-links" hidden={!showSecondaryLinks}>
+        <div className={cn('px-3 pb-0.5', mode === 'agent' ? 'pt-0' : 'pt-2')}>
+          <AutomationSidebarEntry
+            count={automationCount}
+            active={activeView === 'planning'}
+            onClick={handleOpenAutomations}
+          />
+        </div>
+        {mode === 'agent' && (
+          <div className="px-3 pb-0.5">
+            <SkillsSidebarEntry
+              count={capabilities?.skills.length ?? 0}
+              updateCount={capabilities?.skills.filter((s) => s.hasUpdate).length ?? 0}
+              active={activeView === 'agent-skills'}
+              onClick={handleOpenSkills}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Chat 模式 active 视图：置顶 + 对话历史，结构与 Agent active 视图保持一致 */}
       {mode === 'chat' && viewMode === 'active' ? (
@@ -4046,7 +4067,7 @@ function SafeTooltip({ children, content, side = 'top' }: SafeTooltipProps): Rea
 }
 
 /**
- * 列表项右侧操作区：默认显示相对更新时间，hover 时切换为「置顶 / 归档 / 三点菜单」按钮组。
+ * 列表项右侧操作区：旧主题常驻相对更新时间，浅色现代主题仅在行提示中显示；hover 切换操作按钮组。
  * 归档需要二次确认；进入确认态后强制保持按钮可见，避免鼠标移开后用户失去反馈。
  */
 function SessionItemActions({
@@ -4198,8 +4219,8 @@ interface AgentSessionRowMetaProps {
 }
 
 /**
- * Agent 会话最右侧的可替换槽：默认显示更新时间，hover 时原位切换为
- * 归档快捷操作和 More 菜单，避免右侧操作长期占用额外宽度。
+ * Agent 会话最右侧的可替换槽：旧主题显示更新时间；浅色现代主题不常驻时间。
+ * hover 原位显示归档快捷操作和 More 菜单，避免右侧额外占宽。
  */
 function AgentSessionRowMeta({
   updatedAt,
@@ -4447,6 +4468,7 @@ const ConversationItem = React.memo(function ConversationItem({
           data-session-switch-id={conversation.id}
           data-session-switch-title={conversation.title}
           data-session-switch-type="chat"
+          title={`最后更新：${new Date(conversation.updatedAt).toLocaleString('zh-CN')}`}
           onClick={() => onSelect(conversation.id, conversation.title)}
           onMouseEnter={preview.handleMouseEnter}
           onMouseLeave={preview.handleMouseLeave}
@@ -4689,6 +4711,10 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
         <Flag fill={session.needsFollowUp ? 'currentColor' : 'none'} className={session.needsFollowUp ? 'text-violet-500' : undefined} />
         {session.needsFollowUp ? '取消待继续' : '标记为待继续'}
       </MenuItem>
+      <MenuItem className="text-xs py-1 [&>svg]:size-3.5" onSelect={() => void onToggleStar(session.id)}>
+        <Star fill={session.starred ? 'currentColor' : 'none'} />
+        {session.starred ? '取消星标' : '添加星标'}
+      </MenuItem>
       {canTransfer && (
         <MenuItem className="text-xs py-1 [&>svg]:size-3.5" onSelect={() => onRequestMove(session.id)}>
           <ArrowRightLeft size={14} />
@@ -4721,6 +4747,7 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
           data-session-switch-id={session.id}
           data-session-switch-title={session.title}
           data-session-switch-type="agent"
+          title={`最后更新：${new Date(session.updatedAt).toLocaleString('zh-CN')}`}
           onClick={() => onSelect(session.id, session.title)}
           onMouseEnter={() => { setRowHovered(true); preview.handleMouseEnter() }}
           onMouseLeave={() => { setRowHovered(false); preview.handleMouseLeave() }}
@@ -4834,6 +4861,7 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
                 )}
                 <div
                   data-session-marker-slot="true"
+                  data-has-markers={session.needsFollowUp || session.starred ? 'true' : 'false'}
                   className="ml-0.5 flex h-[18px] w-8 flex-shrink-0 items-center justify-end gap-0.5"
                 >
                   <SafeTooltip content={session.needsFollowUp ? '取消待继续' : '标记为待继续'} side="top">

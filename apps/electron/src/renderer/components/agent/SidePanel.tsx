@@ -95,7 +95,7 @@ export function SidePanel({
   embedded = false,
   hideTabBar = false,
 }: SidePanelProps): React.ReactElement {
-  // 侧面板状态（默认打开），开关固定在顶部 TabBar。
+  // 侧面板状态（普通浅色现代界面新用户默认收起，已保存的偏好优先），开关固定在顶部 TabBar。
   const isOpen = useAtomValue(agentSidePanelOpenAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
 

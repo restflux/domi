@@ -122,6 +122,13 @@ export const resolvedThemeAtom = atom<'light' | 'dark'>((get) => {
   return mode
 })
 
+/** 只在普通浅色的现代界面启用减法布局；跟随系统的浅色也适用。 */
+export const isDefaultModernLightAtom = atom<boolean>((get) =>
+  get(interfaceVariantAtom) === 'modern'
+  && get(themeModeAtom) !== 'special'
+  && get(resolvedThemeAtom) === 'light',
+)
+
 /** 所有特殊风格 class（用于清理旧值）— 从 THEME_STYLES 单一源派生，排除 'default' */
 const ALL_THEME_STYLE_CLASSES = THEME_STYLES
   .filter((style) => style !== 'default')

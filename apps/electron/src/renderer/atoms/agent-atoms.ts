@@ -7,6 +7,7 @@
 
 import { atom } from 'jotai'
 import { atomFamily, atomWithStorage } from 'jotai/utils'
+import { isDefaultModernLightAtom } from './theme'
 import type { AgentContextBreakdown, AgentSessionMeta, AgentEvent, AgentEventUsage, AgentWorkspace, AgentPendingFile, ContextWindowSource, RetryAttempt, DomiPermissionMode, PermissionRequest, AskUserRequest, ExitPlanModeRequest, ThinkingConfig, AgentEffort, SDKMessage, UnstagedChangesResult, NormalizedAgentExecutionSettings, SkillTriggerEvent, GitPushSessionTrustView } from '@domi/shared'
 import { CONTEXT_WINDOW_SOURCE_PRIORITY, DOMI_DEFAULT_PERMISSION_MODE } from '@domi/shared'
 import { resolveAgentExecutionControls } from '@/lib/agent-execution-controls.ts'
@@ -505,8 +506,17 @@ export const workspaceFilesVersionAtom = atom(0)
 
 // ===== 侧面板 Atoms =====
 
-/** 侧面板是否打开（全局共享，所有会话共用一个状态） */
-export const agentSidePanelOpenAtom = atomWithStorage<boolean>('domi-agent-sidepanel-open', true)
+/** 未保存偏好时，只有普通浅色现代界面默认收起右栏；旧布尔偏好保持原样。 */
+const sidePanelOpenPreferenceAtom = atomWithStorage<boolean | null>(
+  'domi-agent-sidepanel-open', null, undefined, { getOnInit: true },
+)
+export const agentSidePanelOpenAtom = atom(
+  (get) => get(sidePanelOpenPreferenceAtom) ?? !get(isDefaultModernLightAtom),
+  (get, set, update: boolean | ((current: boolean) => boolean)) => {
+    const next = typeof update === 'function' ? update(get(agentSidePanelOpenAtom)) : update
+    set(sidePanelOpenPreferenceAtom, next)
+  },
+)
 
 /** 侧面板宽度（全局共享，用户拖拽后持久化） */
 export const agentSidePanelWidthAtom = atomWithStorage<number>('domi-agent-sidepanel-width', 280)

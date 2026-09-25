@@ -2,14 +2,16 @@
  * WorkWelcomeEmptyState — Work 新会话启动面板
  *
  * 面板独占 Header 与 Composer 之间的可用区域，因此欢迎内容始终按真实剩余空间居中。
- * 任务入口只负责预填 Composer，不会自动发送。
+ * 默认浅色现代界面使用 Domi 字标构造图；其他主题保留任务入口，点击只预填 Composer。
  */
 
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { AlertTriangle, ClipboardList, Sparkles, Telescope, type LucideIcon } from 'lucide-react'
 import { userProfileAtom } from '@/atoms/user-profile'
+import { isDefaultModernLightAtom } from '@/atoms/theme'
 import { WelcomeWatermark } from './WelcomeWatermark'
+import { DomiConstructionWordmark } from './DomiConstructionWordmark'
 
 export interface WorkWelcomeAction {
   id: string
@@ -73,8 +75,24 @@ export interface WorkWelcomeEmptyStateProps {
 
 export function WorkWelcomeEmptyState({ onPickPrompt }: WorkWelcomeEmptyStateProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
+  const minimalLight = useAtomValue(isDefaultModernLightAtom)
   const displayName = userProfile.userName || '用户'
   const greeting = getGreeting(new Date().getHours())
+
+  if (minimalLight) {
+    return (
+      <div
+        data-work-welcome-empty-state="true"
+        data-welcome-variant="quiet"
+        className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-8"
+      >
+        <div className="flex w-full max-w-[38rem] flex-col items-center gap-7 text-center">
+          <DomiConstructionWordmark />
+          <h1 className="border-t border-border/70 px-10 pt-4 text-sm font-normal text-muted-foreground">从一个问题开始</h1>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

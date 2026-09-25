@@ -3,6 +3,7 @@ import { useAtomValue } from 'jotai'
 import { Activity, AlertCircle, CheckCircle2 } from 'lucide-react'
 import type { WorkActivityState } from '@domi/shared'
 import { workActivityProjectionAtom } from '@/atoms/work-activity-atoms'
+import { isDefaultModernLightAtom } from '@/atoms/theme'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionMiniMapHover } from '@/components/session-preview/SessionMiniMapPopover'
 import { WorkActivityHoverPreview } from './WorkActivityHoverPreview'
@@ -55,6 +56,7 @@ export const WorkActivitySidebarOverview = React.memo(function WorkActivitySideb
   onOpenSession,
 }: WorkActivitySidebarOverviewProps): React.ReactElement {
   const projection = useAtomValue(workActivityProjectionAtom)
+  const quietLight = useAtomValue(isDefaultModernLightAtom)
   const preview = useSessionMiniMapHover(500)
   const loaded = projection.generatedAt > 0
   const attentionCount = formatCount(projection.counts.attention_required, loaded)
@@ -87,20 +89,31 @@ export const WorkActivitySidebarOverview = React.memo(function WorkActivitySideb
         aria-label={ariaLabel}
         className={cn(
           'flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left transition-colors titlebar-no-drag',
+          quietLight && 'h-8 gap-2 rounded-md px-2',
           active
             ? 'bg-primary/[0.09] text-foreground ring-1 ring-inset ring-primary/18'
-            : 'bg-foreground/[0.025] text-foreground/75 hover:bg-foreground/[0.05] hover:text-foreground',
+            : quietLight
+              ? 'text-foreground/70 hover:bg-foreground/[0.045] hover:text-foreground'
+              : 'bg-foreground/[0.025] text-foreground/75 hover:bg-foreground/[0.05] hover:text-foreground',
         )}
       >
         <Activity className={cn('size-4 flex-none', active ? 'text-primary' : 'text-foreground/45')} />
         <span className="min-w-0 flex-none text-[13px] font-medium">工作动态</span>
-        <span className="ml-auto flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-[9px] tabular-nums text-muted-foreground">
-          <span className={cn('flex-none', projection.counts.attention_required > 0 && loaded && 'font-semibold text-amber-600 dark:text-amber-400')}>需处理 {attentionCount}</span>
-          <span className="flex-none" aria-hidden>·</span>
-          <span className="flex-none">进行中 {workingCount}</span>
-          <span className="flex-none" aria-hidden>·</span>
-          <span className="flex-none">已完成 {completedCount}</span>
-        </span>
+        {quietLight ? (
+          loaded && (projection.counts.attention_required > 0 || projection.counts.working > 0) && (
+            <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+              {projection.counts.attention_required > 0 ? `需处理 ${attentionCount}` : `进行中 ${workingCount}`}
+            </span>
+          )
+        ) : (
+          <span className="ml-auto flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-[9px] tabular-nums text-muted-foreground">
+            <span className={cn('flex-none', projection.counts.attention_required > 0 && loaded && 'font-semibold text-amber-600 dark:text-amber-400')}>需处理 {attentionCount}</span>
+            <span className="flex-none" aria-hidden>·</span>
+            <span className="flex-none">进行中 {workingCount}</span>
+            <span className="flex-none" aria-hidden>·</span>
+            <span className="flex-none">已完成 {completedCount}</span>
+          </span>
+        )}
       </button>
 
       <WorkActivityHoverPreview
