@@ -41,6 +41,11 @@ export default function App(): React.ReactElement {
     initialize()
   }, [])
 
+  // 初始化完成后由开屏接管过渡；辅助窗口不会挂载 App。
+  React.useEffect(() => {
+    if (!isLoading) window.dispatchEvent(new Event('domi-app-ready'))
+  }, [isLoading])
+
   // 完成 onboarding 回调：创建欢迎对话，可选打开教程 Tab
   const handleOnboardingComplete = async (openTutorial?: boolean) => {
     setShowOnboarding(false)

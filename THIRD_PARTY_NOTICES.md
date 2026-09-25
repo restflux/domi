@@ -15,6 +15,13 @@ This list is a distribution notice, not a replacement for the complete license t
 
 Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 
+### Percho startup animation
+
+- Source: https://github.com/Jaxton07/percho (`packages/desktop/src/renderer/src/styles/splash.css`, `splash-dom.ts`, `splash.ts`)
+- License: MIT; copyright © 2026 Jaxton07.
+- License copy: `third-party-licenses/MIT-Percho.txt` (bundled with Domi's third-party licenses).
+- Usage: the startup particle, sonar and exit animation in `apps/electron/src/renderer/startup-splash.css` and the startup markup/particle timing in `apps/electron/src/renderer/index.html`. Adapted for Domi's theme, application readiness, auxiliary windows, font and name; no Percho logos or other assets are included.
+
 ## Bundled command-output optimizer
 
 ### RTK (Rust Token Killer)
