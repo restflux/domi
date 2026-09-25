@@ -10,7 +10,7 @@ import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { LeftSidebar } from './LeftSidebar'
 import { SidebarTitlebarToggle } from './SidebarTitlebarToggle'
-import { shouldCloseSidebarHoverPreview } from './sidebar-hover-preview'
+import { SIDEBAR_PREVIEW_EXIT_MS, shouldCloseSidebarHoverPreview, shouldRenderSidebarHoverPreview } from './sidebar-hover-preview'
 import { RightSidePanel } from './RightSidePanel'
 import { CommandPalette } from './CommandPalette'
 import { MainArea } from '@/components/tabs/MainArea'
@@ -95,12 +95,37 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const [leftSidebarWidth, setLeftSidebarWidth] = useAtom(leftSidebarWidthAtom)
   const [sidebarCollapsed, setSidebarCollapsed] = useAtom(sidebarCollapsedAtom)
   const [sidebarPreviewOpen, setSidebarPreviewOpen] = React.useState(false)
+  const [previewMounted, setPreviewMounted] = React.useState(false)
+  const [previewShown, setPreviewShown] = React.useState(false)
   const hoverTimerRef = React.useRef<number | null>(null)
   const closeTimerRef = React.useRef<number | null>(null)
   const lastPointerRef = React.useRef({ x: 0, y: 0 })
   const keyboardPreviewRef = React.useRef(false)
   const sidebarFrameRef = React.useRef<HTMLDivElement>(null)
   const previewActive = sidebarCollapsed && !isClassic && sidebarPreviewOpen && !settingsOpen
+  const previewRendered = shouldRenderSidebarHoverPreview(previewActive, previewMounted, sidebarCollapsed, isClassic, settingsOpen)
+
+  React.useEffect(() => {
+    if (previewActive) {
+      setPreviewMounted(true)
+      return
+    }
+    if (!previewMounted) return
+    if (!sidebarCollapsed || isClassic || settingsOpen) {
+      setPreviewMounted(false)
+      return
+    }
+    const timer = window.setTimeout(() => setPreviewMounted(false), SIDEBAR_PREVIEW_EXIT_MS)
+    return () => window.clearTimeout(timer)
+  }, [previewActive, previewMounted, sidebarCollapsed, isClassic, settingsOpen])
+  React.useEffect(() => {
+    if (!previewActive) {
+      setPreviewShown(false)
+      return
+    }
+    const frame = requestAnimationFrame(() => setPreviewShown(true))
+    return () => cancelAnimationFrame(frame)
+  }, [previewActive])
   const clearHoverTimer = React.useCallback(() => {
     if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current)
     hoverTimerRef.current = null
@@ -113,9 +138,10 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     if (keyboardPreviewRef.current || closeTimerRef.current !== null) return
     closeTimerRef.current = window.setTimeout(() => {
       closeTimerRef.current = null
-      const bounds = sidebarFrameRef.current?.querySelector('[data-sidebar-preview]')?.getBoundingClientRect() ?? null
+      const preview = sidebarFrameRef.current?.querySelector('[data-sidebar-preview]')
+      const bounds = preview?.getBoundingClientRect() ?? null
       const popupOpen = Boolean(document.querySelector('[data-radix-popper-content-wrapper] [role="menu"], [role="dialog"]'))
-      if (shouldCloseSidebarHoverPreview(lastPointerRef.current, bounds, popupOpen)) {
+      if (shouldCloseSidebarHoverPreview(lastPointerRef.current, bounds, popupOpen, Boolean(preview?.contains(document.activeElement)))) {
         setSidebarPreviewOpen(false)
       }
     }, 160)
@@ -320,7 +346,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
             {/* 左侧边栏：可折叠，可拖拽调整宽度 */}
             <div
               ref={sidebarFrameRef}
-              className={cn(isClassic ? 'p-2 pr-0' : '', 'relative z-[60] crt-sidebar', previewActive && 'z-[70] w-[52px] flex-none')}
+              className={cn(isClassic ? 'p-2 pr-0' : '', 'relative z-[60] crt-sidebar', previewRendered && 'z-[70] w-[52px] flex-none')}
               onPointerEnter={scheduleSidebarHover}
               onPointerMove={(event) => {
                 lastPointerRef.current = { x: event.clientX, y: event.clientY }
@@ -340,10 +366,14 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
                 setSidebarPreviewOpen(true)
               }}
               onBlurCapture={(event) => {
-                if (!keyboardPreviewRef.current || !previewActive) return
+                if (!previewActive) return
                 const next = event.relatedTarget
                 if (next instanceof Node && event.currentTarget.contains(next)) return
                 if (next instanceof Element && next.closest('[role="menu"], [role="dialog"], [data-radix-popper-content-wrapper]')) return
+                if (!keyboardPreviewRef.current) {
+                  schedulePreviewClose()
+                  return
+                }
                 requestAnimationFrame(() => {
                   if (!sidebarFrameRef.current?.contains(document.activeElement)) {
                     keyboardPreviewRef.current = false
@@ -352,12 +382,21 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
                 })
               }}
             >
-              {previewActive ? (
-                <div data-sidebar-preview="true" className="absolute inset-y-0 left-0 z-30 w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-r-xl border-r border-border/50 bg-[hsl(var(--sidebar-surface))] shadow-xl">
-                  <LeftSidebar width={clampedLeftSidebarWidth} previewExpanded noTransition />
+              {!previewActive && <LeftSidebar width={clampedLeftSidebarWidth} noTransition={isDraggingLeftSidebar} />}
+              {previewRendered && (
+                <div
+                  data-sidebar-preview="true"
+                  aria-hidden={!previewActive}
+                  ref={(element) => { if (element) element.inert = !previewActive }}
+                  className={cn('absolute inset-y-0 left-0 z-30 w-max max-w-[calc(100vw-16px)]', !previewActive && 'pointer-events-none')}
+                >
+                  <div
+                    data-state={previewActive && previewShown ? 'open' : 'closing'}
+                    className="sidebar-hover-preview-surface h-full overflow-hidden rounded-r-xl border-r border-border/50 bg-[hsl(var(--sidebar-surface))] shadow-xl"
+                  >
+                    <LeftSidebar width={clampedLeftSidebarWidth} previewExpanded noTransition />
+                  </div>
                 </div>
-              ) : (
-                <LeftSidebar width={clampedLeftSidebarWidth} noTransition={isDraggingLeftSidebar} />
               )}
               {/* 侧边栏展开时显示拖拽手柄，折叠态隐藏 */}
               {!sidebarCollapsed && (

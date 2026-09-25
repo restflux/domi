@@ -121,11 +121,23 @@ describe('LeftSidebar 侧聊用途隔离', () => {
     expect(rail).not.toContain('用途测试-parent')
     expect(rail).not.toContain('切换到 Chat 模式')
     const preview = renderSidebar(false, true, 'project', true, null, theme, 300, true)
-    expect(preview).toContain('id="modern-left-sidebar"')
+    expect(preview).toContain('id="modern-left-sidebar-preview"')
     expect(preview).not.toContain('sidebar-collapse-button')
     expect(preview).toContain('aria-label="当前为 Work，切换工作模式"')
     expect(preview).toContain('用途测试-parent')
     expect(preview).toContain('min(300px, calc(100vw - 16px))')
+  })
+
+  test('浮窗退出时折叠轨道与完整导航短暂共存，项目及导航控件 ID 不冲突', () => {
+    const rail = renderSidebar(false, true, 'project', true)
+    const preview = renderSidebar(false, true, 'project', true, null, 'light', 300, true)
+    expect(rail).toContain('id="modern-left-sidebar"')
+    expect(preview).toContain('id="modern-left-sidebar-preview"')
+    expect(preview).toContain('aria-controls="sidebar-preview-secondary-links"')
+    expect(preview).toContain('id="sidebar-preview-secondary-links"')
+    expect(preview).toContain('aria-controls="preview-project-sessions-workspace"')
+    expect(preview).toContain('id="preview-project-sessions-workspace"')
+    expect(rail).not.toContain('preview-project-sessions-workspace')
   })
 
   test('现代侧栏折叠与展开的品牌图标保持相同尺寸，经典折叠不变', () => {

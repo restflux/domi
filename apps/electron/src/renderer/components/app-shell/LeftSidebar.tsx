@@ -3438,7 +3438,7 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
   return (
     <div
       ref={sidebarRootRef}
-      id={modernLayout ? 'modern-left-sidebar' : undefined}
+      id={modernLayout ? (previewExpanded ? 'modern-left-sidebar-preview' : 'modern-left-sidebar') : undefined}
       data-session-switch-hints={quickSwitchHintsVisible ? 'true' : undefined}
       className={cn(
         'relative h-full flex flex-col',
@@ -3525,7 +3525,7 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
           <button
             type="button"
             aria-expanded={showSecondaryLinks}
-            aria-controls="sidebar-secondary-links"
+            aria-controls={previewExpanded ? 'sidebar-preview-secondary-links' : 'sidebar-secondary-links'}
             onClick={() => setSecondaryLinksOpen((open) => !open)}
             className="sidebar-quiet-more-tools flex h-8 w-full items-center gap-2 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
           >
@@ -3536,7 +3536,7 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
         </div>
       )}
       {/* 现代界面按需展开次级入口；当前打开的页面始终可见。 */}
-      <div id="sidebar-secondary-links" hidden={!showSecondaryLinks}>
+      <div id={previewExpanded ? 'sidebar-preview-secondary-links' : 'sidebar-secondary-links'} hidden={!showSecondaryLinks}>
         <div className={cn('px-3 pb-0.5', mode === 'agent' ? 'pt-0' : 'pt-2')}>
           <AutomationSidebarEntry
             count={automationCount}
@@ -3792,6 +3792,7 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
                       <AgentProjectGroupItem
                         key={group.workspace.id}
                         group={group}
+                        idPrefix={previewExpanded ? 'preview-' : ''}
                         isAutomationGroup={isAuto}
                         workspaceNameMap={isAuto ? workspaceNameMap : undefined}
                         currentWorkspaceId={currentWorkspaceId}
@@ -5083,6 +5084,7 @@ const DelegatedChildSessionItem = React.memo(function DelegatedChildSessionItem(
 
 interface AgentProjectGroupItemProps {
   group: AgentProjectGroup
+  idPrefix: string
   currentWorkspaceId: string | null
   /** 合成「自动任务」只读组：隐藏拖拽 / 新建会话 / 项目菜单等 workspace 专属操作，会话显示来源工作区角标 */
   isAutomationGroup?: boolean
@@ -5127,6 +5129,7 @@ interface AgentProjectGroupItemProps {
 
 const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
   group,
+  idPrefix,
   currentWorkspaceId,
   isAutomationGroup = false,
   workspaceNameMap,
@@ -5315,7 +5318,7 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
           <button
             type="button"
             aria-expanded={!collapsed}
-            aria-controls={`project-sessions-${group.workspace.id}`}
+            aria-controls={`${idPrefix}project-sessions-${group.workspace.id}`}
             onClick={(e) => {
               e.stopPropagation()
               onSelectProject(group.workspace.id)
@@ -5474,7 +5477,7 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
       </div>
       </div>
 
-      <div id={`project-sessions-${group.workspace.id}`} className="agent-project-session-list ml-4 mt-px">
+      <div id={`${idPrefix}project-sessions-${group.workspace.id}`} className="agent-project-session-list ml-4 mt-px">
         {!collapsed ? (
           treeItems.length > 0 ? (
             <div className="flex flex-col gap-0.5">

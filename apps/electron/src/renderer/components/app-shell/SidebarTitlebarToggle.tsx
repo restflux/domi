@@ -18,7 +18,7 @@ export function SidebarTitlebarToggle({ isMac, collapsed, previewActive, onToggl
         type="button"
         title={label}
         aria-label={label}
-        aria-controls="modern-left-sidebar"
+        aria-controls={previewActive ? 'modern-left-sidebar-preview' : 'modern-left-sidebar'}
         aria-expanded={!collapsed || previewActive}
         onClick={onToggle}
         className={cn('titlebar-no-drag absolute top-[9px] flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/[0.07] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring', isMac ? 'left-[88px]' : 'left-[10px]')}

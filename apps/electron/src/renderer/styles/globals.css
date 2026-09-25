@@ -798,6 +798,24 @@
   app-region: drag;
 }
 
+/* 命中外壳不位移；中途重新移入时，视觉表面从当前位置平滑反向过渡。 */
+.sidebar-hover-preview-surface {
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: opacity 160ms ease-in, transform 160ms ease-in;
+}
+
+.sidebar-hover-preview-surface[data-state="open"] {
+  opacity: 1;
+  transform: none;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-hover-preview-surface { transition: none; }
+}
+
 /* Left sidebar sits above the global titlebar layer, so it owns a stable top drag strip. */
 .sidebar-window-drag-strip {
   position: absolute;

@@ -19,7 +19,7 @@ test('Given macOS 展开、折叠、预览 When 切换 Then 按钮始终位于�
     expect(html).toContain('left-[88px]')
     expect(html).toContain(`aria-label="${label}"`)
     expect(html).toContain(`aria-expanded="${!collapsed || previewActive}"`)
-    expect(html).toContain('aria-controls="modern-left-sidebar"')
+    expect(html).toContain(`aria-controls="modern-left-sidebar${previewActive ? '-preview' : ''}"`)
   }
 })
 
