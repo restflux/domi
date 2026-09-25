@@ -110,9 +110,6 @@ extraResources:
     to: domi-logos
     filter:
       - "iconTemplate*.png"
-  # 默认 Dock 图标（macOS app.dock.setIcon 使用）
-  - from: resources/icon.png
-    to: icon.png
 
 # ============================================
 # macOS 配置

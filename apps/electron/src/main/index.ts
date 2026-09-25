@@ -402,12 +402,6 @@ function getIconPath(): string {
   }
 }
 
-/** macOS Dock 始终使用正式默认图标。 */
-function getDockIconPath(): string {
-  const resourcesDir = app.isPackaged ? process.resourcesPath : join(__dirname, 'resources')
-  return join(resourcesDir, 'icon.png')
-}
-
 function saveMainWindowState(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
   const mainWindowState = getPersistableMainWindowState(mainWindow)
@@ -870,9 +864,10 @@ async function initializePostWindowServices(): Promise<void> {
 
   if (process.platform === 'darwin' && app.dock) {
     await app.dock.show()
-    const dockIconPath = getDockIconPath()
-    if (existsSync(dockIconPath)) {
-      app.dock.setIcon(dockIconPath)
+    // 正式版沿用 .app 的图标，让系统在应用程序与 Dock 使用相同的外观。
+    if (!app.isPackaged) {
+      const dockIconPath = join(__dirname, 'resources', 'icon.png')
+      if (existsSync(dockIconPath)) app.dock.setIcon(dockIconPath)
     }
   }
 
