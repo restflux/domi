@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { WorkActivityProjection, WorkSessionView } from '@domi/shared'
 import { TooltipProvider } from '@/components/ui/tooltip.tsx'
 import { workActivityProjectionAtom } from '@/atoms/work-activity-atoms.ts'
-import { interfaceVariantAtom, themeModeAtom } from '@/atoms/theme.ts'
+import { interfaceVariantAtom, themeModeAtom, themeStyleAtom } from '@/atoms/theme.ts'
 import {
   WorkActivitySidebarOverview,
   WorkActivitySidebarRailButton,
@@ -52,12 +52,13 @@ function projection(): WorkActivityProjection {
   }
 }
 
-function renderWithProjection(element: React.ReactElement, light = false, counts?: WorkActivityProjection['counts']): string {
+function renderWithProjection(element: React.ReactElement, modernLayout = false, counts?: WorkActivityProjection['counts'], theme: 'light' | 'dark' | 'special' = 'light'): string {
   const store = createStore()
   store.set(workActivityProjectionAtom, { ...projection(), counts: counts ?? projection().counts })
-  if (light) {
-    store.set(themeModeAtom, 'light')
-    store.set(interfaceVariantAtom, 'modern')
+  store.set(interfaceVariantAtom, modernLayout ? 'modern' : 'classic')
+  if (modernLayout) {
+    store.set(themeModeAtom, theme)
+    if (theme === 'special') store.set(themeStyleAtom, 'ocean-dark')
   }
   return renderToStaticMarkup(
     <Provider store={store}>
@@ -82,15 +83,15 @@ describe('Work Activity sidebar overview', () => {
     expect(html).not.toContain('正在开发')
   })
 
-  test('ordinary light theme hides zero counters while retaining urgent status and full aria label', () => {
+  test.each(['light', 'dark', 'special'] as const)('%s modern theme hides zero counters while retaining urgent status and full aria label', (theme) => {
     const element = <WorkActivitySidebarOverview active={false} onOpenAll={noop} onOpenSession={noop} />
-    const idle = renderWithProjection(element, true, { attention_required: 0, working: 0, recently_completed: 0 })
+    const idle = renderWithProjection(element, true, { attention_required: 0, working: 0, recently_completed: 0 }, theme)
     expect(idle).toContain('aria-label="工作动态概览，需要处理 0，正在工作 0，最近完成 0"')
     expect(idle).not.toContain('>需处理 0<')
     expect(idle).toContain('h-8 gap-2 rounded-md px-2')
     expect(idle).not.toContain('bg-foreground/[0.025]')
 
-    const urgent = renderWithProjection(element, true)
+    const urgent = renderWithProjection(element, true, undefined, theme)
     expect(urgent).toContain('>需处理 2<')
     expect(urgent).not.toContain('>已完成 1<')
   })

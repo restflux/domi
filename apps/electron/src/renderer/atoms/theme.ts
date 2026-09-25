@@ -122,12 +122,8 @@ export const resolvedThemeAtom = atom<'light' | 'dark'>((get) => {
   return mode
 })
 
-/** 只在普通浅色的现代界面启用减法布局；跟随系统的浅色也适用。 */
-export const isDefaultModernLightAtom = atom<boolean>((get) =>
-  get(interfaceVariantAtom) === 'modern'
-  && get(themeModeAtom) !== 'special'
-  && get(resolvedThemeAtom) === 'light',
-)
+/** 信息层级属于现代界面结构，不随浅色、深色或特殊主题切换而变化。 */
+export const isModernInterfaceAtom = atom<boolean>((get) => get(interfaceVariantAtom) === 'modern')
 
 /** 所有特殊风格 class（用于清理旧值）— 从 THEME_STYLES 单一源派生，排除 'default' */
 const ALL_THEME_STYLE_CLASSES = THEME_STYLES

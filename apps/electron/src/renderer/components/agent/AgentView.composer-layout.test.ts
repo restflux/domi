@@ -229,12 +229,17 @@ describe('Agent Composer controls', () => {
     expect(statusSource).toContain("'legacy-worktree-review-status mx-3 mt-2 rounded-md border-blue-500/20 bg-blue-500/5'")
   })
 
-  test('quiet light keeps execution mode visible while secondary controls use the plus menu', () => {
+  test('现代主题保留执行方式、精简次级操作，并将状态入口移至顶部', () => {
     const view = readFileSync(resolve(import.meta.dir, 'AgentView.tsx'), 'utf8')
     const plusMenu = readFileSync(resolve(import.meta.dir, '../ai-elements/composer-plus-menu.tsx'), 'utf8')
 
     expect(view).toContain("item.key === 'execution-controls'")
-    expect(view).toContain("item.key === 'session-status' && (streaming || backgroundWaiting)")
+    expect(view).toContain("!modernLayout || item.key === 'composer-plus' || item.key === 'execution-controls'")
+    expect(view).toContain('onOpenStatus={modernLayout ? (trigger) => {')
+    expect(view).toContain('restoreFocusOnClose={restoreStatusFocus}')
+    expect(view).toContain('if (trigger?.isConnected) trigger.focus()')
+    expect(view).toContain("key: 'session-status'")
+    expect(plusMenu).not.toContain('onOpenSessionStatus')
     expect(view).toContain('imageSelections[`work:${sessionId}`] ? undefined : <ImageGenerationSelector')
     expect(plusMenu).toContain('onSetPreset(\'standard\')')
     expect(plusMenu).toContain('onSetPreset(\'minimal\')')
@@ -249,7 +254,8 @@ describe('Agent Composer controls', () => {
     expect(plusMenu).toContain('{presetExpanded && (')
     const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
     expect(styles).toContain('grid-template-columns: 1rem minmax(0, 1fr) auto;')
-    expect(styles).toContain('.composer-plus-group-label')
+    expect(styles).toContain(':root.ui-modern .composer-plus-group-label')
+    expect(styles).toContain(':root.ui-modern .agent-project-item-current')
   })
 
   test('keeps the modern metadata rail transparent while sharing the composer radius token', () => {

@@ -34,11 +34,15 @@ describe('WorkWelcomeEmptyState', () => {
     expect(html).not.toContain('<button')
   })
 
+  test.each(['dark', 'system', 'special'] as const)('%s 现代主题沿用留白空态', (mode) => {
+    expect(renderWelcome(mode, 'modern')).toContain('data-welcome-variant="quiet"')
+  })
+
   test('系统浅色与手动浅色使用相同的安静空态', () => {
     expect(renderWelcome('system', 'modern', false)).toContain('data-welcome-variant="quiet"')
   })
 
-  test.each([['dark', 'modern'], ['light', 'classic'], ['special', 'modern']] as const)('%s/%s 保留原有欢迎入口', (mode, variant) => {
+  test.each([['light', 'classic'], ['dark', 'classic'], ['special', 'classic']] as const)('%s/%s 保留原有欢迎入口', (mode, variant) => {
     const html = renderWelcome(mode, variant)
 
     expect(html).toContain('data-work-welcome-empty-state="true"')

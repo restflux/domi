@@ -4,7 +4,7 @@ import { rightWorkspaceOpenAtom } from './right-workspace-atoms.ts'
 import { interfaceVariantAtom, themeModeAtom } from './theme.ts'
 
 describe('Right Workspace 初始开合', () => {
-  test('普通浅色现代界面默认聚焦对话，显式开合偏好在换主题后仍保留', () => {
+  test('现代界面默认聚焦对话，显式开合偏好在换主题后仍保留', () => {
     const store = createStore()
     store.set(themeModeAtom, 'light')
     store.set(interfaceVariantAtom, 'modern')
@@ -17,11 +17,14 @@ describe('Right Workspace 初始开合', () => {
     expect(store.get(rightWorkspaceOpenAtom)).toBe(true)
   })
 
-  test('深色与经典界面保持原本默认展开的布局', () => {
+  test('现代深色和特殊主题不因换配色而自动展开，经典界面维持默认展开', () => {
     const store = createStore()
     store.set(themeModeAtom, 'dark')
     store.set(interfaceVariantAtom, 'modern')
-    expect(store.get(rightWorkspaceOpenAtom)).toBe(true)
+    expect(store.get(rightWorkspaceOpenAtom)).toBe(false)
+
+    store.set(themeModeAtom, 'special')
+    expect(store.get(rightWorkspaceOpenAtom)).toBe(false)
 
     store.set(themeModeAtom, 'light')
     store.set(interfaceVariantAtom, 'classic')

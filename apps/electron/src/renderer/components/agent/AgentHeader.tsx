@@ -7,7 +7,7 @@
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { Images, Share2 } from 'lucide-react'
+import { Activity, Images, Share2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   agentSessionIndicatorMapAtom,
@@ -31,6 +31,8 @@ interface AgentHeaderProps {
   branchCount?: number
   onToggleSessionTree?: () => void
   sessionTreeOpen?: boolean
+  statusWorking?: boolean
+  onOpenStatus?: (trigger: HTMLButtonElement) => void
 }
 
 export function AgentHeader({
@@ -38,6 +40,8 @@ export function AgentHeader({
   branchCount = 0,
   onToggleSessionTree,
   sessionTreeOpen = false,
+  statusWorking = false,
+  onOpenStatus,
 }: AgentHeaderProps): React.ReactElement | null {
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const sessions = useAtomValue(agentSessionsAtom)
@@ -56,6 +60,7 @@ export function AgentHeader({
   const workspace = workspaces.find((item) => item.id === session.workspaceId)
   const sessionPath = sessionPathMap.get(session.id) ?? null
   const indicatorStatus = indicatorMap.get(session.id) ?? 'idle'
+  const statusLabel = indicatorStatus === 'idle' && statusWorking ? 'running' : indicatorStatus
   const canOpenProjectFolder = Boolean(
     workspace
     && (!workspace.projectRootPath || !workspace.projectRootStatus || workspace.projectRootStatus === 'available'),
@@ -156,6 +161,19 @@ export function AgentHeader({
             sessionId={session.id}
             projectName={workspace?.name ?? '当前项目'}
           />
+          {onOpenStatus && (
+            <button
+              type="button"
+              onClick={(event) => onOpenStatus(event.currentTarget)}
+              aria-label={statusLabel === 'blocked' ? '会话状态：需要处理' : statusLabel === 'running' ? '会话状态：运行中' : statusLabel === 'completed' ? '会话状态：已完成' : '会话状态与耗时'}
+              title="会话状态与耗时"
+              data-agent-status-shortcut="header"
+              className={cn('relative flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring', statusLabel === 'blocked' && 'text-amber-600 dark:text-amber-400', statusLabel === 'running' && 'text-primary')}
+            >
+              <Activity className="size-3.5" />
+              {statusLabel !== 'idle' && <span aria-hidden="true" className={cn('absolute right-0.5 top-0.5 size-1.5 rounded-full', statusLabel === 'blocked' ? 'bg-amber-500' : statusLabel === 'running' ? 'bg-primary' : 'bg-muted-foreground')} />}
+            </button>
+          )}
           <SessionHeaderMenu entries={menuEntries} onAction={handleMenuAction} />
         </div>
       </div>

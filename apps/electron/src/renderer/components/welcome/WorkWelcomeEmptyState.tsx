@@ -2,14 +2,14 @@
  * WorkWelcomeEmptyState — Work 新会话启动面板
  *
  * 面板独占 Header 与 Composer 之间的可用区域，因此欢迎内容始终按真实剩余空间居中。
- * 默认浅色现代界面使用 Domi 字标构造图；其他主题保留任务入口，点击只预填 Composer。
+ * 现代界面使用 Domi 字标构造图，经典界面保留任务入口，点击只预填 Composer。
  */
 
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { AlertTriangle, ClipboardList, Sparkles, Telescope, type LucideIcon } from 'lucide-react'
 import { userProfileAtom } from '@/atoms/user-profile'
-import { isDefaultModernLightAtom } from '@/atoms/theme'
+import { isModernInterfaceAtom } from '@/atoms/theme'
 import { WelcomeWatermark } from './WelcomeWatermark'
 import { DomiConstructionWordmark } from './DomiConstructionWordmark'
 
@@ -75,11 +75,11 @@ export interface WorkWelcomeEmptyStateProps {
 
 export function WorkWelcomeEmptyState({ onPickPrompt }: WorkWelcomeEmptyStateProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
-  const minimalLight = useAtomValue(isDefaultModernLightAtom)
+  const modernLayout = useAtomValue(isModernInterfaceAtom)
   const displayName = userProfile.userName || '用户'
   const greeting = getGreeting(new Date().getHours())
 
-  if (minimalLight) {
+  if (modernLayout) {
     return (
       <div
         data-work-welcome-empty-state="true"

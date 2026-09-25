@@ -1,6 +1,6 @@
 {
   "name": "@domi/electron",
-  "version": "0.25.4",
+  "version": "0.25.5",
   "description": "Domi personal coding workbench - Electron App",
   "homepage": "https://github.com/restflux/domi",
   "repository": {

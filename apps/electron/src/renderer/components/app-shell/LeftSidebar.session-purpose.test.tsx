@@ -9,7 +9,7 @@ import { agentSessionsAtom, agentWorkspacesAtom, currentAgentSessionIdAtom, curr
 import { appModeAtom } from '@/atoms/app-mode'
 import { activeTabIdAtom, sidebarCollapsedAtom, tabsAtom } from '@/atoms/tab-atoms'
 import { sidebarViewModeAtom, workSidebarPreferencesAtom } from '@/atoms/sidebar-atoms'
-import { interfaceVariantAtom, themeModeAtom } from '@/atoms/theme'
+import { interfaceVariantAtom, themeModeAtom, themeStyleAtom } from '@/atoms/theme'
 import { activeViewAtom } from '@/atoms/active-view'
 import { LeftSidebar } from './LeftSidebar'
 
@@ -31,11 +31,12 @@ const sessions = [
   }),
 ]
 
-function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project', quietLight = false, view: 'planning' | 'agent-skills' | null = null): string {
+function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project', modernLayout = false, view: 'planning' | 'agent-skills' | null = null, theme: 'light' | 'dark' | 'special' = 'light', width = 260): string {
   const store = createStore()
   store.set(appModeAtom, 'agent')
-  store.set(interfaceVariantAtom, quietLight ? 'modern' : 'classic')
-  if (quietLight) store.set(themeModeAtom, 'light')
+  store.set(interfaceVariantAtom, modernLayout ? 'modern' : 'classic')
+  store.set(themeModeAtom, theme)
+  if (theme === 'special') store.set(themeStyleAtom, 'ocean-dark')
   if (view) store.set(activeViewAtom, view)
   store.set(agentSessionsAtom, sessions)
   store.set(agentWorkspacesAtom, [{ id: 'workspace', name: '测试项目', slug: 'workspace', createdAt: 1, updatedAt: 2 }])
@@ -47,7 +48,7 @@ function renderSidebar(archived = false, collapsed = false, groupMode: 'project'
   store.set(sidebarCollapsedAtom, collapsed)
   store.set(workSidebarPreferencesAtom, { ...store.get(workSidebarPreferencesAtom), groupMode })
   const html = renderToStaticMarkup(
-    <Provider store={store}><TooltipProvider><LeftSidebar width={260} /></TooltipProvider></Provider>,
+    <Provider store={store}><TooltipProvider><LeftSidebar width={width} /></TooltipProvider></Provider>,
   )
   expect(store.get(agentSessionsAtom)).toEqual(sessions)
   return html
@@ -85,20 +86,30 @@ describe('LeftSidebar 侧聊用途隔离', () => {
     expect(planning).not.toMatch(/id="sidebar-secondary-links"[^>]*hidden=""/)
   })
 
-  test('默认浅色把 Work／Chat 收进品牌菜单并提前展示项目，其余主题保留模式切换轨道', () => {
-    const quiet = renderSidebar(false, false, 'project', true)
+  test.each(['light', 'dark', 'special'] as const)('%s 现代主题将 Work／Chat 收进品牌菜单并提前展示项目', (theme) => {
+    const compact = renderSidebar(false, false, 'project', true, null, theme)
+    expect(compact).toContain('aria-label="当前为 Work，切换工作模式"')
+    expect(compact).toContain('sidebar-modern-compact')
+    expect(compact).toContain('sidebar-quiet-new-session')
+    expect(compact.indexOf('新会话')).toBeLessThan(compact.indexOf('更多工具'))
+    expect(compact).not.toContain('mode-switcher-track')
+  })
+
+  test('经典界面保留模式轨道，现代窄侧栏收起品牌装饰文字但保留操作', () => {
     const classic = renderSidebar()
-    expect(quiet).toContain('aria-label="当前为 Work，切换工作模式"')
-    expect(quiet).toContain('sidebar-quiet-mode-trigger')
-    expect(quiet).toContain('sidebar-quiet-new-session')
-    expect(quiet).toContain('sidebar-quiet-workspace-name')
-    expect(quiet.indexOf('新会话')).toBeLessThan(quiet.indexOf('更多工具'))
-    expect(quiet).not.toContain('mode-switcher-track')
     expect(classic).toContain('mode-switcher-track')
     expect(classic).not.toContain('sidebar-quiet-header')
     const css = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
     expect(css).toContain('container: sidebar-quiet / inline-size;')
     expect(css).toContain('@container sidebar-quiet (max-width: 220px)')
+  })
+
+  test.each([200, 260, 320])('%dpx 侧栏的品牌模式与低频菜单保持可访问', (width) => {
+    const html = renderSidebar(false, false, 'project', true, null, 'dark', width)
+    expect(html).toContain(`width:${width}px`)
+    expect(html).toContain('aria-label="当前为 Work，切换工作模式"')
+    expect(html).toContain('aria-label="选择新会话项目"')
+    expect(html).toContain('aria-controls="sidebar-secondary-links"')
   })
 
   test('Given 折叠侧栏 When 渲染最近会话 Then 不显示侧聊', () => {

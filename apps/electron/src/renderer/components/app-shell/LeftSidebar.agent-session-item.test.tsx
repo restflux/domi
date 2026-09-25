@@ -51,12 +51,12 @@ function renderSessionItem(
 }
 
 describe('AgentSessionItem layout', () => {
-  test('default light removes project background while keeping session selection', () => {
+  test('所有现代主题仅高亮会话、不高亮项目，选中背景随主题前景变化', () => {
     const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
-    const projectRule = styles.match(/:root\.ui-modern:not\(\.dark\):not\(\[class\*="theme-"\]\) \.agent-project-item-current,[\s\S]*?\}/)?.[0]
+    const projectRule = styles.match(/:root\.ui-modern \.agent-project-item-current,[\s\S]*?\}/)?.[0]
     expect(projectRule).toContain('background-color: transparent')
     expect(styles).toContain('.agent-project-session-list .agent-session-item-active-surface::before')
-    expect(styles).toContain('background-color: hsl(0 0% 94%)')
+    expect(styles).toContain('background-color: hsl(var(--foreground) / 0.075)')
   })
   test('keeps status and marked Flag/Star in the row without altering their semantics', () => {
     const html = renderSessionItem({ needsFollowUp: true, starred: true })

@@ -190,7 +190,7 @@ import {
 import type { AgentContextStatus } from '@/atoms/agent-atoms'
 import { settingsOpenAtom } from '@/atoms/settings-tab'
 import { longTextPasteAsAttachmentEnabledAtom } from '@/atoms/ui-preferences'
-import { interfaceVariantAtom, isDefaultModernLightAtom, themeStyleAtom } from '@/atoms/theme'
+import { interfaceVariantAtom, isModernInterfaceAtom, themeStyleAtom } from '@/atoms/theme'
 import { channelsAtom, modelSelectorOpenAtom } from '@/atoms/chat-atoms'
 import { todoPlanningGroupsAtom } from '@/atoms/planning-atoms'
 import { tabsAtom, updateTabTitle } from '@/atoms/tab-atoms'
@@ -629,7 +629,7 @@ function AgentThinkingPopover({
 export function AgentView({ sessionId }: { sessionId: string }): React.ReactElement {
   const imageSelections = useAtomValue(imageGenerationSelectionsAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
-  const quietLight = useAtomValue(isDefaultModernLightAtom)
+  const modernLayout = useAtomValue(isModernInterfaceAtom)
   const themeStyle = useAtomValue(themeStyleAtom)
   const useModernComposerRail = interfaceVariant !== 'classic' && themeStyle !== 'terminal-dark'
   const [persistedSDKMessages, setPersistedSDKMessages] = React.useState<SDKMessage[]>([])
@@ -3565,6 +3565,13 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
   // ===== Slash 命令宿主（/ 菜单 → 会话控制） =====
   const [slashStatusOpen, setSlashStatusOpen] = React.useState(false)
+  const statusTriggerRef = React.useRef<HTMLButtonElement | null>(null)
+  const restoreStatusFocus = (): void => {
+    const trigger = statusTriggerRef.current
+    statusTriggerRef.current = null
+    if (trigger?.isConnected) trigger.focus()
+    else restoreComposerFocus()
+  }
   const [slashReasoningOpen, setSlashReasoningOpen] = React.useState(false)
   const [slashWorkflowOpen, setSlashWorkflowOpen] = React.useState(false)
   const [slashForkOpen, setSlashForkOpen] = React.useState(false)
@@ -4286,10 +4293,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           onSideChat={openSideChat}
           onInsertTrigger={(char) => richTextInputRef.current?.insertMentionTrigger(char)}
           disabled={!agentChannelId || !hasAvailableModel || workspaceSendDeferred}
-          tools={quietLight ? {
+          tools={modernLayout ? {
             onAttachFile: () => { void handleAttachContent('file') },
             onAttachDirectory: () => { void handleAttachContent('directory') },
-            onOpenSessionStatus: () => setSlashStatusOpen(true),
             minimalPresetEnabled,
             presetDisabled: streaming || backgroundWaiting,
             onSetPreset: (preset) => { void setModelPresentationPreset(preset) },
@@ -4389,7 +4395,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       key: 'session-status',
       node: <AgentStatusShortcut running={streaming || backgroundWaiting} onOpen={() => setSlashStatusOpen(true)} />,
     },
-  ].filter((item) => !quietLight || item.key === 'composer-plus' || item.key === 'execution-controls' || (item.key === 'session-status' && (streaming || backgroundWaiting))), [
+  ].filter((item) => !modernLayout || item.key === 'composer-plus' || item.key === 'execution-controls'), [
     openSideChat,
     minimalPresetEnabled,
     setModelPresentationPreset,
@@ -4399,7 +4405,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     handleAttachContent,
     attachmentMenuOpen,
     targetProtectionReason,
-    quietLight,
+    modernLayout,
     imageSelections,
     inputContent,
     agentChannelId,
@@ -4550,6 +4556,11 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           branchCount={sessionTree?.branchCount ?? 0}
           onToggleSessionTree={toggleSessionTree}
           sessionTreeOpen={sessionTreeOpen}
+          statusWorking={streaming || backgroundWaiting}
+          onOpenStatus={modernLayout ? (trigger) => {
+            statusTriggerRef.current = trigger
+            setSlashStatusOpen(true)
+          } : undefined}
         />
 
         {/* 空会话欢迎区独立占满 Header 与 Composer 之间的空间，确保视觉中心稳定。 */}
@@ -4878,8 +4889,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
             <InputToolbarOverflow
               items={[
                 ...inputToolbarItems,
-                ...(!quietLight || imageSelections[`work:${sessionId}`]
-                  ? [{ key: 'image-generation', menuOnly: !quietLight && !imageSelections[`work:${sessionId}`], node: <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} /> }]
+                ...(!modernLayout || imageSelections[`work:${sessionId}`]
+                  ? [{ key: 'image-generation', menuOnly: !modernLayout && !imageSelections[`work:${sessionId}`], node: <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} /> }]
                   : []),
               ]}
               trailing={inputTrailingNode}
@@ -4903,7 +4914,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       onOpenChange={setSlashStatusOpen}
       workspaceSlug={workspaceSlug}
       sessionUsage={sessionUsage}
-      restoreFocusOnClose={restoreComposerFocus}
+      restoreFocusOnClose={restoreStatusFocus}
     />
 
     <SlashPickerMenu

@@ -1,11 +1,11 @@
 /**
  * ComposerPlusMenu — 输入框左下角「+」入口。
- * 默认保留引用菜单；浅色现代 Work 还可在同一入口查找附件、语音与呈现设置。
+ * 经典界面保留引用菜单；现代 Work 在同一入口查找附件、语音与呈现设置。
  * 引用触发符必须等菜单关闭并阻止焦点回到「+」后再插入，否则 suggestion 会被 blur 关闭。
  */
 
 import * as React from 'react'
-import { Activity, AtSign, Check, ChevronDown, Command, FileText, FolderOpen, Hash, MessagesSquare, MicIcon, Plus, SlidersHorizontal } from 'lucide-react'
+import { AtSign, Check, ChevronDown, Command, FileText, FolderOpen, Hash, MessagesSquare, MicIcon, Plus, SlidersHorizontal } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +27,6 @@ const MENU_ITEMS = [
 interface ComposerPlusTools {
   onAttachFile: () => void
   onAttachDirectory: () => void
-  onOpenSessionStatus: () => void
   minimalPresetEnabled: boolean
   presetDisabled: boolean
   onSetPreset: (preset: 'standard' | 'minimal') => void
@@ -38,7 +37,7 @@ export interface ComposerPlusMenuProps {
   onInsertTrigger?: (char: string) => void
   onSideChat?: () => void
   disabled?: boolean
-  /** 默认浅色 Work 的次级工具；执行方式继续在输入框上直接可见。 */
+  /** 现代 Work 的次级工具；执行方式继续在输入框上直接可见。 */
   tools?: ComposerPlusTools
 }
 
@@ -105,7 +104,6 @@ export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false
           ))}
           <div className="composer-plus-group-label">会话与设置</div>
           {onSideChat && <button type="button" className="composer-plus-item" onClick={() => closeThen(onSideChat)}><MessagesSquare /><span>打开侧边聊天</span></button>}
-          <button type="button" className="composer-plus-item" onClick={() => closeThen(tools.onOpenSessionStatus)}><Activity /><span>会话状态</span></button>
           <button
             type="button"
             className="composer-plus-item"

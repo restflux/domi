@@ -86,7 +86,7 @@ import { searchDialogOpenAtom } from '@/atoms/search-atoms'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { hasEnvironmentIssuesAtom } from '@/atoms/environment'
 import { conversationPromptIdAtom } from '@/atoms/system-prompt-atoms'
-import { interfaceVariantAtom, isDefaultModernLightAtom } from '@/atoms/theme'
+import { interfaceVariantAtom, isModernInterfaceAtom } from '@/atoms/theme'
 import { sessionHeaderCommandAtom } from '@/atoms/session-header-actions'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { useOpenSession } from '@/hooks/useOpenSession'
@@ -632,7 +632,7 @@ interface NewAgentSessionSidebarEntryProps {
   onCreateCurrent: () => Promise<void>
   onCreateInWorkspace: (workspaceId: string) => Promise<void>
   onCreateProject: () => void
-  quietLight?: boolean
+  modernLayout?: boolean
 }
 
 function NewAgentSessionSidebarEntry({
@@ -641,12 +641,12 @@ function NewAgentSessionSidebarEntry({
   onCreateCurrent,
   onCreateInWorkspace,
   onCreateProject,
-  quietLight = false,
+  modernLayout = false,
 }: NewAgentSessionSidebarEntryProps): React.ReactElement {
   const [menuOpen, setMenuOpen] = React.useState(false)
 
   return (
-    <div className={cn('new-session-entry group flex w-full items-stretch overflow-hidden rounded-lg bg-primary/[0.055] text-[13px] text-foreground transition-colors duration-150 hover:bg-primary/[0.10]', quietLight && 'sidebar-quiet-new-session')}>
+    <div className={cn('new-session-entry group flex w-full items-stretch overflow-hidden rounded-lg bg-primary/[0.055] text-[13px] text-foreground transition-colors duration-150 hover:bg-primary/[0.10]', modernLayout && 'sidebar-quiet-new-session')}>
       <button
         type="button"
         onClick={() => { void onCreateCurrent() }}
@@ -658,7 +658,7 @@ function NewAgentSessionSidebarEntry({
         </span>
         <span className="truncate font-medium">新会话</span>
         {currentWorkspace && (
-          <span className={cn('ml-auto max-w-[112px] truncate text-[11px] text-foreground/[0.46] group-hover:text-foreground/65', quietLight && 'sidebar-quiet-workspace-name')}>
+          <span className={cn('ml-auto max-w-[112px] truncate text-[11px] text-foreground/[0.46] group-hover:text-foreground/65', modernLayout && 'sidebar-quiet-workspace-name')}>
             {currentWorkspace.name}
           </span>
         )}
@@ -1191,9 +1191,9 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
   const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom)
   const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const isClassic = interfaceVariant === 'classic'
-  const isQuietLight = useAtomValue(isDefaultModernLightAtom)
+  const modernLayout = useAtomValue(isModernInterfaceAtom)
   const [secondaryLinksOpen, setSecondaryLinksOpen] = React.useState(false)
-  const showSecondaryLinks = !isQuietLight || secondaryLinksOpen || activeView === 'planning' || activeView === 'agent-skills'
+  const showSecondaryLinks = !modernLayout || secondaryLinksOpen || activeView === 'planning' || activeView === 'agent-skills'
   const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
 
   // Work 模式状态
@@ -3388,7 +3388,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       data-session-switch-hints={quickSwitchHintsVisible ? 'true' : undefined}
       className={cn(
         'relative h-full flex flex-col',
-        isQuietLight && 'sidebar-quiet-light',
+        modernLayout && 'sidebar-modern-compact',
         !noTransition && 'transition-[width] duration-300',
         isClassic
           ? 'bg-background rounded-2xl shadow-xl dark:shadow-md'
@@ -3404,8 +3404,8 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       <div className={cn('w-full flex-shrink-0 titlebar-drag-region', isMac ? 'h-[30px]' : 'h-1')} />
 
       {/* 品牌栏：建立 Domi 视觉锚点，同时承载全局搜索与侧栏布局控制。 */}
-      <div className={cn('titlebar-drag-region flex h-11 flex-shrink-0 items-center gap-2 px-3', isQuietLight && 'sidebar-quiet-header h-9 gap-1 px-2')}>
-        {isQuietLight ? <ModeSwitcher compact /> : <DomiBrandLockup />}
+      <div className={cn('titlebar-drag-region flex h-11 flex-shrink-0 items-center gap-2 px-3', modernLayout && 'sidebar-quiet-header h-9 gap-1 px-2')}>
+        {modernLayout ? <ModeSwitcher compact /> : <DomiBrandLockup />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -3413,7 +3413,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                 type="button"
                 aria-label="搜索"
                 onClick={() => setSearchDialogOpen(true)}
-                className={cn('flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 transition-[background-color,color] duration-150 titlebar-no-drag', isQuietLight && 'size-7')}
+                className={cn('flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 transition-[background-color,color] duration-150 titlebar-no-drag', modernLayout && 'size-7')}
               >
                 <Search size={14} />
               </button>
@@ -3426,7 +3426,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
                 type="button"
                 aria-label="收起侧边栏"
                 onClick={() => setSidebarCollapsed(true)}
-                className={cn('sidebar-collapse-button flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 titlebar-no-drag transition-[background-color,color] duration-150', isQuietLight && 'size-7')}
+                className={cn('sidebar-collapse-button flex size-8 flex-shrink-0 items-center justify-center rounded-[9px] text-foreground/40 hover:bg-foreground/[0.055] hover:text-foreground/70 titlebar-no-drag transition-[background-color,color] duration-150', modernLayout && 'size-7')}
               >
                 <PanelLeftClose size={14} />
               </button>
@@ -3437,12 +3437,12 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
       </div>
 
       {/* 经典及其他主题仍保持独立的模式切换行。 */}
-      {!isQuietLight && <div className="px-3 pb-2"><ModeSwitcher /></div>}
+      {!modernLayout && <div className="px-3 pb-2"><ModeSwitcher /></div>}
 
       {mode === 'agent' && (
-        <div className={cn('px-3 pb-1', isQuietLight && 'px-2 pb-0')}>
+        <div className={cn('px-3 pb-1', modernLayout && 'px-2 pb-0')}>
           <NewAgentSessionSidebarEntry
-            quietLight={isQuietLight}
+            modernLayout={modernLayout}
             currentWorkspace={currentWorkspace}
             workspaces={newSessionWorkspaces}
             onCreateCurrent={handleCreateAgentFromSidebar}
@@ -3454,7 +3454,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
 
       {/* 工作动态：共享宿主投影的跨项目常驻概览，仅 Work 模式可见。 */}
       {mode === 'agent' && (
-        <div className={cn('px-3 pb-1 pt-0', isQuietLight && 'px-2 pb-0')}>
+        <div className={cn('px-3 pb-1 pt-0', modernLayout && 'px-2 pb-0')}>
           <WorkActivitySidebarOverview
             active={activeView === 'work-activity'}
             onOpenAll={handleOpenWorkActivity}
@@ -3463,7 +3463,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
         </div>
       )}
 
-      {isQuietLight && (
+      {modernLayout && (
         <div className="px-2 pb-0.5">
           <button
             type="button"
@@ -3478,7 +3478,7 @@ export function LeftSidebar({ width, noTransition }: LeftSidebarProps): React.Re
           </button>
         </div>
       )}
-      {/* 规划和技能在普通浅色下按需展开；当前正打开的页面始终可见。 */}
+      {/* 现代界面按需展开次级入口；当前打开的页面始终可见。 */}
       <div id="sidebar-secondary-links" hidden={!showSecondaryLinks}>
         <div className={cn('px-3 pb-0.5', mode === 'agent' ? 'pt-0' : 'pt-2')}>
           <AutomationSidebarEntry
@@ -4067,7 +4067,7 @@ function SafeTooltip({ children, content, side = 'top' }: SafeTooltipProps): Rea
 }
 
 /**
- * 列表项右侧操作区：旧主题常驻相对更新时间，浅色现代主题仅在行提示中显示；hover 切换操作按钮组。
+ * 列表项右侧操作区：经典界面常驻相对更新时间，现代界面仅在行提示中显示；hover 切换操作按钮组。
  * 归档需要二次确认；进入确认态后强制保持按钮可见，避免鼠标移开后用户失去反馈。
  */
 function SessionItemActions({
@@ -4219,7 +4219,7 @@ interface AgentSessionRowMetaProps {
 }
 
 /**
- * Agent 会话最右侧的可替换槽：旧主题显示更新时间；浅色现代主题不常驻时间。
+ * Agent 会话最右侧的可替换槽：经典界面显示更新时间；现代界面不常驻时间。
  * hover 原位显示归档快捷操作和 More 菜单，避免右侧额外占宽。
  */
 function AgentSessionRowMeta({
