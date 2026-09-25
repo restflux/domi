@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 import * as React from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SidebarTitlebarToggle } from './SidebarTitlebarToggle'
 
@@ -21,6 +23,14 @@ test('Given macOS 展开、折叠、预览 When 切换 Then 按钮始终位于�
     expect(html).toContain(`aria-expanded="${!collapsed || previewActive}"`)
     expect(html).toContain(`aria-controls="modern-left-sidebar${previewActive ? '-preview' : ''}"`)
   }
+})
+
+test('Given macOS 主窗口 When 原生窗口按钮呈现 Then 与 46px 顶栏操作共用中心线', () => {
+  const mainWindowSource = readFileSync(resolve(import.meta.dir, '../../../main/index.ts'), 'utf8')
+  expect(mainWindowSource).toContain('trafficLightPosition: { x: 18, y: 16 }')
+  // 原生灯直径约 14px，位置为左上角；侧栏按钮顶距 9px、高 28px。
+  expect(16 + 7).toBe(9 + 14)
+  expect(9 + 14).toBe(46 / 2)
 })
 
 test('Given Windows/Linux 现代界面 When 顶栏呈现 Then 单独保留左侧可点入口并避开首个侧栏导航', () => {

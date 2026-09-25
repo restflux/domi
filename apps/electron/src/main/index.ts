@@ -438,7 +438,7 @@ function createWindow(): Promise<void> {
   const titleBarOptions = isMac
     ? {
         titleBarStyle: 'hiddenInset' as const,
-        trafficLightPosition: { x: 18, y: 18 },
+        trafficLightPosition: { x: 18, y: 16 },
         vibrancy: 'under-window' as const,
         visualEffectState: 'followWindow' as const,
       }
