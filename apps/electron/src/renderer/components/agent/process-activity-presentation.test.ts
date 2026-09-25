@@ -11,7 +11,7 @@ function result(completed = true, isError = false): ToolPresentationEntry {
   return { completed, isError, images: [] }
 }
 
-describe('消息区执行过程完成态摘要', () => {
+describe('消息区工作过程完成态摘要', () => {
   test('交错探索按用户任务语义统计，不要求调用连续同目标', () => {
     const presentation = buildProcessActivityPresentation([
       tool('read-1', 'Read', { path: 'C:\\w\\a.ts' }),
@@ -21,7 +21,7 @@ describe('消息区执行过程完成态摘要', () => {
       tool('bash-1', 'Bash', { command: 'git status' }),
     ])
 
-    expect(presentation.summary).toBe('执行过程 · 读取 2 个文件 · 搜索 2 次 · 执行 1 条命令')
+    expect(presentation.summary).toBe('工作过程 · 读取 2 个文件 · 搜索 2 次 · 执行 1 条命令')
   })
 
   test('工具失败在整体折叠摘要中保持可见计数', () => {
@@ -45,7 +45,7 @@ describe('消息区执行过程完成态摘要', () => {
       { type: 'thinking', thinking: '再确认滚动策略' },
     ]
 
-    expect(buildProcessActivityPresentation(blocks).summary).toBe('执行过程 · 2 段思考')
+    expect(buildProcessActivityPresentation(blocks).summary).toBe('工作过程 · 2 段思考')
   })
 
   test('Worktree handoff 保留专属状态文案', () => {

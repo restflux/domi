@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { buildAssistantTurnRenderItems, buildProcessGroupSummary, buildProcessGroupToolNames, stabilizeProcessBlockReferences } from './ProcessBlockGroup'
+import { buildAssistantTurnRenderItems, buildProcessGroupSummary, buildProcessGroupToolNames, buildWorkProcessTriggerLabel, formatWorkProcessDuration, stabilizeProcessBlockReferences } from './ProcessBlockGroup'
 import type { SDKContentBlock } from '@domi/shared'
 
 const tool = (id: string, name = 'Read', input: Record<string, unknown> = {}): SDKContentBlock => ({
@@ -20,6 +20,29 @@ const text = (value: string): SDKContentBlock => ({
 })
 
 describe('Agent 过程块折叠分组', () => {
+  test('given completed turn duration when formatting process entry then uses compact Chinese duration', () => {
+    expect(formatWorkProcessDuration(320)).toBe('不足 1 秒')
+    expect(formatWorkProcessDuration(10_400)).toBe('10 秒')
+    expect(formatWorkProcessDuration(66_000)).toBe('1 分 6 秒')
+    expect(formatWorkProcessDuration(120_000)).toBe('2 分钟')
+  })
+
+  test('given running and completed process when building trigger label then keeps detail only in running status', () => {
+    const summary = '工作过程 · 读取 3 个文件 · 搜索 2 次'
+
+    expect(buildWorkProcessTriggerLabel({
+      isStreaming: true,
+      summary,
+      elapsedMs: 19_000,
+    })).toBe('工作中 · 已用时 19 秒 · 读取 3 个文件 · 搜索 2 次')
+
+    expect(buildWorkProcessTriggerLabel({
+      isStreaming: false,
+      summary,
+      durationMs: 19_000,
+    })).toBe('用时 19 秒')
+  })
+
   test('given continuous thinking and tools before final text when grouping then folds them into one process group', () => {
     const items = buildAssistantTurnRenderItems([
       thinking(),

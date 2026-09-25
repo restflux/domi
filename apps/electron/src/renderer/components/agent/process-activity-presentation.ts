@@ -79,7 +79,7 @@ export function buildProcessActivityPresentation(
   if (tools.length === 0 && messageCount > 0) parts.push(`${messageCount} 段思考`)
 
   return {
-    summary: parts.length > 0 ? `执行过程 · ${parts.join(' · ')}` : '执行过程',
+    summary: parts.length > 0 ? `工作过程 · ${parts.join(' · ')}` : '工作过程',
     failedToolCount,
     toolCount: tools.length,
   }

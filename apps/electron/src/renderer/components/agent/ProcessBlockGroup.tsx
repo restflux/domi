@@ -20,6 +20,10 @@ interface ProcessBlockGroupProps {
   isMessageTail?: boolean
   /** 用户中断本轮时保持展开（不随结束折叠），便于回看已执行的工具明细。 */
   keepExpanded?: boolean
+  /** 工作过程入口使用本轮起点显示实时耗时，完成后切换为最终耗时。 */
+  startedAt?: number
+  durationMs?: number
+  durationTooltip?: string
   /** 仅图片相关过程组传入，用于让 turn 底部缩略图与展开内容互斥。 */
   processGroupId?: string
   onExpandedChange?: (processGroupId: string, expanded: boolean) => void
@@ -57,7 +61,7 @@ function getTrailingTextStartIndex(blocks: SDKContentBlock[]): number | null {
 /**
  * 需要用户裁决的交互工具：其前面的正文（计划 / 实施反馈 / 提问说明）是交付给用户的内容，
  * 不是过程叙述。当用户拒绝弹窗或中断执行时，这一轮会以这类 tool_use 收尾；
- * 此时正文仍应作为可见内容外置，而不是整体收进「执行过程」折叠组。
+ * 此时正文仍应作为可见内容外置，而不是整体收进「工作过程」折叠组。
  */
 const USER_DECISION_TOOL_NAMES = new Set(['ExitPlanMode', 'RequestDirectWorkflow', 'AskUserQuestion'])
 
@@ -163,7 +167,7 @@ export function buildAssistantTurnRenderItems(
 
   // 兜底：消息以裁决类工具（ExitPlanMode / RequestDirectWorkflow / AskUserQuestion）
   // 或 thinking 收尾时（计划被拒绝 / 用户中断后常出现），正文仍是交付给用户的内容，
-  // 不应随工具行一起收进「执行过程」折叠组。
+  // 不应随工具行一起收进「工作过程」折叠组。
   const effectiveTrailingTextStartIndex = trailingTextStartIndex ?? decisionTailTextStartIndex
 
   if (effectiveTrailingTextStartIndex === null) {
@@ -232,6 +236,46 @@ const StableProcessChild = React.memo(
   (previous, next) => previous.child === next.child,
 )
 
+/** 完成态入口使用紧凑中文耗时，和消息区其余状态文案保持一致。 */
+export function formatWorkProcessDuration(durationMs: number): string {
+  const seconds = Math.max(0, Math.round(durationMs / 1_000))
+  if (seconds < 1) return '不足 1 秒'
+  if (seconds < 60) return `${seconds} 秒`
+
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return remainingSeconds > 0
+    ? `${minutes} 分 ${remainingSeconds} 秒`
+    : `${minutes} 分钟`
+}
+
+interface WorkProcessTriggerLabelOptions {
+  isStreaming: boolean
+  summary: string
+  elapsedMs?: number
+  durationMs?: number
+}
+
+/** 工作过程折叠行只承载状态与耗时；详细操作摘要放入展开区域。 */
+export function buildWorkProcessTriggerLabel({
+  isStreaming,
+  summary,
+  elapsedMs,
+  durationMs,
+}: WorkProcessTriggerLabelOptions): string {
+  if (!isStreaming) {
+    return durationMs != null
+      ? `用时 ${formatWorkProcessDuration(durationMs)}`
+      : summary
+  }
+
+  const detail = summary.replace(/^工作过程(?: · )?/, '')
+  const parts = ['工作中']
+  if (elapsedMs != null) parts.push(`已用时 ${formatWorkProcessDuration(elapsedMs)}`)
+  if (detail) parts.push(detail)
+  return parts.join(' · ')
+}
+
 export function buildProcessGroupSummary(blocks: SDKContentBlock[], isStreaming = false): string {
   return buildProcessActivityPresentation(blocks, new Map(), isStreaming).summary
 }
@@ -256,6 +300,9 @@ export function ProcessBlockGroup({
   isStreaming,
   isMessageTail = false,
   keepExpanded = false,
+  startedAt,
+  durationMs,
+  durationTooltip,
   processGroupId,
   onExpandedChange,
   toolPresentationIndex,
@@ -276,6 +323,7 @@ export function ProcessBlockGroup({
   const [expanded, setExpanded] = React.useState(autoExpanded)
   const [shouldRenderContent, setShouldRenderContent] = React.useState(autoExpanded)
   const [measuredHeight, setMeasuredHeight] = React.useState<number | undefined>(undefined)
+  const [currentTime, setCurrentTime] = React.useState(() => Date.now())
   const userToggledRef = React.useRef(false)
   const onExpandedChangeRef = React.useRef(onExpandedChange)
   onExpandedChangeRef.current = onExpandedChange
@@ -283,6 +331,13 @@ export function ProcessBlockGroup({
   React.useEffect(() => {
     if (!userToggledRef.current) setExpanded(autoExpanded)
   }, [autoExpanded])
+
+  React.useEffect(() => {
+    if (!isStreaming || startedAt == null) return
+    setCurrentTime(Date.now())
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [isStreaming, startedAt])
 
   React.useEffect(() => {
     if (processGroupId) onExpandedChangeRef.current?.(processGroupId, expanded)
@@ -322,6 +377,15 @@ export function ProcessBlockGroup({
   )
   const visibleToolNames = toolNames.slice(0, MAX_PROCESS_GROUP_ICONS)
   const hiddenToolCount = Math.max(0, toolNames.length - visibleToolNames.length)
+  const elapsedMs = isStreaming && startedAt != null
+    ? Math.max(0, currentTime - startedAt)
+    : undefined
+  const triggerLabel = buildWorkProcessTriggerLabel({
+    isStreaming: !!isStreaming,
+    summary: presentation.summary,
+    elapsedMs,
+    durationMs,
+  })
 
   // 流式时挂载完整分段过程；完成折叠后卸载明细 DOM，展开时再恢复。
   const childArray = React.Children.toArray(children)
@@ -360,60 +424,43 @@ export function ProcessBlockGroup({
 
   return (
     <div
-      className="space-y-1.5"
+      className={cn(
+        'my-3 border-b border-border/35 pb-2.5 pt-1',
+        expanded && 'space-y-2.5',
+      )}
       data-process-compact={!expanded ? 'true' : 'false'}
+      data-work-process-boundary="true"
     >
       <button
         type="button"
         aria-expanded={expanded}
         disabled={!!isStreaming}
+        title={!isStreaming ? durationTooltip : undefined}
+        data-work-process-trigger="true"
         className={cn(
-          'flex max-w-full items-center gap-2 py-0.5 text-left transition-opacity group motion-reduce:transition-none',
-          isStreaming ? 'cursor-default' : 'hover:opacity-70',
+          'group inline-flex max-w-full items-center gap-1.5 text-left motion-reduce:transition-none',
+          isStreaming ? 'cursor-default' : 'transition-colors hover:text-foreground',
         )}
         onClick={() => {
           userToggledRef.current = true
           setExpanded((current) => !current)
         }}
       >
+        <span
+          data-process-summary={isStreaming ? 'shimmer' : undefined}
+          data-work-process-trigger-label="true"
+          className="min-w-0 truncate text-[14px] font-light tabular-nums text-muted-foreground"
+        >
+          {triggerLabel}
+        </span>
+
         <ChevronRight
+          data-work-process-trigger-chevron="true"
           className={cn(
-            'size-3 shrink-0 text-muted-foreground/40 transition-transform duration-150 motion-reduce:transition-none',
+            'size-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-150 motion-reduce:transition-none',
             expanded && 'rotate-90',
           )}
         />
-
-        <span
-          data-process-summary={isStreaming ? 'shimmer' : undefined}
-          className="min-w-0 flex-1 truncate text-[14px] text-muted-foreground"
-        >
-          {presentation.summary}
-        </span>
-
-        {presentation.failedToolCount > 0 && (
-          <span className="flex shrink-0 items-center gap-1 text-[11px] text-destructive/75">
-            <AlertCircle className="size-3.5" />
-            {presentation.failedToolCount} 项失败
-          </span>
-        )}
-
-        {visibleToolNames.length > 0 && (
-          <span className="flex shrink-0 items-center gap-1 text-muted-foreground/55">
-            {visibleToolNames.map((toolName) => {
-              const ToolIcon = getToolIcon(toolName)
-              return (
-                <ToolIcon
-                  key={toolName}
-                  className="size-3.5"
-                  aria-label={getToolDisplayName(toolName)}
-                />
-              )
-            })}
-            {hiddenToolCount > 0 && (
-              <span className="text-[11px] tabular-nums text-muted-foreground/55">+{hiddenToolCount}</span>
-            )}
-          </span>
-        )}
       </button>
 
       {shouldRenderContent && (
@@ -428,7 +475,37 @@ export function ProcessBlockGroup({
               : `opacity ${PROCESS_GROUP_COLLAPSE_DURATION_MS}ms ease-out`,
           }}
         >
-          <div className="space-y-2">
+          <div className="space-y-2.5">
+            <div
+              className="flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground/65"
+              data-work-process-detail-summary="true"
+            >
+              <span className="min-w-0 flex-1 truncate">{presentation.summary}</span>
+              {presentation.failedToolCount > 0 && (
+                <span className="flex shrink-0 items-center gap-1 text-[11px] text-destructive/75">
+                  <AlertCircle className="size-3.5" />
+                  {presentation.failedToolCount} 项失败
+                </span>
+              )}
+              {visibleToolNames.length > 0 && (
+                <span className="flex shrink-0 items-center gap-1 text-muted-foreground/55">
+                  {visibleToolNames.map((toolName) => {
+                    const ToolIcon = getToolIcon(toolName)
+                    return (
+                      <ToolIcon
+                        key={toolName}
+                        className="size-3.5"
+                        aria-label={getToolDisplayName(toolName)}
+                      />
+                    )
+                  })}
+                  {hiddenToolCount > 0 && (
+                    <span className="text-[11px] tabular-nums text-muted-foreground/55">+{hiddenToolCount}</span>
+                  )}
+                </span>
+              )}
+            </div>
+
             {renderContentChildren()}
             {!isStreaming && (
               <button

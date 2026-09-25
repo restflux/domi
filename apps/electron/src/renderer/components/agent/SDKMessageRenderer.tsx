@@ -51,7 +51,7 @@ import {
 } from '@domi/session-core'
 export { groupIntoTurns, getGroupPreview, extractUserText } from '@domi/session-core'
 export type { MessageGroup, AssistantTurn } from '@domi/session-core'
-import { DurationBadge } from './AgentMessages'
+import { buildUsageTooltip, DurationBadge } from './AgentMessages'
 import {
   Message,
   MessageHeader,
@@ -530,7 +530,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
   }
 
   // 顶层任务进度由底部浮层统一呈现，不让 TaskCreate / TaskUpdate 继续参与消息区分组
-  // 和摘要计数，避免产生只有「执行过程」标题、没有明细的空记录。
+  // 和摘要计数，避免产生只有「工作过程」标题、没有明细的空记录。
   const renderableTopLevelBlocks = topLevelBlocks.filter((block) => (
     block.type !== 'tool_use' || !TASK_TOOL_NAMES.has((block as SDKToolUseBlock).name)
   ))
@@ -543,6 +543,8 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
   const renderItems = React.useMemo(() => {
     return buildAssistantTurnRenderItems(renderableTopLevelBlocks, { isStreaming })
   }, [renderableTopLevelBlocks, isStreaming])
+  const firstProcessGroupIndex = renderItems.findIndex((item) => item.type === 'process-group')
+  const hasProcessGroup = firstProcessGroupIndex >= 0
   const activityTailBlock = isStreaming
     ? findLatestVisibleActivityBlock(renderableTopLevelBlocks)
     : undefined
@@ -636,6 +638,11 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
                 isStreaming={isStreaming}
                 isMessageTail={itemIndex === renderItems.length - 1}
                 keepExpanded={!!stoppedByUser}
+                startedAt={itemIndex === firstProcessGroupIndex ? turn.createdAt : undefined}
+                durationMs={itemIndex === firstProcessGroupIndex ? durationMs : undefined}
+                durationTooltip={itemIndex === firstProcessGroupIndex && durationMs != null
+                  ? buildUsageTooltip(durationMs, usage)
+                  : undefined}
                 processGroupId={hasGeneratedImages ? processGroupId : undefined}
                 onExpandedChange={hasGeneratedImages ? handleProcessGroupExpandedChange : undefined}
                 toolPresentationIndex={effectiveToolPresentationIndex}
@@ -688,7 +695,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
           ? mainlineAssistants[mainlineAssistants.length - 1]?.uuid
           : undefined
         const hasActions = !!(textContent || (onFork && lastUuid) || (onForkToWorktree && lastUuid) || (onRewind && lastUuid))
-        const hasDuration = durationMs != null
+        const hasDuration = durationMs != null && !hasProcessGroup
         if (!hasDuration && !hasActions && !showStoppedBadge) return null
         return (
           <MessageActions className="mt-0.5 min-h-[28px] justify-start">
