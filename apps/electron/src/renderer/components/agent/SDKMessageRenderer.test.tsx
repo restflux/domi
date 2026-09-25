@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { SDKAssistantMessage, SDKMessage } from '@domi/shared'
+import type { SDKAssistantMessage, SDKMessage, SDKUserMessage } from '@domi/shared'
 import type { AssistantTurn } from '@domi/session-core'
 import { AssistantTurnRenderer, SDKMessageRenderer } from './SDKMessageRenderer.tsx'
 
@@ -21,6 +21,58 @@ describe('Worktree handoff notice', () => {
     expect(html).toContain('实现 Git 面板 (worktree)')
     expect(html).toContain('查看')
     expect(html).toContain('<button')
+  })
+})
+
+describe('Work 消息统一内容列', () => {
+  test('Given assistant turn When 渲染 Then 使用轻量元信息且正文不再预留头像栏', () => {
+    const assistant: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-unified-column',
+      parent_tool_use_id: null,
+      message: {
+        content: [{ type: 'text', text: '正文与输入框共用内容轴。' }],
+        model: 'test-model',
+      },
+    }
+    const turn: AssistantTurn = {
+      type: 'assistant-turn',
+      assistantMessages: [assistant],
+      turnMessages: [assistant],
+      model: 'test-model',
+      createdAt: 1,
+    }
+
+    const html = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={turn} allMessages={[assistant]} />,
+    )
+
+    expect(html).toContain('px-0')
+    expect(html).toContain('pl-0')
+    expect(html).toContain('text-[11px]')
+    expect(html).not.toContain('pl-[46px]')
+    expect(html).not.toContain('size-[35px]')
+  })
+
+  test('Given user input When 渲染 Then 气泡与操作在同一内容列内右对齐', () => {
+    const user: SDKUserMessage = {
+      type: 'user',
+      uuid: 'user-unified-column',
+      parent_tool_use_id: null,
+      message: {
+        content: [{ type: 'text', text: '右侧用户消息' }],
+      },
+    }
+
+    const html = renderToStaticMarkup(
+      <SDKMessageRenderer message={user} allMessages={[user]} />,
+    )
+
+    expect(html).toContain('items-end')
+    expect(html).toContain('justify-end')
+    expect(html).toContain('pl-0')
+    expect(html).not.toContain('pl-[46px]')
+    expect(html).not.toContain('size-[35px]')
   })
 })
 

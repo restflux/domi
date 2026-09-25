@@ -123,6 +123,10 @@ describe('WorktreeReviewCard sync explainability', () => {
     const html = renderToStaticMarkup(createElement(Provider, { store }, createElement(WorktreeReviewCard, { message, currentSessionId: 'session-1' })))
 
     expect(html).toContain('data-worktree-review-layout="split"')
+    expect(html).not.toContain('-mx-[22px]')
+    expect(html).not.toContain('md:-mx-[14px]')
+    expect(html).not.toContain('pl-[46px]')
+    expect(html).toContain('md:grid-cols-[minmax(0,1fr)_minmax(272px,34%)]')
     expect(html).toContain('data-worktree-review-section="summary"')
     expect(html).toContain('data-worktree-review-section="decision"')
     expect(html).toContain('Review 01')

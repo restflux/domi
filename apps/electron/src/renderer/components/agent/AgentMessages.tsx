@@ -1,5 +1,6 @@
 import { getSDKMessageStableKey, mergeAgentMessageTimeline } from '@/lib/agent-message-timeline'
-import { BrandLogo } from '@/components/ui/brand-logo'
+import { AGENT_CONTENT_GUTTER_CLASS } from './agent-layout'
+
 /**
  * AgentMessages — Agent 消息列表
  *
@@ -10,7 +11,7 @@ import { BrandLogo } from '@/components/ui/brand-logo'
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
-import { Bot, RotateCw, AlertTriangle, CheckCircle2, Ban, ChevronDown, ChevronRight } from 'lucide-react'
+import { RotateCw, AlertTriangle, CheckCircle2, Ban, ChevronDown, ChevronRight } from 'lucide-react'
 import { WelcomeEmptyState } from '@/components/welcome/WelcomeEmptyState'
 import { AgentBrowserLinkProvider } from '@/components/browser/AgentBrowserLinkProvider'
 import {
@@ -27,7 +28,7 @@ import { ScrollMinimap } from '@/components/ai-elements/scroll-minimap'
 import type { MinimapItem } from '@/components/ai-elements/scroll-minimap'
 import { buildStickyQuestionPreview, StickyUserMessage } from '@/components/ai-elements/sticky-user-message'
 import { formatMessageTime } from '@/components/chat/ChatMessageItem'
-import { getModelLogo, resolveModelDisplayName, resolveModelProvider } from '@/lib/model-logo'
+import { resolveModelDisplayName } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
 import { tabMinimapCacheAtom } from '@/atoms/tab-atoms'
 import { channelsAtom } from '@/atoms/chat-atoms'
@@ -210,24 +211,6 @@ interface AgentMessagesProps {
 /** 空状态回退；正常的新 Work 会话由 AgentView 展示独立启动面板。 */
 function EmptyState(): React.ReactElement {
   return <WelcomeEmptyState />
-}
-
-function AssistantLogo({ model }: { model?: string }): React.ReactElement {
-  const channels = useAtomValue(channelsAtom)
-  if (model) {
-    return (
-      <BrandLogo
-        src={getModelLogo(model, resolveModelProvider(model, channels))}
-        alt={model}
-        className="size-[35px] rounded-[25%] object-cover"
-      />
-    )
-  }
-  return (
-    <div className="size-[35px] rounded-[25%] bg-primary/10 flex items-center justify-center">
-      <Bot size={18} className="text-primary" />
-    </div>
-  )
 }
 
 /** 重试提示组件 - 折叠式 */
@@ -951,7 +934,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
           onLoad={handleAutoLoadHistory}
         />
         <PlanPreviewScrollControlProvider>
-          <ConversationContent>
+          <ConversationContent className={AGENT_CONTENT_GUTTER_CLASS}>
           {!hasContent && !streaming && !shouldRenderPendingPlan ? (
             <EmptyState />
           ) : (
@@ -1023,13 +1006,13 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
               {/* 无实时助手内容时：显示完整气泡（含头像/名称/时间） */}
               {/* 注意：工具活动已通过 SDK 渲染路径（liveGroups）展示 */}
               {!hasLiveAssistantContent && !suppressAgentRunning && ((streaming && showRunningIndicator) || retrying) && (
-                <Message from="assistant">
+                <Message from="assistant" className="px-0">
                   <MessageHeader
+                    compact
                     model={agentStreamingModel}
                     time={formatMessageTime(Date.now())}
-                    logo={<AssistantLogo model={streamingModelId} />}
                   />
-                  <MessageContent>
+                  <MessageContent className="pl-0">
                     {retrying && (
                       <RetryingNotice
                         retrying={retrying}

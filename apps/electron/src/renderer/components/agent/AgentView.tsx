@@ -120,6 +120,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { AGENT_CONTENT_GUTTER_CLASS } from './agent-layout'
 import { getActiveAccelerator, getAcceleratorDisplay } from '@/lib/shortcut-registry'
 import { registerShortcut } from '@/lib/shortcut-registry'
 import { supportsChannelPlanQuota } from '@/lib/channel-plan-quota'
@@ -4608,7 +4609,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
         {/* 输入区域 — 交互横幅显示时隐藏，由横幅替代；所有会话保持相同宽度。 */}
         {!hasBannerOverlay && (
-        <div className="px-2.5 pb-2.5 md:px-[18px] md:pb-[18px]">
+        <div className={cn(AGENT_CONTENT_GUTTER_CLASS, 'pb-2.5 md:pb-[18px]')}>
           {((!sessionTargetState.snapshot && sessionTargetState.loading) || workspaceSendDeferred) && (
             <div
               className="flex items-center justify-center gap-2 pb-2 text-xs text-muted-foreground"

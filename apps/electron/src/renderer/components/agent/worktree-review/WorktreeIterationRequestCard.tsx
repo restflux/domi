@@ -134,7 +134,7 @@ export function WorktreeIterationRequestCard({
   }
 
   return (
-    <div className="my-3 pl-[46px] pr-1" data-worktree-iteration-request-id={request.requestId}>
+    <div className="my-3" data-worktree-iteration-request-id={request.requestId}>
       <div className="mb-4 text-sm">
         <MessageResponse>{request.detailsMarkdown}</MessageResponse>
       </div>

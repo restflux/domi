@@ -1,7 +1,6 @@
 import { AttachedImageThumb } from './AttachedImageThumb'
 import { parseAttachedFiles, isImageFile, type AttachedFileRef, type QuotedFileRef } from '@/lib/message-attachments'
 export { parseAttachedFiles, isImageFile, type AttachedFileRef, type QuotedFileRef } from '@/lib/message-attachments'
-import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * SDKMessageRenderer — 渲染 SDKMessage 对象
  *
@@ -16,7 +15,7 @@ import { BrandLogo } from '@/components/ui/brand-logo'
  */
 
 import * as React from 'react'
-import { Bot, AlertTriangle, FileText, FileImage, Split, Undo2, RotateCw, Plus, Minimize2, Wrench, Settings, Cpu, ExternalLink, Quote, Clock, FolderInput, FolderPlus, FolderGit2, ListTodo, Paperclip, ChevronDown, ChevronUp } from 'lucide-react'
+import { AlertTriangle, FileText, FileImage, Split, Undo2, RotateCw, Plus, Minimize2, Wrench, Settings, Cpu, ExternalLink, Quote, Clock, FolderInput, FolderPlus, FolderGit2, ListTodo, Paperclip, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { cn } from '@/lib/utils'
 import { ImageLightbox, type LightboxImage } from '@/components/ui/image-lightbox'
@@ -63,14 +62,12 @@ import {
   UserMessageContent,
   TurnFileMapProvider,
 } from '@/components/ai-elements/message'
-import { UserAvatar } from '@/components/chat/UserAvatar'
 import { CopyButton } from '@/components/chat/CopyButton'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { formatMessageTime } from '@/components/chat/ChatMessageItem'
-import { getModelLogo, resolveModelDisplayName, resolveModelProvider } from '@/lib/model-logo'
-import { userProfileAtom } from '@/atoms/user-profile'
+import { resolveModelDisplayName } from '@/lib/model-logo'
 import { channelsAtom, modelSelectorOpenAtom } from '@/atoms/chat-atoms'
 import { agentSessionPendingFilesAtom, agentSessionsAtom, agentWorkspacesAtom } from '@/atoms/agent-atoms'
 import { activeSessionIdAtom } from '@/atoms/tab-atoms'
@@ -155,7 +152,7 @@ function PermissionDeniedNotice({ message }: { message: SDKSystemMessage }): Rea
   const reason = typeof message.decision_reason === 'string' ? message.decision_reason : undefined
 
   return (
-    <div className="my-3 pl-[46px] pr-1">
+    <div className="my-3">
       <div className="flex items-start gap-2.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-xs text-foreground/80">
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
         <div className="min-w-0 space-y-1">
@@ -188,7 +185,7 @@ function WorktreeHandoffNotice({ message }: { message: SDKSystemMessage }): Reac
   if (!childSessionId) return null
 
   return (
-    <div className="my-3 pl-[46px] pr-1">
+    <div className="my-3">
       <button
         type="button"
         className="flex w-full items-start gap-2.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2.5 text-left text-xs text-foreground/80 transition-colors hover:border-blue-500/35 hover:bg-blue-500/10"
@@ -237,7 +234,7 @@ function CompactStatusNotice({ message }: { message: SDKSystemMessage }): React.
   if (compactStatus === 'failed') {
     const error = typeof message.compact_error === 'string' ? message.compact_error : undefined
     return (
-      <div className="my-3 pl-[46px] pr-1">
+      <div className="my-3">
         <div className="flex items-start gap-2.5 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-xs text-foreground/80">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
           <div className="min-w-0 space-y-1">
@@ -301,26 +298,6 @@ function extractToolResultForTask(message: SDKUserMessage, resultBlock: SDKToolR
 }
 
 // isUserInputMessage 已迁移至 @domi/session-core
-
-// ===== 助手头像 =====
-
-function AssistantLogo({ model }: { model?: string }): React.ReactElement {
-  const channels = useAtomValue(channelsAtom)
-  if (model) {
-    return (
-      <BrandLogo
-        src={getModelLogo(model, resolveModelProvider(model, channels))}
-        alt={model}
-        className="size-[35px] rounded-[25%] object-cover"
-      />
-    )
-  }
-  return (
-    <div className="size-[35px] rounded-[25%] bg-primary/10 flex items-center justify-center">
-      <Bot size={18} className="text-primary" />
-    </div>
-  )
-}
 
 // AssistantTurn / MessageGroup 类型已迁移至 @domi/session-core
 
@@ -628,13 +605,13 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
   }
 
   return (
-    <Message from="assistant">
+    <Message from="assistant" className="px-0">
       <MessageHeader
+        compact
         model={turn.model ? resolveModelDisplayName(turn.model, channels) : undefined}
         time={turn.createdAt ? formatMessageTime(turn.createdAt) : undefined}
-        logo={<AssistantLogo model={turn.model} />}
       />
-      <MessageContent>
+      <MessageContent className="pl-0">
         <TurnFileMapProvider map={turnFileMap}>
         <div className={cn('space-y-2')}>
           {renderItems.map((item, itemIndex) => {
@@ -714,7 +691,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
         const hasDuration = durationMs != null
         if (!hasDuration && !hasActions && !showStoppedBadge) return null
         return (
-          <MessageActions className="pl-[46px] mt-0.5 min-h-[28px] justify-start">
+          <MessageActions className="mt-0.5 min-h-[28px] justify-start">
             {hasDuration && <DurationBadge durationMs={durationMs!} usage={usage} />}
             {textContent && <CopyButton content={textContent} />}
             {textContent && onCreateTodo && (
@@ -758,7 +735,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
         )
       })()}
       {showTurnGeneratedImages && (
-        <div className="pl-[46px] mt-1.5">
+        <div className="mt-1.5">
           <GeneratedImageStrip
             images={turnGeneratedImages}
             compact
@@ -827,15 +804,15 @@ export function SDKMessageRenderer({
     )
 
     return (
-      <Message from="assistant">
+      <Message from="assistant" className="px-0">
         {showHeader && (
           <MessageHeader
+            compact
             model={model ? resolveModelDisplayName(model, channels) : undefined}
             time={meta.createdAt ? formatMessageTime(meta.createdAt) : undefined}
-            logo={<AssistantLogo model={model} />}
           />
         )}
-        <MessageContent>
+        <MessageContent className="pl-0">
           <div className={cn('space-y-2')}>
             {blocks.map((block, i) => (
               <ContentBlock
@@ -1010,7 +987,6 @@ function UserAsideList({ asides }: { asides: NonNullable<SDKUserMessage['_asides
 }
 
 function UserInputMessage({ message }: { message: SDKUserMessage }): React.ReactElement {
-  const userProfile = useAtomValue(userProfileAtom)
   const rawText = extractUserText(message) ?? ''
   const isScheduledRun = rawText.includes(SCHEDULED_RUN_MARKER)
   const { files: attachedFiles, quotes, text } = parseAttachedFiles(stripScheduledRunMarker(rawText))
@@ -1073,24 +1049,18 @@ function UserInputMessage({ message }: { message: SDKUserMessage }): React.React
   )
 
   return (
-    <Message from="user">
-      <div className="flex items-start gap-2.5 mb-2.5">
-        <UserAvatar avatar={userProfile.avatar} size={35} />
-        <div className="flex flex-col justify-between h-[35px]">
-          <span className="text-sm font-semibold text-foreground/60 leading-none">{userProfile.userName}</span>
-          {(meta.createdAt || isScheduledRun) && (
-            <span className="flex items-center gap-2 leading-none">
-              {meta.createdAt && (
-                <span className="message-time text-[10px] text-foreground/[0.38]">{formatMessageTime(meta.createdAt)}</span>
-              )}
-              {isScheduledRun && (
-                <ScheduledRunBadge />
-              )}
-            </span>
+    <Message from="user" className="px-0">
+      {(meta.createdAt || isScheduledRun) && (
+        <div className="mb-1.5 flex items-center justify-end gap-2 leading-none">
+          {meta.createdAt && (
+            <span className="message-time text-[10px] text-foreground/[0.38]">{formatMessageTime(meta.createdAt)}</span>
+          )}
+          {isScheduledRun && (
+            <ScheduledRunBadge />
           )}
         </div>
-      </div>
-      <MessageContent>
+      )}
+      <MessageContent className="pl-0 group-[.is-user]:items-end">
         {message._asides && message._asides.length > 0 && <UserAsideList asides={message._asides} />}
         {/* 引用文件 Chip */}
         {quotes.length > 0 && (
@@ -1135,7 +1105,7 @@ function UserInputMessage({ message }: { message: SDKUserMessage }): React.React
         />
       )}
       {text && (
-        <MessageActions className="pl-[46px] mt-0.5">
+        <MessageActions className="mt-0.5 justify-end">
           <CopyButton content={text} />
         </MessageActions>
       )}
@@ -1419,17 +1389,13 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact, onReli
   const copyText = message.error?.message ?? 'Unknown error'
 
   return (
-    <Message from="assistant">
+    <Message from="assistant" className="px-0">
       <MessageHeader
-        model={undefined}
+        compact
+        model="运行错误"
         time={meta.createdAt ? formatMessageTime(meta.createdAt) : undefined}
-        logo={
-          <div className="size-[35px] rounded-[25%] bg-destructive/10 flex items-center justify-center">
-            <AlertTriangle size={18} className="text-destructive" />
-          </div>
-        }
       />
-      <MessageContent>
+      <MessageContent className="pl-0">
         <AssistantErrorTail
           message={message}
           onRetry={onRetry}
@@ -1440,7 +1406,7 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact, onReli
           standalone
         />
       </MessageContent>
-      <MessageActions className="pl-[46px] mt-0.5">
+      <MessageActions className="mt-0.5">
         <CopyButton content={copyText} />
       </MessageActions>
     </Message>

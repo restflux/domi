@@ -633,7 +633,7 @@ export function WorktreeReviewCard({
   }
 
   return (
-    <div className="my-3 pl-[46px] pr-1" data-worktree-review-id={notice.reviewId}>
+    <div className="my-3" data-worktree-review-id={notice.reviewId}>
       <div className="mb-4 text-sm">
         <MessageResponse>{notice.detailsMarkdown}</MessageResponse>
       </div>
@@ -658,7 +658,7 @@ export function WorktreeReviewCard({
             </Button>
           </div>
         ) : (
-        <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(248px,32%)]">
+        <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(272px,34%)]">
           <section data-worktree-review-section="summary" className="min-w-0 p-4 md:px-5 md:py-4">
             <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
               <span>Review {String(notice.review.iteration).padStart(2, '0')}</span>

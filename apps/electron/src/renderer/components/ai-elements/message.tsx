@@ -6,7 +6,7 @@
  *
  * 包含：
  * - Message — 根容器，`from` 属性区分 user/assistant
- * - MessageHeader — 头像 + 模型名
+ * - MessageHeader — 模型元信息（可选头像或紧凑布局）
  * - MessageContent — 内容区域
  * - MessageActions — 操作按钮容器
  * - MessageAction — 单个操作按钮（可选 Tooltip）
@@ -75,6 +75,8 @@ interface MessageHeaderProps extends HTMLAttributes<HTMLDivElement> {
   logo?: ReactNode
   /** 消息时间戳 */
   time?: string
+  /** 不占用头像栏的轻量元信息布局 */
+  compact?: boolean
 }
 
 /** 消息头部（user 时自动隐藏） */
@@ -82,6 +84,7 @@ export function MessageHeader({
   model,
   logo,
   time,
+  compact = false,
   className,
   children,
   ...props
@@ -89,8 +92,8 @@ export function MessageHeader({
   return (
     <div
       className={cn(
-        'flex items-start gap-2.5 mb-2.5',
-        'group-[.is-user]:hidden',
+        'flex group-[.is-user]:hidden',
+        compact ? 'min-h-5 items-center gap-2 mb-1.5' : 'items-start gap-2.5 mb-2.5',
         className
       )}
       {...props}
@@ -100,8 +103,11 @@ export function MessageHeader({
           {logo}
         </div>
       )}
-      <div className="flex flex-col justify-between h-[35px]">
-        {model && <span className="text-sm font-semibold text-foreground/60 leading-none">{model}</span>}
+      <div className={cn(
+        'flex',
+        compact ? 'h-auto flex-row items-center gap-2' : 'h-[35px] flex-col justify-between',
+      )}>
+        {model && <span className={cn('leading-none text-foreground/60', compact ? 'text-[11px] font-medium' : 'text-sm font-semibold')}>{model}</span>}
         {time && <span className="message-time text-[10px] text-foreground/[0.38] leading-none">{time}</span>}
       </div>
       {children}
