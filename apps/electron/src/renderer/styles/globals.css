@@ -3834,6 +3834,24 @@
   display: block;
 }
 
+/* Workbench v2 的左右 rail/section 表现借鉴 ZCode WorkspaceSidebar；不改变 Domi 会话模型。 */
+:root.ui-workbench-v2 .workbench-v2-sidebar .sidebar-modern-compact {
+  background: hsl(var(--sidebar-surface));
+}
+:root.ui-workbench-v2 .workbench-v2-sidebar .agent-project-item-current,
+:root.ui-workbench-v2 .workbench-v2-sidebar .sidebar-nav-entry-selected {
+  border-radius: 0.5rem;
+  background: hsl(var(--background));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+:root.ui-workbench-v2 .workbench-v2-sidebar .agent-project-session-list {
+  border-left: 1px solid hsl(var(--border) / 0.55);
+  padding-left: 0.4rem;
+}
+:root.ui-workbench-v2 .workbench-v2-sidebar .sidebar-hover-rail {
+  border-right: 1px solid hsl(var(--border) / 0.4);
+}
+
 /* ZCode styles.css 的运行中渐变文字，改用 Domi 主题 token；仅用于 Work V2 展示原语。 */
 .zcode-work-shimmer {
   display: inline-block;

@@ -204,8 +204,8 @@ export const DEFAULT_THEME_MODE: ThemeMode = 'dark'
 /** 默认特殊风格 */
 export const DEFAULT_THEME_STYLE: ThemeStyle = 'default'
 
-/** 界面风格：经典保留旧版视觉，现代使用当前更克制的 UI */
-export type InterfaceVariant = 'classic' | 'modern'
+/** 界面风格：v2 使用独立的 ZCode 风格 Workbench 呈现，保留旧版回退。 */
+export type InterfaceVariant = 'classic' | 'modern' | 'workbench-v2'
 
 /** 默认界面风格 */
 export const DEFAULT_INTERFACE_VARIANT: InterfaceVariant = 'modern'

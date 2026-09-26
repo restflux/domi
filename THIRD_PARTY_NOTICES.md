@@ -22,6 +22,15 @@ This list is a distribution notice, not a replacement for the complete license t
 
 Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 
+### ZCode Workbench UI and terminal helpers
+
+- Source: https://github.com/zai-org/ZCode, pinned at commit `29628c9acdb81b703bbd4080c207a0e7ce5e276e`.
+- Copyright 2026 Z.AI Co., Ltd. Licensed under Apache-2.0; full license at `third-party-licenses/ZCode-Apache-2.0.txt` (shipped with the desktop app).
+- Copied and adapted code: `packages/ui/src/terminal/terminalLinks.ts`, `terminalTheme.ts`, `terminalDataTransform.ts` → `apps/electron/src/renderer/components/terminal/v2/`. The v2 terminal session and dock also adapt ZCode's xterm presentation, clipboard, input fallback and persistent tab lifecycle, but use Domi's owner-bound PTY/IPC rather than ZCode's terminal runtime.
+- UI adaptations: ZCode `packages/ui/src/EmbeddedBrowserPaneParts.tsx` BrowserToolbar/BrowserEmptyState and responsive viewport controls → `apps/electron/src/renderer/components/browser/v2/zcode/`; `packages/ui/src/WorkspaceSidebar/WorkspacePurposeSection.tsx`, `WorkspaceSidebarCollapsedRail.tsx`, and workspace list presentation → `apps/electron/src/renderer/components/app-shell/v2/zcode/`; `AnimatedSidePanePanel.tsx` open-tab launcher and side-pane/terminal tab interaction patterns → `apps/electron/src/renderer/components/right-workspace/v2/zcode/` and `terminal/v2/zcode/`. Adapted components change state wiring, icons and text where needed; they are **not** verbatim copies of ZCode's full workspace/browser/terminal subsystems. Browser pages remain Domi Main-owned `WebContentsView` with Domi browser IPC, not ZCode's `<webview>` or page service; ZCode's Agent runtime, artwork and additional third-party assets are not imported.
+- These files were modified to integrate Domi's React/Jotai state, accessibility, product copy and Main-owned resources. ZCode's own `NOTICE.md` refers to additional third-party assets which are not copied as part of this v2.
+- New runtime UI dependencies: `@dnd-kit/core@6.3.1`, `@dnd-kit/sortable@10.0.0`, `@dnd-kit/utilities@3.2.2` (MIT, © 2021 Claudéric Demers; https://github.com/clauderic/dnd-kit) and `@xterm/addon-clipboard@0.2.0` (MIT, © 2023 xterm.js authors; https://github.com/xtermjs/xterm.js). Their package license texts are retained in the installed dependency tree; pinned versions are in `bun.lock`.
+
 ### Percho startup animation
 
 - Source: https://github.com/Jaxton07/percho (`packages/desktop/src/renderer/src/styles/splash.css`, `splash-dom.ts`, `splash.ts`)

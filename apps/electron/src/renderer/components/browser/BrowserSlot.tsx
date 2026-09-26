@@ -2,6 +2,8 @@ import * as React from 'react'
 import type { BrowserSessionView } from '@domi/shared'
 import { nextBrowserLayoutRevision } from './browser-layout-revision.ts'
 import { rectanglesOverlap } from './browser-overlay-policy.ts'
+import { hasBrowserOverlayMutation } from './browser-overlay-mutation.ts'
+import { shouldPublishBrowserLayout, type BrowserLayoutSnapshot } from './browser-layout-snapshot.ts'
 
 export function BrowserSlot({ state }: { state: BrowserSessionView }): React.ReactElement {
   const ref = React.useRef<HTMLDivElement>(null)
@@ -11,16 +13,14 @@ export function BrowserSlot({ state }: { state: BrowserSessionView }): React.Rea
     const element = ref.current
     if (!element || !pageId) return
     let frame = 0
+    let overlaySettleTimer: ReturnType<typeof setTimeout> | undefined
+    let lastPublished: BrowserLayoutSnapshot | null = null
 
     const publish = (visible: boolean, immediate = false): void => {
       const commit = (): void => {
         frame = 0
         const rect = element.getBoundingClientRect()
-        void window.electronAPI.browser.setLayout({
-          ownerSessionId: state.ownerSessionId,
-          browserSessionId: state.browserSessionId,
-          pageId,
-          revision: nextBrowserLayoutRevision(),
+        const next: BrowserLayoutSnapshot = {
           visible: visible
             && document.visibilityState === 'visible'
             && !isObscuredByAppOverlay(element, rect)
@@ -32,7 +32,20 @@ export function BrowserSlot({ state }: { state: BrowserSessionView }): React.Rea
             width: Math.max(0, Math.round(rect.width)),
             height: Math.max(0, Math.round(rect.height)),
           },
-        }).catch((error) => console.warn('[浏览器] 同步原生视图布局失败:', error))
+        }
+        if (!shouldPublishBrowserLayout(lastPublished, next)) return
+        lastPublished = next
+        void window.electronAPI.browser.setLayout({
+          ownerSessionId: state.ownerSessionId,
+          browserSessionId: state.browserSessionId,
+          pageId,
+          revision: nextBrowserLayoutRevision(),
+          ...next,
+        }).catch((error) => {
+          // 失败的原生布局并未生效；下一次可见性或尺寸事件仍须重试相同快照。
+          if (lastPublished === next) lastPublished = null
+          console.warn('[浏览器] 同步原生视图布局失败:', error)
+        })
       }
       if (frame) cancelAnimationFrame(frame)
       if (immediate) commit()
@@ -40,7 +53,15 @@ export function BrowserSlot({ state }: { state: BrowserSessionView }): React.Rea
     }
 
     const observer = new ResizeObserver(() => publish(true))
-    const overlayObserver = new MutationObserver(() => publish(true))
+    const overlayObserver = new MutationObserver((records) => {
+      if (!hasBrowserOverlayMutation(records)) return
+      publish(true)
+      // Radix portal 初次挂载时仍可能处于动画起点；其位置变化不会再触发 DOM mutation。
+      if (!overlaySettleTimer) overlaySettleTimer = setTimeout(() => {
+        overlaySettleTimer = undefined
+        publish(true)
+      }, 240)
+    })
     const handleWindowLayout = (): void => publish(true)
     const handleVisibility = (): void => publish(document.visibilityState === 'visible', true)
     observer.observe(element)
@@ -55,6 +76,7 @@ export function BrowserSlot({ state }: { state: BrowserSessionView }): React.Rea
       window.removeEventListener('resize', handleWindowLayout)
       document.removeEventListener('visibilitychange', handleVisibility)
       if (frame) cancelAnimationFrame(frame)
+      if (overlaySettleTimer) clearTimeout(overlaySettleTimer)
       void window.electronAPI.browser.setLayout({
         ownerSessionId: state.ownerSessionId,
         browserSessionId: state.browserSessionId,

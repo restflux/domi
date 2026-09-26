@@ -54,7 +54,7 @@ function getCachedThemeStyle(): ThemeStyle {
 function getCachedInterfaceVariant(): InterfaceVariant {
   try {
     const cached = localStorage.getItem(INTERFACE_VARIANT_CACHE_KEY)
-    if (cached === 'classic' || cached === 'modern') {
+    if (cached === 'classic' || cached === 'modern' || cached === 'workbench-v2') {
       return cached
     }
   } catch {
@@ -123,7 +123,7 @@ export const resolvedThemeAtom = atom<'light' | 'dark'>((get) => {
 })
 
 /** 信息层级属于现代界面结构，不随浅色、深色或特殊主题切换而变化。 */
-export const isModernInterfaceAtom = atom<boolean>((get) => get(interfaceVariantAtom) === 'modern')
+export const isModernInterfaceAtom = atom<boolean>((get) => get(interfaceVariantAtom) !== 'classic')
 
 /** 所有特殊风格 class（用于清理旧值）— 从 THEME_STYLES 单一源派生，排除 'default' */
 const ALL_THEME_STYLE_CLASSES = THEME_STYLES
@@ -191,14 +191,11 @@ export function applyInterfaceVariantToDOM(variant: InterfaceVariant = DEFAULT_I
       ? 'ui-modern'
       : null
 
-  if (currentClass === targetClass) {
-    return
+  if (currentClass !== targetClass) {
+    if (currentClass) html.classList.remove(currentClass)
+    html.classList.add(targetClass)
   }
-
-  if (currentClass) {
-    html.classList.remove(currentClass)
-  }
-  html.classList.add(targetClass)
+  html.classList.toggle('ui-workbench-v2', variant === 'workbench-v2')
 }
 
 /**

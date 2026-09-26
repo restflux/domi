@@ -272,9 +272,9 @@ Domi 没有 updater atom；不要新增或恢复指向 Proma 官方更新通道�
 - **`chat/`**：聊天核心 — ChatView（消息加载/流式订阅）、ChatHeader（模型选择/上下文设置）、ChatInput（Tiptap 富文本编辑器）、ChatMessages（消息列表/自动滚动）、ParallelChatMessages（并排模式）
 - **`agent/`**：Work 模式 — AgentView（纯展示 + 交互，IPC 监听已提升到全局）、AgentHeader（渠道/模型选择）、AgentMessages（消息列表 + 工具活动）、ToolActivityItem（工具调用展示）、WorkspaceSelector（工作区切换）、PermissionBanner/AskUserBanner（权限/问答请求 UI）
 - **`settings/`**：设置面板 — GeneralSettings（用户档案）、AppearanceSettings（主题）、ChannelSettings（渠道管理）、ChannelForm（Provider 配置）、AgentSettings（Agent 渠道/工作区/MCP）、McpServerForm（MCP 服务器配置）、AboutSettings（版本、环境与手动更新说明）、FeishuSettings（飞书集成）；含 `primitives/` 可复用表单组件
-- **`right-workspace/`**：右侧工作区 — RightWorkspaceToolbar（未选中时显示紧凑图标，活动工具平滑展开名称，窄宽度收纳到“更多”菜单）、RightWorkspaceHeader（上下文标题、文件来源、草稿聚焦与动态关闭）；整区折叠入口固定在 MainArea 右上角，按 Work Session 隔离活动工具和 Preview 返回目标，草稿正文继续全局持久化，Browser 切换仅隐藏原生 View，显式关闭才释放 Session
+- **`right-workspace/`**：右侧工作区 — RightWorkspaceToolbar（旧版：紧凑图标与窄宽度“更多”菜单；v2：独立扁平工具标签）、RightWorkspaceHeader（上下文标题、文件来源、草稿聚焦与动态关闭）；整区折叠入口固定在 MainArea 右上角，按 Work Session 隔离活动工具和 Preview 返回目标，草稿正文继续全局持久化，Browser 切换仅隐藏原生 View，显式关闭才释放 Session。外观 `interfaceVariant: workbench-v2` 一次切换左侧栏、右侧标签、终端和浏览器呈现；底层 Jotai Session/Browser/Terminal 状态及 Main 所有权不切换。
 - **`file-browser/`**：文件浏览器 — FileBrowser（会话文件与项目根目录文件树浏览）
-- **`terminal/`**：底部内置终端 — xterm Dock、多终端 Tab、用户 Shell 与 Agent Run 状态展示；文件树/改动目录可按授权 cwd 打开，完成的 Agent Tab 仅在同 Session/Target revision/cwd/profile 下复用；Main/utility process 持有 PTY
+- **`terminal/`**：底部内置终端 — xterm Dock、多终端 Tab、用户 Shell 与 Agent Run 状态展示；文件树/改动目录可按授权 cwd 打开，完成的 Agent Tab 仅在同 Session/Target revision/cwd/profile 下复用；Main/utility process 持有 PTY。`terminal/v2/` 移植 ZCode 的链接、主题与 PowerShell 重绘算法，只替换 UI，不移植 PTY runtime。
 - **`ai-elements/`**：AI 展示组件 — Markdown 渲染、代码块、Mermaid 图、推理折叠、上下文分割线、富文本输入
 - **`ui/`**：Radix UI 组件（现代化设计，CSS 变量主题）
 

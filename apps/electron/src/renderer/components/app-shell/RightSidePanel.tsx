@@ -11,6 +11,7 @@ import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import { appModeAtom } from '@/atoms/app-mode'
+import { interfaceVariantAtom } from '@/atoms/theme'
 import {
   agentDiffPanelTabAtom,
   agentDiffUnseenChangesAtom,
@@ -48,12 +49,16 @@ import { detectIsWindows } from '@/lib/platform'
 import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 import { SidePanel } from '@/components/agent/SidePanel'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
+import { BrowserPanelV2 } from '@/components/browser/v2/BrowserPanelV2'
 import { TerminalPane } from '@/components/terminal/TerminalPane.tsx'
+import { TerminalSession } from '@/components/terminal/v2/zcode/TerminalSession.tsx'
 import { selectWorkspaceTerminals } from '@/components/terminal/terminal-dock-model.ts'
 import { PreviewTabContent } from '@/components/diff/PreviewTabContent'
 import { ScratchPadWorkspace } from '@/components/scratch-pad/ScratchPadView'
 import { RightWorkspaceHeader } from '@/components/right-workspace/RightWorkspaceHeader'
 import { RightWorkspaceToolbar, type RightWorkspaceToolbarTab } from '@/components/right-workspace/RightWorkspaceToolbar'
+import { RightWorkspaceToolbarV2 } from '@/components/right-workspace/v2/RightWorkspaceToolbarV2'
+import { SidePaneOpenTabLauncher } from '@/components/right-workspace/v2/zcode/SidePaneOpenTabLauncher'
 import { RightWorkspaceTitlebarDragRegion } from '@/components/right-workspace/RightWorkspaceTitlebarDragRegion'
 
 function getPreviewTitle(filePath: string | undefined): string | undefined {
@@ -77,7 +82,7 @@ function resolveAvailableTabId(
   const requested = state.activeTabId ?? state.activeTool
   if (tabs.some((tab) => tab.id === requested)) return requested
   if (state.previousTabId && tabs.some((tab) => tab.id === state.previousTabId)) return state.previousTabId
-  return 'files'
+  return tabs[0]?.id ?? 'files'
 }
 
 export function RightSidePanel({ width }: { width?: number | string }): React.ReactElement | null {
@@ -94,6 +99,7 @@ function ActiveRightSidePanel({
   currentSessionId: string
   width?: number | string
 }): React.ReactElement {
+  const isWorkbenchV2 = useAtomValue(interfaceVariantAtom) === 'workbench-v2'
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
   const legacyTabMap = useAtomValue(agentDiffPanelTabAtom)
   const setLegacyTabMap = useSetAtom(agentDiffPanelTabAtom)
@@ -150,7 +156,10 @@ function ActiveRightSidePanel({
     ...(previewFile ? [{ id: 'preview' as const, tool: 'preview' as const, label: getPreviewTitle(previewFile.filePath) ?? '预览', closeable: true }] : []),
     ...((sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) ? [{ id: 'side-chat' as const, tool: 'side-chat' as const, label: '侧边聊天', closeable: true }] : []),
   ]
-  const activeTabId = resolveAvailableTabId(state, tabs)
+  // v2 不把旧文件/改动面板充作 ZCode 右侧工作区的默认页；v1 标签与内容保持原样。
+  const visibleTabs = isWorkbenchV2 ? tabs.filter((tab) => tab.tool !== 'files' && tab.tool !== 'changes') : tabs
+  const showV2Launcher = isWorkbenchV2 && visibleTabs.length === 0
+  const activeTabId = resolveAvailableTabId(state, visibleTabs)
   const activeTool = toolFromRightWorkspaceTab(activeTabId)
   const activeBrowserSessionId = browserSessionIdFromTab(activeTabId)
   const activeTerminalId = terminalIdFromTab(activeTabId)
@@ -218,7 +227,7 @@ function ActiveRightSidePanel({
       create: (input) => window.electronAPI.terminal.create(input),
       onError: (error) => {
         console.error('[RightSidePanel] 创建终端失败:', error)
-        toast.error('创建终端失败')
+        toast.error('创建终端失败', isWorkbenchV2 ? { description: error instanceof Error ? error.message : '请确认当前会话已选择目标。' } : undefined)
       },
     }, {
       ownerSessionId: currentSessionId,
@@ -226,7 +235,7 @@ function ActiveRightSidePanel({
       cols: 80,
       rows: 28,
     })
-  }, [currentSessionId])
+  }, [currentSessionId, isWorkbenchV2])
 
   const addBrowser = (): void => {
     void window.electronAPI.browser.open({ ownerSessionId: currentSessionId, disposition: 'new-tab' })
@@ -236,7 +245,7 @@ function ActiveRightSidePanel({
       })
       .catch((error: unknown) => {
         console.error('[RightSidePanel] 新建浏览器失败:', error)
-        toast.error('新建浏览器失败')
+        toast.error('新建浏览器失败', isWorkbenchV2 ? { description: error instanceof Error ? error.message : '请确认当前会话已选择目标。' } : undefined)
       })
   }
 
@@ -296,13 +305,14 @@ function ActiveRightSidePanel({
   }
 
   const sidePanelTab: AgentSidePanelTab = activeTool === 'side-chat' ? 'chat' : activeTool === 'changes' ? 'changes' : 'files'
+  const Toolbar = isWorkbenchV2 ? RightWorkspaceToolbarV2 : RightWorkspaceToolbar
 
   return (
     <div className="relative flex h-full min-w-0 shrink-0 overflow-hidden bg-content-area titlebar-no-drag" style={width ? { width } : undefined}>
       <RightWorkspaceTitlebarDragRegion isWindows={isWindows} />
       <div className={isWindows ? 'flex h-full min-w-0 flex-1 flex-col pt-[34px]' : 'flex h-full min-w-0 flex-1 flex-col'}>
-        <RightWorkspaceToolbar
-          tabs={tabs}
+        <Toolbar
+          tabs={visibleTabs}
           activeTabId={activeTabId}
           scratchVisible={state.scratchVisible ?? false}
           hasUnseenChanges={unseenChangesMap.get(currentSessionId) ?? false}
@@ -315,13 +325,17 @@ function ActiveRightSidePanel({
           onShowScratch={showScratch}
           onToggleExpand={() => setWorkspaceFocus((current) => toggleRightWorkspaceFocus(current, currentSessionId, activeTabId))}
         />
-        <RightWorkspaceHeader activeTool={activeTool} previewTitle={getPreviewTitle(previewFile?.filePath)} fileSourceFilter={fileSourceFilter} scratchSaveState={scratchSaveState} onFileSourceFilterChange={setFileSourceFilter} />
+        {(!isWorkbenchV2 || (!showV2Launcher && !['browser', 'terminal'].includes(activeTool))) && <RightWorkspaceHeader activeTool={activeTool} previewTitle={getPreviewTitle(previewFile?.filePath)} fileSourceFilter={fileSourceFilter} scratchSaveState={scratchSaveState} onFileSourceFilterChange={setFileSourceFilter} />}
         <div className="min-h-0 flex-1 overflow-hidden titlebar-no-drag">
-          {activeTool === 'browser' && activeBrowserSessionId ? (
-            <BrowserPanel ownerSessionId={currentSessionId} browserSessionId={activeBrowserSessionId} />
-          ) : activeTool === 'terminal' && activeTerminal ? (
+          {showV2Launcher ? (
+            <SidePaneOpenTabLauncher onOpenBrowser={addBrowser} onOpenTerminal={() => void createWorkspaceTerminal()} />
+          ) : activeTool === 'browser' && activeBrowserSessionId ? (
+            isWorkbenchV2
+              ? <BrowserPanelV2 ownerSessionId={currentSessionId} browserSessionId={activeBrowserSessionId} />
+              : <BrowserPanel ownerSessionId={currentSessionId} browserSessionId={activeBrowserSessionId} />
+          ) : activeTool === 'terminal' && activeTerminal && !isWorkbenchV2 ? (
             <TerminalPane terminal={activeTerminal} />
-          ) : activeTool === 'preview' ? (
+          ) : activeTool === 'terminal' && isWorkbenchV2 ? null : activeTool === 'preview' ? (
             <PreviewTabContent sessionId={currentSessionId} mode="workspace" />
           ) : activeTool === 'side-chat' ? (
             <SideChatPanel key={currentSessionId} parentSessionId={currentSessionId} />
@@ -330,6 +344,11 @@ function ActiveRightSidePanel({
           ) : (
             <SidePanel sessionId={currentSessionId} sessionPath={sessionPath} activeTab={sidePanelTab} onTabChange={(tab) => setActiveTool(fromLegacyTab(tab))} embedded hideTabBar />
           )}
+          {isWorkbenchV2 && tabs.filter((tab) => tab.tool === 'terminal').map((tab) => {
+            const terminalId = terminalIdFromTab(tab.id)
+            const session = terminalId ? terminalStates.get(terminalId) : undefined
+            return session ? <div key={tab.id} className={activeTabId === tab.id ? 'h-full' : 'hidden'}><TerminalSession terminal={session} visible={activeTabId === tab.id} /></div> : null
+          })}
         </div>
       </div>
     </div>

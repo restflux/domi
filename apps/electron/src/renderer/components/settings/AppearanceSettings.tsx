@@ -56,6 +56,7 @@ const THEME_OPTIONS = [
 const INTERFACE_VARIANT_OPTIONS: { value: InterfaceVariant; label: string }[] = [
   { value: 'classic', label: '经典' },
   { value: 'modern', label: '现代' },
+  { value: 'workbench-v2', label: '工作台 v2' },
 ]
 
 /** Markdown 字号选项 */
@@ -224,7 +225,7 @@ export function AppearanceSettings(): React.ReactElement {
 
           <SettingsSegmentedControl
             label="界面风格"
-            description="经典风保留旧版视觉；现代风使用更小圆角、更清晰分割线达成更统一干净的质感"
+            description="经典与现代保留原布局；工作台 v2 提供独立的侧栏、终端与浏览器体验，可随时切回"
             value={interfaceVariant}
             onValueChange={handleInterfaceVariantChange}
             options={INTERFACE_VARIANT_OPTIONS}

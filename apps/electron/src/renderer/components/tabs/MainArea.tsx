@@ -23,6 +23,7 @@ import { AutomationFormView } from '@/components/automation/AutomationFormView'
 import { WorkActivityView } from '@/components/work-activity/WorkActivityView'
 import { AgentSkillsView } from '@/components/agent-skills/AgentSkillsView'
 import { TerminalDock } from '@/components/terminal/TerminalDock.tsx'
+import { TerminalDockV2 } from '@/components/terminal/v2/TerminalDockV2.tsx'
 import { cn } from '@/lib/utils'
 
 export function MainArea(): React.ReactElement {
@@ -67,7 +68,9 @@ export function MainArea(): React.ReactElement {
                 <WelcomeView />
               )}
               {activeTab?.type === 'agent' && (
-                <TerminalDock ownerSessionId={activeTab.sessionId} />
+                interfaceVariant === 'workbench-v2'
+                  ? <TerminalDockV2 ownerSessionId={activeTab.sessionId} />
+                  : <TerminalDock ownerSessionId={activeTab.sessionId} />
               )}
             </>
           )}

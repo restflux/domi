@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveTerminalCwd } from './terminal-cwd-policy.ts'
@@ -10,7 +10,8 @@ afterEach(() => {
 })
 
 function tempRoot(): string {
-  const path = mkdtempSync(join(tmpdir(), 'domi-terminal-cwd-'))
+  // macOS 的 tmpdir() 可能使用 /var，而 realpathSync 会解析为 /private/var；测试根也需规范化。
+  const path = realpathSync(mkdtempSync(join(tmpdir(), 'domi-terminal-cwd-')))
   cleanup.push(path)
   return path
 }

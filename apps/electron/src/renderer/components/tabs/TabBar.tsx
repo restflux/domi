@@ -53,7 +53,7 @@ import { canCloseMainTab } from '@/lib/tab-close-policy.ts'
 import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 
 export function TabBar(): React.ReactElement {
-  const isModern = useAtomValue(interfaceVariantAtom) === 'modern'
+  const isModern = useAtomValue(interfaceVariantAtom) !== 'classic'
   const tabs = useAtomValue(tabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
   const indicatorMap = useAtomValue(tabIndicatorMapAtom)
@@ -225,7 +225,7 @@ function TabBarInner({
   const fadeTimerRef = React.useRef<ReturnType<typeof setTimeout>>()
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const isMac = React.useMemo(() => detectIsMac(), [])
-  const isModern = useAtomValue(interfaceVariantAtom) === 'modern'
+  const isModern = useAtomValue(interfaceVariantAtom) !== 'classic'
   const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
   const insetForWindowControls = shouldInsetMacCollapsedTabs(isMac, isModern, sidebarCollapsed)
 
