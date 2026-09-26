@@ -10,6 +10,7 @@ import {
   DEFAULT_SESSION_FILES_POPOVER_OPEN,
   positionSessionFilesPopover,
   resolveRightWorkspaceToolAfterSessionFilesClose,
+  resolveSessionFilesConversationReservation,
   selectConfirmedSessionOutputs,
   selectSessionFileSources,
   shouldCloseSessionFilesPopoverOnPointerDown,
@@ -77,23 +78,24 @@ describe('会话文件浮窗入口', () => {
     expect(html).not.toContain('/source/参考.pdf</span>')
   })
 
-  test('Given 浮窗已经展开 When 点击卡片外层 Then 关闭浮窗；点击入口或卡片内部则保持', () => {
+  test('Given 右侧栏收起且卡片已展开 When 点击消息或输入框 Then 保持浮窗打开', () => {
     expect(shouldCloseSessionFilesPopoverOnPointerDown({
-      insideTrigger: false,
-      insidePanel: false,
+      rightWorkspaceOpen: false, insideTrigger: false, insidePanel: false,
+    })).toBe(false)
+  })
+
+  test('Given 右侧栏打开后手动展开浮窗 When 点击外层 Then 关闭；点击入口、卡片或弹出菜单则保持', () => {
+    expect(shouldCloseSessionFilesPopoverOnPointerDown({
+      rightWorkspaceOpen: true, insideTrigger: false, insidePanel: false,
     })).toBe(true)
     expect(shouldCloseSessionFilesPopoverOnPointerDown({
-      insideTrigger: true,
-      insidePanel: false,
+      rightWorkspaceOpen: true, insideTrigger: true, insidePanel: false,
     })).toBe(false)
     expect(shouldCloseSessionFilesPopoverOnPointerDown({
-      insideTrigger: false,
-      insidePanel: true,
+      rightWorkspaceOpen: true, insideTrigger: false, insidePanel: true,
     })).toBe(false)
     expect(shouldCloseSessionFilesPopoverOnPointerDown({
-      insideTrigger: false,
-      insidePanel: false,
-      insideOverlay: true,
+      rightWorkspaceOpen: true, insideTrigger: false, insidePanel: false, insideOverlay: true,
     })).toBe(false)
   })
 
@@ -136,6 +138,17 @@ describe('会话文件浮窗入口', () => {
     })
     expect(narrow).toEqual({ top: 54, right: 495, width: 173 })
     expect(800 - narrow.right - narrow.width).toBeGreaterThanOrEqual(120)
+  })
+
+  test('Given 浮窗按主内容区定位 When 空间充足才为消息列预留卡片宽度', () => {
+    // 按卡片实际右缘到主内容区右缘的距离计算，不能只留卡片宽度。
+    expect(resolveSessionFilesConversationReservation(1200, 300, 45, false)).toBe(369)
+    expect(resolveSessionFilesConversationReservation(1009, 300, 45, false)).toBe(369)
+    expect(resolveSessionFilesConversationReservation(1008, 300, 45, false)).toBe(0)
+    expect(resolveSessionFilesConversationReservation(800, 300, 45, false)).toBe(0)
+    expect(resolveSessionFilesConversationReservation(900, 0, 45, false)).toBe(0)
+    // 右侧栏打开时，即使主区足够宽且手动重开卡片，也只作为不占位的浮层。
+    expect(resolveSessionFilesConversationReservation(1200, 300, 45, true)).toBe(0)
   })
 
   test('Given 会话文件浮窗正在展示 When 打开完整右侧栏 Then 关闭浮窗并转到改动，不把文件恢复进侧栏', () => {

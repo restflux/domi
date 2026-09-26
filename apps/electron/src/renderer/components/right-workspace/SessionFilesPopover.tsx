@@ -13,6 +13,7 @@ import {
   activateSessionRightWorkspaceTool,
   rightWorkspaceOpenAtom,
   rightWorkspaceSessionStateMapAtom,
+  sessionFilesPopoverReservationMapAtom,
 } from '@/atoms/right-workspace-atoms'
 import { SessionFilesCard } from './SessionFilesCard'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ import {
   DEFAULT_SESSION_FILES_POPOVER_OPEN,
   positionSessionFilesPopover,
   resolveRightWorkspaceToolAfterSessionFilesClose,
+  resolveSessionFilesConversationReservation,
   shouldCloseSessionFilesPopoverOnPointerDown,
 } from './session-files-popover-model'
 
@@ -34,6 +36,7 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
   const setRightWorkspaceSessionStateMap = useSetAtom(rightWorkspaceSessionStateMapAtom)
   const setRightWorkspaceOpen = useSetAtom(rightWorkspaceOpenAtom)
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
+  const setReservationMap = useSetAtom(sessionFilesPopoverReservationMapAtom)
   const viewAllRef = React.useRef(false)
   const [open, setOpen] = React.useState(DEFAULT_SESSION_FILES_POPOVER_OPEN)
   const [position, setPosition] = React.useState<ReturnType<typeof positionSessionFilesPopover> | null>(null)
@@ -61,14 +64,28 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
   }, [rightWorkspaceOpen, sessionId, setRightWorkspaceSessionStateMap])
 
   React.useEffect(() => {
+    const updateReservation = (width: number): void => {
+      setReservationMap((current) => {
+        if ((current.get(sessionId) ?? 0) === width) return current
+        const next = new Map(current)
+        if (width > 0) next.set(sessionId, width)
+        else next.delete(sessionId)
+        return next
+      })
+    }
     if (!open) {
       setPosition(null)
+      updateReservation(0)
       return
     }
 
     const trigger = triggerRef.current
     const main = trigger?.closest('.main-tabbar')
-    if (!trigger || !main) return
+    if (!trigger || !main) {
+      setPosition(null)
+      updateReservation(0)
+      return
+    }
     const updatePosition = (): void => {
       const triggerRect = trigger.getBoundingClientRect()
       const mainRect = main.getBoundingClientRect()
@@ -82,6 +99,8 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
       })
       setPosition((previous) => previous?.top === next.top && previous.right === next.right && previous.width === next.width
         ? previous : next)
+      const cardRightInset = Math.max(0, mainRect.right - (window.innerWidth - next.right))
+      updateReservation(resolveSessionFilesConversationReservation(mainRect.width, next.width, cardRightInset, rightWorkspaceOpen))
     }
     updatePosition()
     window.addEventListener('resize', updatePosition)
@@ -92,7 +111,16 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
       window.removeEventListener('resize', updatePosition)
       observer?.disconnect()
     }
-  }, [open, rightWorkspaceOpen, sessionId])
+  }, [open, rightWorkspaceOpen, sessionId, setReservationMap])
+
+  React.useEffect(() => () => {
+    setReservationMap((current) => {
+      if (!current.has(sessionId)) return current
+      const next = new Map(current)
+      next.delete(sessionId)
+      return next
+    })
+  }, [sessionId, setReservationMap])
 
   React.useEffect(() => {
     if (!open) return
@@ -100,6 +128,7 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
     const handlePointerDown = (event: PointerEvent): void => {
       if (!(event.target instanceof Node)) return
       const shouldClose = shouldCloseSessionFilesPopoverOnPointerDown({
+        rightWorkspaceOpen,
         insideTrigger: triggerRef.current?.contains(event.target) ?? false,
         insidePanel: panelRef.current?.contains(event.target) ?? false,
         insideOverlay: event.target instanceof Element && Boolean(event.target.closest(
@@ -118,7 +147,7 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open])
+  }, [open, rightWorkspaceOpen])
 
   const viewAll = (): void => {
     viewAllRef.current = !rightWorkspaceOpen

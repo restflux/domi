@@ -77,6 +77,17 @@ export function positionSessionFilesPopover(anchor: SessionFilesPopoverAnchor): 
   }
 }
 
+/** 留足消息与输入区的最小可读宽度，窄窗口不强行挤压会话内容。 */
+export function resolveSessionFilesConversationReservation(
+  mainWidth: number,
+  cardWidth: number,
+  cardRightInset: number,
+  rightWorkspaceOpen: boolean,
+): number {
+  const reservation = cardWidth + cardRightInset + 24
+  return !rightWorkspaceOpen && cardWidth > 0 && mainWidth - reservation >= 640 ? reservation : 0
+}
+
 /** 会话文件使用浮窗后，展开完整右侧工作区时不再回落到文件工具。 */
 export function resolveRightWorkspaceToolAfterSessionFilesClose(
   activeTool: RightWorkspaceTool | undefined,
@@ -85,6 +96,7 @@ export function resolveRightWorkspaceToolAfterSessionFilesClose(
 }
 
 export interface SessionFilesPopoverPointerInput {
+  rightWorkspaceOpen: boolean
   insideTrigger: boolean
   insidePanel: boolean
   insideOverlay?: boolean
@@ -93,5 +105,5 @@ export interface SessionFilesPopoverPointerInput {
 export function shouldCloseSessionFilesPopoverOnPointerDown(
   input: SessionFilesPopoverPointerInput,
 ): boolean {
-  return !input.insideTrigger && !input.insidePanel && !input.insideOverlay
+  return input.rightWorkspaceOpen && !input.insideTrigger && !input.insidePanel && !input.insideOverlay
 }

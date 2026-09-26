@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { AlertTriangle, CheckCircle2, CornerDownLeft, Square, Settings, X, Copy, Check, RotateCw, Sparkles, ChevronDown, ChevronRight, Cpu, ListTodo, MessageSquarePlus, Paperclip, FileText, FolderOpen, GitFork, GitBranch, Zap, Telescope, ClipboardList, type LucideIcon } from 'lucide-react'
 import { AgentMessages } from './AgentMessages'
 import { AgentHeader } from './AgentHeader'
+import { SessionFilesConversationLayout } from './SessionFilesConversationLayout'
 import { AgentMessageQueue } from './AgentMessageQueue'
 import { ContextUsageBadge } from './ContextUsageBadge'
 import { AgentStatusShortcut } from './AgentStatusShortcut.tsx'
@@ -4549,6 +4550,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
   return (
     <>
+    <SessionFilesConversationLayout sessionId={sessionId}>
     <AgentSessionProvider sessionId={sessionId}>
       <div data-agent-session-id={sessionId} className="conversation-column flex h-full min-h-0 flex-1 min-w-0 max-w-[min(72rem,100%)] flex-col overflow-hidden mx-auto">
         {/* Agent Header */}
@@ -4902,6 +4904,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         )}
       </div>
     </AgentSessionProvider>
+    </SessionFilesConversationLayout>
 
     {(<SessionTreeDialog
         sessionId={sessionId}
