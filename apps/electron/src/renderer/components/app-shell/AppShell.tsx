@@ -9,8 +9,6 @@
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { LeftSidebar } from './LeftSidebar'
-import { WorkbenchSidebarV2 } from './v2/WorkbenchSidebarV2'
-
 import { SidebarTitlebarToggle } from './SidebarTitlebarToggle'
 import { SIDEBAR_PREVIEW_EXIT_MS, shouldCloseSidebarHoverPreview, shouldRenderSidebarHoverPreview } from './sidebar-hover-preview'
 import { RightSidePanel } from './RightSidePanel'
@@ -63,7 +61,6 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const settingsOpen = useAtomValue(settingsOpenAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const isClassic = interfaceVariant === 'classic'
-  const isWorkbenchV2 = interfaceVariant === 'workbench-v2'
   // 定时任务表单打开时隐藏右侧文件面板，让中间区域扩展到全宽（表单内含自己的右栏配置）
   const activeView = useAtomValue(activeViewAtom)
   const showRightPanel = shouldShowRightWorkspace({
@@ -105,8 +102,8 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
   const lastPointerRef = React.useRef({ x: 0, y: 0 })
   const keyboardPreviewRef = React.useRef(false)
   const sidebarFrameRef = React.useRef<HTMLDivElement>(null)
-  const previewActive = sidebarCollapsed && !isClassic && !isWorkbenchV2 && sidebarPreviewOpen && !settingsOpen
-  const previewRendered = shouldRenderSidebarHoverPreview(previewActive, previewMounted, sidebarCollapsed, isClassic || isWorkbenchV2, settingsOpen)
+  const previewActive = sidebarCollapsed && !isClassic && sidebarPreviewOpen && !settingsOpen
+  const previewRendered = shouldRenderSidebarHoverPreview(previewActive, previewMounted, sidebarCollapsed, isClassic, settingsOpen)
 
   React.useEffect(() => {
     if (previewActive) {
@@ -327,7 +324,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
         )}
       />
 
-      {!isClassic && !isWorkbenchV2 && !settingsOpen && (
+      {!isClassic && !settingsOpen && (
         <SidebarTitlebarToggle
           isMac={isMac}
           collapsed={sidebarCollapsed}
@@ -385,9 +382,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
                 })
               }}
             >
-              {!previewActive && (isWorkbenchV2 && appMode === 'agent'
-                ? <WorkbenchSidebarV2 width={clampedLeftSidebarWidth} noTransition={isDraggingLeftSidebar} />
-                : <LeftSidebar width={clampedLeftSidebarWidth} noTransition={isDraggingLeftSidebar} />)}
+              {!previewActive && <LeftSidebar width={clampedLeftSidebarWidth} noTransition={isDraggingLeftSidebar} />}
               {previewRendered && (
                 <div
                   data-sidebar-preview="true"

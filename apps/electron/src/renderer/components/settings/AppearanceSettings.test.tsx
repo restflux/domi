@@ -11,5 +11,7 @@ describe('Work 消息区统一视图', () => {
     expect(html).not.toContain('V2 · 工作时间线')
     expect(html).toContain('主题模式')
     expect(html).toContain('界面风格')
+    expect(html).toContain('右侧工作区 v2')
+    expect(html).toContain('左侧导航保持原样')
   })
 })

@@ -31,10 +31,10 @@ const sessions = [
   }),
 ]
 
-function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project', modernLayout = false, view: 'planning' | 'agent-skills' | null = null, theme: 'light' | 'dark' | 'special' = 'light', width = 260, previewExpanded = false): string {
+function renderSidebar(archived = false, collapsed = false, groupMode: 'project' | 'timeline' = 'project', modernLayout = false, view: 'planning' | 'agent-skills' | null = null, theme: 'light' | 'dark' | 'special' = 'light', width = 260, previewExpanded = false, modernVariant: 'modern' | 'workbench-v2' = 'modern'): string {
   const store = createStore()
   store.set(appModeAtom, 'agent')
-  store.set(interfaceVariantAtom, modernLayout ? 'modern' : 'classic')
+  store.set(interfaceVariantAtom, modernLayout ? modernVariant : 'classic')
   store.set(themeModeAtom, theme)
   if (theme === 'special') store.set(themeStyleAtom, 'ocean-dark')
   if (view) store.set(activeViewAtom, view)
@@ -163,6 +163,17 @@ describe('LeftSidebar 侧聊用途隔离', () => {
     expect(brandSpacer + 36 / 2).toBe(toolbarCenter)
     expect(preview).toContain('w-full flex-shrink-0 h-[48px]')
     expect(expanded).toContain(`style="height:46px;left:${navigator.platform.includes('Mac') ? 128 : 48}px"`)
+  })
+
+  test('Given 右侧工作台 v2 When 展开或收起左栏 Then 左栏与原现代版保持相同结构和操作', () => {
+    for (const collapsed of [false, true]) {
+      const existing = renderSidebar(false, collapsed, 'project', true)
+      const rightWorkspaceV2 = renderSidebar(false, collapsed, 'project', true, null, 'light', 260, false, 'workbench-v2')
+      expect(rightWorkspaceV2).toBe(existing)
+      expect(rightWorkspaceV2).toContain(collapsed
+        ? 'aria-label="Domi，预览或固定展开侧边栏"'
+        : 'aria-label="当前为 Work，切换工作模式"')
+    }
   })
 
   test('经典折叠态保留原结构', () => {
