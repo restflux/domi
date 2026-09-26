@@ -645,7 +645,6 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
                   : undefined}
                 processGroupId={hasGeneratedImages ? processGroupId : undefined}
                 onExpandedChange={hasGeneratedImages ? handleProcessGroupExpandedChange : undefined}
-                toolPresentationIndex={effectiveToolPresentationIndex}
               >
                 {detailUnits.map((unit) => unit.kind === 'exploration'
                   ? (

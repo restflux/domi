@@ -1,9 +1,7 @@
 import * as React from 'react'
-import { AlertCircle, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getToolDisplayName, getToolIcon } from './tool-utils'
-import { buildProcessActivityPresentation } from './process-activity-presentation'
-import type { ToolPresentationIndex } from './tool-presentation-index'
+import { getWorkProcessFallbackLabel } from './process-activity-presentation'
 import { extractPlanText } from './PlanPreviewBlock'
 import type {
   SDKContentBlock,
@@ -27,11 +25,9 @@ interface ProcessBlockGroupProps {
   /** 仅图片相关过程组传入，用于让 turn 底部缩略图与展开内容互斥。 */
   processGroupId?: string
   onExpandedChange?: (processGroupId: string, expanded: boolean) => void
-  toolPresentationIndex: ToolPresentationIndex
   children: React.ReactNode
 }
 
-const MAX_PROCESS_GROUP_ICONS = 3
 const PROCESS_GROUP_COLLAPSE_DURATION_MS = 180
 
 interface IndexedContentBlock {
@@ -251,48 +247,27 @@ export function formatWorkProcessDuration(durationMs: number): string {
 
 interface WorkProcessTriggerLabelOptions {
   isStreaming: boolean
-  summary: string
+  fallbackLabel?: string
   elapsedMs?: number
   durationMs?: number
 }
 
-/** 工作过程折叠行只承载状态与耗时；详细操作摘要放入展开区域。 */
+/** 入口仅展示工作状态和耗时，不再复述每类操作的数量。 */
 export function buildWorkProcessTriggerLabel({
   isStreaming,
-  summary,
+  fallbackLabel = '工作过程',
   elapsedMs,
   durationMs,
 }: WorkProcessTriggerLabelOptions): string {
   if (!isStreaming) {
     return durationMs != null
       ? `用时 ${formatWorkProcessDuration(durationMs)}`
-      : summary
+      : fallbackLabel
   }
 
-  const detail = summary.replace(/^工作过程(?: · )?/, '')
-  const parts = ['工作中']
-  if (elapsedMs != null) parts.push(`已用时 ${formatWorkProcessDuration(elapsedMs)}`)
-  if (detail) parts.push(detail)
-  return parts.join(' · ')
-}
-
-export function buildProcessGroupSummary(blocks: SDKContentBlock[], isStreaming = false): string {
-  return buildProcessActivityPresentation(blocks, new Map(), isStreaming).summary
-}
-
-export function buildProcessGroupToolNames(blocks: SDKContentBlock[]): string[] {
-  const toolNames: string[] = []
-  const seen = new Set<string>()
-
-  for (const block of blocks) {
-    if (block.type !== 'tool_use') continue
-    const toolBlock = block as SDKToolUseBlock
-    if (seen.has(toolBlock.name)) continue
-    seen.add(toolBlock.name)
-    toolNames.push(toolBlock.name)
-  }
-
-  return toolNames
+  return elapsedMs != null
+    ? `工作中 · 已用时 ${formatWorkProcessDuration(elapsedMs)}`
+    : '工作中'
 }
 
 export function ProcessBlockGroup({
@@ -305,7 +280,6 @@ export function ProcessBlockGroup({
   durationTooltip,
   processGroupId,
   onExpandedChange,
-  toolPresentationIndex,
   children,
 }: ProcessBlockGroupProps): React.ReactElement {
   const contentRef = React.useRef<HTMLDivElement>(null)
@@ -313,9 +287,9 @@ export function ProcessBlockGroup({
   stableProcessBlocksRef.current = stabilizeProcessBlockReferences(stableProcessBlocksRef.current, blocks)
   const stableProcessBlocks = stableProcessBlocksRef.current
   const stableChildrenRef = React.useRef(new Map<string, StableProcessChildCacheEntry>())
-  const presentation = React.useMemo(
-    () => buildProcessActivityPresentation(stableProcessBlocks, toolPresentationIndex, !!isStreaming),
-    [isStreaming, stableProcessBlocks, toolPresentationIndex],
+  const fallbackLabel = React.useMemo(
+    () => getWorkProcessFallbackLabel(stableProcessBlocks),
+    [stableProcessBlocks],
   )
   // 执行中始终按原顺序展开分段过程；本轮结束后才统一折叠。
   // 用户中断本轮时同样保持展开，避免过程明细随结束被收起、中断痕迹不可见。
@@ -371,18 +345,12 @@ export function ProcessBlockGroup({
     }
   }, [expanded])
 
-  const toolNames = React.useMemo(
-    () => buildProcessGroupToolNames(stableProcessBlocks),
-    [stableProcessBlocks],
-  )
-  const visibleToolNames = toolNames.slice(0, MAX_PROCESS_GROUP_ICONS)
-  const hiddenToolCount = Math.max(0, toolNames.length - visibleToolNames.length)
   const elapsedMs = isStreaming && startedAt != null
     ? Math.max(0, currentTime - startedAt)
     : undefined
   const triggerLabel = buildWorkProcessTriggerLabel({
     isStreaming: !!isStreaming,
-    summary: presentation.summary,
+    fallbackLabel,
     elapsedMs,
     durationMs,
   })
@@ -476,36 +444,6 @@ export function ProcessBlockGroup({
           }}
         >
           <div className="space-y-2.5">
-            <div
-              className="flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground/65"
-              data-work-process-detail-summary="true"
-            >
-              <span className="min-w-0 flex-1 truncate">{presentation.summary}</span>
-              {presentation.failedToolCount > 0 && (
-                <span className="flex shrink-0 items-center gap-1 text-[11px] text-destructive/75">
-                  <AlertCircle className="size-3.5" />
-                  {presentation.failedToolCount} 项失败
-                </span>
-              )}
-              {visibleToolNames.length > 0 && (
-                <span className="flex shrink-0 items-center gap-1 text-muted-foreground/55">
-                  {visibleToolNames.map((toolName) => {
-                    const ToolIcon = getToolIcon(toolName)
-                    return (
-                      <ToolIcon
-                        key={toolName}
-                        className="size-3.5"
-                        aria-label={getToolDisplayName(toolName)}
-                      />
-                    )
-                  })}
-                  {hiddenToolCount > 0 && (
-                    <span className="text-[11px] tabular-nums text-muted-foreground/55">+{hiddenToolCount}</span>
-                  )}
-                </span>
-              )}
-            </div>
-
             {renderContentChildren()}
             {!isStreaming && (
               <button

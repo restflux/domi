@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { buildAssistantTurnRenderItems, buildProcessGroupSummary, buildProcessGroupToolNames, buildWorkProcessTriggerLabel, formatWorkProcessDuration, stabilizeProcessBlockReferences } from './ProcessBlockGroup'
+import { buildAssistantTurnRenderItems, buildWorkProcessTriggerLabel, formatWorkProcessDuration, stabilizeProcessBlockReferences } from './ProcessBlockGroup'
 import type { SDKContentBlock } from '@domi/shared'
 
 const tool = (id: string, name = 'Read', input: Record<string, unknown> = {}): SDKContentBlock => ({
@@ -27,20 +27,13 @@ describe('Agent 过程块折叠分组', () => {
     expect(formatWorkProcessDuration(120_000)).toBe('2 分钟')
   })
 
-  test('given running and completed process when building trigger label then keeps detail only in running status', () => {
-    const summary = '工作过程 · 读取 3 个文件 · 搜索 2 次'
-
-    expect(buildWorkProcessTriggerLabel({
-      isStreaming: true,
-      summary,
-      elapsedMs: 19_000,
-    })).toBe('工作中 · 已用时 19 秒 · 读取 3 个文件 · 搜索 2 次')
-
-    expect(buildWorkProcessTriggerLabel({
-      isStreaming: false,
-      summary,
-      durationMs: 19_000,
-    })).toBe('用时 19 秒')
+  test('运行中只显示耗时，没有起点时只显示工作状态；完成后显示最终耗时', () => {
+    expect(buildWorkProcessTriggerLabel({ isStreaming: true, elapsedMs: 19_000 }))
+      .toBe('工作中 · 已用时 19 秒')
+    expect(buildWorkProcessTriggerLabel({ isStreaming: true })).toBe('工作中')
+    expect(buildWorkProcessTriggerLabel({ isStreaming: false, durationMs: 19_000 }))
+      .toBe('用时 19 秒')
+    expect(buildWorkProcessTriggerLabel({ isStreaming: false })).toBe('工作过程')
   })
 
   test('given continuous thinking and tools before final text when grouping then folds them into one process group', () => {
@@ -157,32 +150,6 @@ describe('Agent 过程块折叠分组', () => {
 
     expect(stabilizeProcessBlockReferences(previous, next)).toBe(previous)
     expect(stabilizeProcessBlockReferences(previous, [thinking('新思考'), processBlocks[1]!])).not.toBe(previous)
-  })
-
-  test('given ForkToWorktree while streaming when building summary then shows handoff progress instead of generic counts', () => {
-    expect(buildProcessGroupSummary([
-      thinking(),
-      tool('tool-handoff', 'ForkToWorktree'),
-    ], true)).toBe('正在安排 managed Worktree 子会话…')
-  })
-
-  test('given completed ForkToWorktree when building summary then leaves a persistent handoff confirmation', () => {
-    expect(buildProcessGroupSummary([
-      thinking(),
-      tool('tool-handoff', 'ForkToWorktree'),
-    ])).toBe('已安排 managed Worktree 子会话，启动后将自动切换')
-  })
-
-  test('given repeated tools when building capability icons then returns unique tool names in order', () => {
-    const toolNames = buildProcessGroupToolNames([
-      tool('tool-1', 'Grep'),
-      thinking(),
-      tool('tool-2', 'Read'),
-      tool('tool-3', 'Grep'),
-      tool('tool-4', 'Bash'),
-    ])
-
-    expect(toolNames).toEqual(['Grep', 'Read', 'Bash'])
   })
 
   test('given ExitPlanMode persists its plan only in tool input when grouping then keeps the plan outside the process group', () => {

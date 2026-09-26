@@ -104,7 +104,7 @@ describe('Task progress output deduplication', () => {
     )).toBe('')
   })
 
-  test('Given 任务进度工具与读取操作交错 When 构建摘要 Then 只统计聊天区可见操作', () => {
+  test('Given 任务进度工具与读取操作交错 When 渲染完成态 Then 只保留可回看的工作过程', () => {
     const assistant: SDKAssistantMessage = {
       type: 'assistant',
       uuid: 'assistant-task-and-read',
@@ -129,7 +129,9 @@ describe('Task progress output deduplication', () => {
       <AssistantTurnRenderer turn={turn} allMessages={[assistant]} />,
     )
 
-    expect(html).toContain('工作过程 · 读取 1 个文件')
+    expect(html).toContain('data-work-process-trigger="true"')
+    expect(html).toContain('工作过程')
+    expect(html).not.toContain('读取 1 个文件')
     expect(html).not.toContain('更新任务')
     expect(html).not.toContain('项操作')
   })
@@ -199,6 +201,7 @@ describe('独立工具执行状态流光', () => {
       assistantMessages: [assistant],
       turnMessages: [assistant],
       model: 'test-model',
+      createdAt: Date.now() - 19_000,
     }
 
     const html = renderToStaticMarkup(
@@ -207,7 +210,9 @@ describe('独立工具执行状态流光', () => {
 
     expect(html).toContain('正在COLLABORATION / continue_delegation active-delegation...')
     expect(html).toContain('data-work-process-boundary="true"')
-    expect(html).toContain('data-work-process-detail-summary="true"')
+    expect(html).not.toContain('data-work-process-detail-summary="true"')
+    expect(html).toContain('工作中 · 已用时 19 秒')
+    expect(html).not.toContain('1 项操作')
     expect(html).toContain('aria-expanded="true"')
     // 工作过程概览与当前工具行各一处流光。
     expect(html.match(/data-process-summary="shimmer"/g)?.length ?? 0).toBe(2)
@@ -377,7 +382,8 @@ describe('独立工具执行状态流光', () => {
       <AssistantTurnRenderer turn={turn} allMessages={[assistant, completedResult]} />,
     )
 
-    expect(html).toContain('工作过程 · 1 项操作')
+    expect(html).toContain('工作过程')
+    expect(html).not.toContain('1 项操作')
     expect(html).not.toContain('data-process-summary=')
   })
 
@@ -680,7 +686,9 @@ describe('Segmented process presentation', () => {
 
     expect(html).toContain('data-process-compact="true"')
     expect(html).not.toContain('data-process-summary=')
-    expect(html).toContain('工作过程 · 读取 1 个文件 · 搜索 1 次')
+    expect(html).toContain('工作过程')
+    expect(html).not.toContain('读取 1 个文件')
+    expect(html).not.toContain('搜索 1 次')
     expect(html).not.toContain('这段过程完成后应被折叠')
     expect(html).toContain('最终回答。')
   })
@@ -768,7 +776,7 @@ describe('Segmented process presentation', () => {
     expect(html.indexOf('需要你确认接下来的处理方式。')).toBeLessThan(html.indexOf('询问 选择保守方案还是完整方案？'))
   })
 
-  test('Given 完成过程存在失败结果 When 整体已折叠 Then 错误计数只留在展开详情', () => {
+  test('Given 完成过程存在失败结果 When 整体已折叠 Then 失败状态仅在实际探索阶段展示', () => {
     const assistant: SDKAssistantMessage = {
       type: 'assistant',
       uuid: 'assistant-failed-process',
@@ -806,12 +814,15 @@ describe('Segmented process presentation', () => {
     )
 
     expect(html).not.toContain('1 项失败')
-    expect(html).toContain('工作过程 · 读取 1 个文件 · 搜索 1 次 · 执行 1 条命令')
+    expect(html).not.toContain('读取 1 个文件')
+    expect(html).not.toContain('执行 1 条命令')
 
     const expandedHtml = renderToStaticMarkup(
       <AssistantTurnRenderer turn={turn} allMessages={[assistant, failedResult]} isStreaming />,
     )
-    expect(expandedHtml).toContain('data-work-process-detail-summary="true"')
+    expect(expandedHtml).not.toContain('data-work-process-detail-summary="true"')
+    expect(expandedHtml).not.toContain('执行 1 条命令')
+    expect(expandedHtml).toContain('探索 · 1 个文件 · 1 次搜索')
     expect(expandedHtml).toContain('1 项失败')
   })
 
@@ -841,7 +852,8 @@ describe('Segmented process presentation', () => {
       <AssistantTurnRenderer turn={turn} allMessages={[assistant]} />,
     )
 
-    expect(html).toContain('工作过程 · 读取 1 个文件')
+    expect(html).toContain('工作过程')
+    expect(html).not.toContain('读取 1 个文件')
     expect(html).toContain('已保留错误前生成的正文。')
     expect(html).toContain('provider disconnected')
     expect(html.indexOf('已保留错误前生成的正文。')).toBeLessThan(html.indexOf('provider disconnected'))
