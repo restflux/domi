@@ -10,11 +10,15 @@ import { ChevronRight, Search, XCircle } from 'lucide-react'
 import type { SDKContentBlock, SDKToolUseBlock } from '@domi/shared'
 import { cn } from '@/lib/utils'
 import { summarizeExplorationStage } from './tool-run-group'
+import { getToolDisplayName } from './tool-utils'
+import type { WorkMessageView } from '@/atoms/work-message-view'
 import type { ToolPresentationIndex } from './tool-presentation-index'
+import { ZCodeToolSummaryRow } from './ZCodeWorkPresentation'
 
 interface ToolRunGroupProps {
   blocks: SDKToolUseBlock[]
   toolPresentationIndex: ToolPresentationIndex
+  view?: WorkMessageView
   animate?: boolean
   isStreaming?: boolean
   /** 是否为当前流式过程最后一个可见活动单元。 */
@@ -26,6 +30,7 @@ interface ToolRunGroupProps {
 export function ToolRunGroup({
   blocks,
   toolPresentationIndex,
+  view = 'v1',
   animate = false,
   isStreaming = false,
   isActivityTail = false,
@@ -45,11 +50,21 @@ export function ToolRunGroup({
     && isActivityTail
     && !latestBlockFailed
   )
-  const summary = summarizeExplorationStage(blocks)
+  const summary = view === 'v1' ? summarizeExplorationStage(blocks) : ''
 
   return (
     <div className={cn(animate && 'animate-in fade-in slide-in-from-left-1 duration-150 fill-mode-both motion-reduce:animate-none')}>
-      <button
+      {view === 'v2' ? (
+        <ZCodeToolSummaryRow
+          icon={<Search className="size-4" />}
+          kindLabel="探索"
+          primaryText={isStreaming && isActivityTail && latestBlock && !latestBlockFailed ? `正在${getToolDisplayName(latestBlock.name)}` : ''}
+          running={showActivityShimmer}
+          expanded={expanded}
+          onToggle={() => setExpanded((current) => !current)}
+          statusNode={showActivityShimmer ? <span className="sr-only" role="status">探索进行中</span> : undefined}
+        />
+      ) : <button
         type="button"
         aria-expanded={expanded}
         className="flex max-w-full items-center gap-2 py-0.5 text-left text-muted-foreground/65 transition-colors hover:text-muted-foreground motion-reduce:transition-none"
@@ -76,13 +91,13 @@ export function ToolRunGroup({
         {failedCount > 0 && (
           <span className="flex shrink-0 items-center gap-1 text-[11px] text-destructive/75">
             <XCircle className="size-3.5" />
-            {failedCount} 项失败
+            {`${failedCount} 项失败`}
           </span>
         )}
-      </button>
+      </button>}
 
       {expanded && (
-        <div className="ml-[5px] mb-1.5 mt-1 space-y-0.5 border-l-2 border-border/30 pl-3 animate-in fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none">
+        <div className={cn(view === 'v2' ? 'ml-2 space-y-2 border-l border-border pl-3.5 pt-2' : 'ml-[5px] mb-1.5 mt-1 space-y-0.5 border-l-2 border-border/30 pl-3 animate-in fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none')}>
           {blocks.map((block, index) => renderRow(block, index))}
         </div>
       )}

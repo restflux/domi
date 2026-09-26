@@ -11,6 +11,7 @@
  */
 
 import * as React from 'react'
+import { ChevronRight, Files } from 'lucide-react'
 import type {
   SDKMessage,
   SDKAssistantMessage,
@@ -19,6 +20,8 @@ import type {
   SDKToolResultBlock,
 } from '@domi/shared'
 import { FilePathChip } from '@/components/ai-elements/file-path-chip'
+import { cn } from '@/lib/utils'
+import type { WorkMessageView } from '@/atoms/work-message-view'
 
 const MUTATING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
@@ -101,15 +104,46 @@ export function buildTurnFileNameMap(turnMessages: SDKMessage[]): Map<string, st
 export interface TurnFileChangesSummaryProps {
   turnMessages: SDKMessage[]
   basePath?: string
+  view?: WorkMessageView
 }
 
 export function TurnFileChangesSummary({
   turnMessages,
   basePath,
+  view = 'v1',
 }: TurnFileChangesSummaryProps): React.ReactElement | null {
   const paths = React.useMemo(() => collectFilePaths(turnMessages), [turnMessages])
+  const [expanded, setExpanded] = React.useState(true)
 
   if (paths.length === 0) return null
+
+  if (view === 'v2') {
+    return (
+      // ZCode ConversationFileSummaryPanel：移植容器、标题触发器及文件行结构；
+      // 不搬运其 Git 回滚、diff 预览与额外状态管理，文件入口沿用 Domi FilePathChip。
+      <section data-work-v2-file-summary="true" className="mt-5 overflow-hidden rounded-xl border border-border bg-card shadow-none">
+        <div className="flex h-10 items-center justify-between gap-3 px-2 transition-colors hover:bg-muted/50">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+            className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-left text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
+            <Files className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 truncate font-medium">已编辑文件</span>
+          </button>
+        </div>
+        {expanded && <div className="grid w-full border-t border-border">
+          {paths.map((filePath) => (
+            <div key={filePath} className="w-full overflow-hidden bg-background/50 px-3 py-1.5 text-sm text-muted-foreground">
+              <FilePathChip filePath={filePath} basePath={basePath} />
+            </div>
+          ))}
+        </div>}
+      </section>
+    )
+  }
 
   return (
     <div className="mt-3">

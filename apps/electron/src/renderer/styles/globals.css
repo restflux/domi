@@ -3833,3 +3833,29 @@
 .ProseMirror-focused .ProseMirror-gapcursor {
   display: block;
 }
+
+/* ZCode styles.css 的运行中渐变文字，改用 Domi 主题 token；仅用于 Work V2 展示原语。 */
+.zcode-work-shimmer {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--muted-foreground)) 34%,
+    hsl(var(--muted-foreground) / 0.22) 50%,
+    hsl(var(--muted-foreground)) 66%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: zcode-work-gradient-flow 4s linear infinite;
+}
+@keyframes zcode-work-gradient-flow {
+  0% { background-position: 100% 0; }
+  50%, 100% { background-position: 0% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zcode-work-shimmer { animation: none; }
+}

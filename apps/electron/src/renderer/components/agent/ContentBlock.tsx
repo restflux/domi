@@ -8,6 +8,8 @@
  */
 
 import * as React from 'react'
+import type { WorkMessageView } from '@/atoms/work-message-view'
+import { ZCodeReasoningHeading, ZCodeToolSummaryRow } from './ZCodeWorkPresentation'
 import {
   ChevronRight,
   ChevronDown,
@@ -82,9 +84,11 @@ function parseAgentResultText(raw: string): ParsedAgentResult {
 function SubAgentFooter({
   meta,
   resultText,
+  showUsage = true,
 }: {
   meta: SubAgentPresentationMeta | null
   resultText?: string
+  showUsage?: boolean
 }): React.ReactElement | null {
   // 解析结果文本，分离内容与元数据
   const parsed = React.useMemo(
@@ -97,7 +101,7 @@ function SubAgentFooter({
   const cleanText = parsed?.text || ''
 
   // 没有任何信息时不渲染
-  if (!effectiveMeta && !cleanText) return null
+  if (!(showUsage && effectiveMeta) && !cleanText) return null
 
   return (
     <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
@@ -109,7 +113,7 @@ function SubAgentFooter({
       )}
 
       {/* 用量统计行（最底部） */}
-      {effectiveMeta && (
+      {showUsage && effectiveMeta && (
         <div className="flex items-center gap-3 text-[12px] text-muted-foreground/60 tabular-nums">
           {effectiveMeta.durationMs > 0 && (
             <span>{formatDuration(effectiveMeta.durationMs)}</span>
@@ -153,6 +157,7 @@ export interface ContentBlockProps {
   sessionId?: string
   /** 由消息列表一次构建的工具展示索引。独立渲染入口可省略并回退本地构建。 */
   toolPresentationIndex?: ToolPresentationIndex
+  view?: WorkMessageView
 }
 
 // ===== 提示词折叠行 =====
@@ -286,9 +291,10 @@ interface ToolUseBlockProps {
   /** 当前权威 Domi session ID，用于嵌套计划预览入口。 */
   sessionId?: string
   toolPresentationIndex: ToolPresentationIndex
+  view?: WorkMessageView
 }
 
-function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed = false, childBlocks, basePath, basePaths, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex }: ToolUseBlockProps): React.ReactElement {
+function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed = false, childBlocks, basePath, basePaths, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex, view = 'v1' }: ToolUseBlockProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
   const skillTriggers = useAtomValue(skillTriggersByToolCallAtom)
   const skillTrigger = skillTriggers[block.id]
@@ -329,6 +335,7 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
 
   // 工具真正未完成时显示进行时；已完成但仍承接活动游标时保留完成态文案。
   const displayLabel = isRunning ? phrase.loadingLabel : phrase.label
+  const labelSeparator = displayLabel.indexOf(' ')
   const filePath = extractFilePath(block.input)
   const isPreviewable = (
     (block.name === 'Read' || block.name === 'Edit' || block.name === 'Write') &&
@@ -355,8 +362,19 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
         )}
         style={animate ? { animationDelay: delay } : undefined}
       >
-        {/* 头部行：折叠箭头 + 状态 + 语义短语 */}
-        <button
+        {/* V2 沿用 ZCode ToolSummaryRow，子代理详情仍由 Domi 管理。 */}
+        {view === 'v2' ? (
+          <ZCodeToolSummaryRow
+            icon={<ToolIcon className="size-4" />}
+            kindLabel={block.name === 'Agent' ? 'Agent' : '任务'}
+            primaryText={displayLabel}
+            running={showActivityShimmer}
+            expanded={childrenExpanded}
+            onToggle={() => setChildrenExpanded((current) => !current)}
+            statusNode={isError ? <XCircle className="size-4 text-destructive" aria-label="工具执行失败" /> : undefined}
+            title={displayLabel}
+          />
+        ) : <button
           type="button"
           className="w-full flex items-center gap-2 py-0.5 text-left hover:opacity-70 transition-opacity group"
           onClick={() => setChildrenExpanded(!childrenExpanded)}
@@ -386,12 +404,12 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
               {childToolCount} 项工具调用
             </span>
           )}
-        </button>
+        </button>}
 
         {/* 展开内容 */}
         {childrenExpanded && (
           <div className={cn(
-            'pl-5 mt-1.5 space-y-2 border-l-2 border-primary/20 ml-[5px]',
+            view === 'v2' ? 'ml-2 mt-2 space-y-2 border-l border-border pl-3.5' : 'pl-5 mt-1.5 space-y-2 border-l-2 border-primary/20 ml-[5px]',
             animate && 'animate-in fade-in slide-in-from-top-1 duration-150',
           )}>
             {/* 提示词：可折叠行 */}
@@ -411,6 +429,7 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
                 isStreaming={isStreaming}
                 sessionId={sessionId}
                 toolPresentationIndex={toolPresentationIndex}
+                view={view}
               />
             ))}
 
@@ -419,6 +438,7 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
               <SubAgentFooter
                 meta={subAgentMeta}
                 resultText={toolResult?.result}
+                showUsage={view === 'v1'}
               />
             )}
 
@@ -445,6 +465,28 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
       )}
       style={animate ? { animationDelay: delay } : undefined}
     >
+      {view === 'v2' ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <ZCodeToolSummaryRow
+            icon={<ToolIcon className="size-4" />}
+            kindLabel={labelSeparator < 0 ? displayLabel : displayLabel.slice(0, labelSeparator)}
+            primaryText={labelSeparator < 0 ? '' : displayLabel.slice(labelSeparator + 1)}
+            running={showActivityShimmer}
+            expanded={expanded}
+            title={filePath ?? displayLabel}
+            onToggle={() => setExpanded((current) => !current)}
+            statusNode={(
+              <>
+                {isError && <XCircle className="size-3.5 shrink-0 text-destructive" aria-label="工具执行失败" />}
+                {skillTrigger && <span className="shrink-0 text-xs text-primary" title={`触发技能：${skillTrigger.skillName}`}>⚡ {skillTrigger.skillSlug}</span>}
+                {taskGetSummary && <TaskGetCollapsedSummary task={taskGetSummary} />}
+                {taskListSummary && <TaskListCollapsedSummary tasks={taskListSummary} />}
+              </>
+            )}
+          />
+          {isPreviewable && <PreviewOpenButton filePath={filePath} basePath={basePath} basePaths={basePaths} />}
+        </div>
+      ) : (
       <button
         type="button"
         title={filePath ?? displayLabel}
@@ -515,10 +557,11 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
           />
         )}
       </button>
+      )}
 
       {(resultImages.length > 0 || (expanded && resultText)) && (
         <div className={cn(
-          'ml-5.5 mt-1 mb-2 pl-3 border-l-2 border-border/30 space-y-2',
+          view === 'v2' ? 'mt-2 ml-6 space-y-2 text-muted-foreground' : 'ml-5.5 mt-1 mb-2 pl-3 border-l-2 border-border/30 space-y-2',
           animate && 'animate-in fade-in slide-in-from-top-1 duration-150',
         )}>
           {/* 图片工具完成后直接展示；文本结果仍遵循工具展开状态 */}
@@ -544,14 +587,19 @@ interface ThinkingBlockProps {
   block: SDKThinkingBlock
   dimmed?: boolean
   isStreaming?: boolean
+  view?: WorkMessageView
 }
 
 /** 思考块折叠行数阈值 */
 const THINKING_COLLAPSE_LINE_THRESHOLD = 4
 
-function ThinkingBlock({ block, dimmed = false, isStreaming = false }: ThinkingBlockProps): React.ReactElement {
-  const [isExpanded, setIsExpanded] = React.useState(false)
+function ThinkingBlock({ block, dimmed = false, isStreaming = false, view = 'v1' }: ThinkingBlockProps): React.ReactElement {
+  const [isExpanded, setIsExpanded] = React.useState(isStreaming && view === 'v2')
   const [shouldCollapse, setShouldCollapse] = React.useState(false)
+  const manuallyToggledRef = React.useRef(false)
+  React.useEffect(() => {
+    if (view === 'v2' && isStreaming && !manuallyToggledRef.current) setIsExpanded(true)
+  }, [view, isStreaming])
   const contentRef = React.useRef<HTMLDivElement>(null)
   const lastMeasuredContentRef = React.useRef<string | null>(null)
   const { displayedContent } = useSmoothStream({
@@ -587,21 +635,35 @@ function ThinkingBlock({ block, dimmed = false, isStreaming = false }: ThinkingB
   }, [])
 
   return (
-    <div className="relative mb-3">
-      <div className="flex items-center gap-1.5 mb-1">
-        <Brain className={cn('size-3', dimmed ? 'text-muted-foreground/55' : 'text-muted-foreground/70')} />
-        <span className={cn('text-[11px] uppercase tracking-[0.08em]', dimmed ? 'text-muted-foreground/55' : 'text-muted-foreground/70')}>
-          Thinking
-        </span>
-      </div>
+    <div className={cn('relative mb-3', view === 'v2' && 'mb-1')} data-work-thinking-view={view}>
+      {view === 'v2' ? (
+        <ZCodeReasoningHeading
+          label={isStreaming ? '思考中' : '思考'}
+          isStreaming={isStreaming}
+          isOpen={isExpanded}
+          onToggle={() => {
+            manuallyToggledRef.current = true
+            toggleExpand()
+          }}
+        />
+      ) : (
+        <div className="flex items-center gap-1.5 mb-1">
+          <Brain className={cn('size-3', dimmed ? 'text-muted-foreground/55' : 'text-muted-foreground/70')} />
+          <span className={cn('text-[11px] uppercase tracking-[0.08em]', dimmed ? 'text-muted-foreground/55' : 'text-muted-foreground/70')}>Thinking</span>
+        </div>
+      )}
       <div
         className={cn(
-          'relative rounded-lg px-3.5 py-2.5',
-          dimmed ? 'bg-muted/20' : 'bg-muted/[0.34]',
+          'relative rounded-lg',
+          view === 'v2' ? 'ml-6 pt-2 text-muted-foreground' : 'px-3.5 py-2.5',
+          view === 'v2' && !isExpanded && 'hidden',
+          view === 'v1' && (dimmed ? 'bg-muted/20' : 'bg-muted/[0.34]'),
         )}
         style={{
           border: 'none',
-          backgroundImage: `url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='8' ry='8' stroke='${dimmed ? 'rgba(128,128,128,0.18)' : 'rgba(128,128,128,0.26)'}' stroke-width='1' stroke-dasharray='8%2c 6' stroke-dashoffset='0' stroke-linecap='round'/%3e%3c/svg%3e")`,
+          backgroundImage: view === 'v1'
+            ? `url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='8' ry='8' stroke='${dimmed ? 'rgba(128,128,128,0.18)' : 'rgba(128,128,128,0.26)'}' stroke-width='1' stroke-dasharray='8%2c 6' stroke-dashoffset='0' stroke-linecap='round'/%3e%3c/svg%3e")`
+            : 'none',
         }}
       >
         <div
@@ -609,14 +671,14 @@ function ThinkingBlock({ block, dimmed = false, isStreaming = false }: ThinkingB
           className={cn(
             'prose prose-sm dark:prose-invert max-w-none prose-p:my-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 text-[14px] leading-relaxed overflow-hidden transition-[max-height] duration-200',
             dimmed ? 'text-muted-foreground' : 'text-foreground/90',
-            shouldCollapse && !isExpanded && 'max-h-[5.6em]',
+            view === 'v1' && shouldCollapse && !isExpanded && 'max-h-[5.6em]',
           )}
         >
           <MessageResponse className="font-normal prose-strong:font-normal [&_strong]:font-normal [&_b]:font-normal">
             {displayedContent}
           </MessageResponse>
         </div>
-        {shouldCollapse && (
+        {view === 'v1' && shouldCollapse && (
           <button
             type="button"
             onClick={toggleExpand}
@@ -648,22 +710,24 @@ function StreamingTextBlock({
   isStreaming,
   basePath,
   basePaths,
+  view = 'v1',
 }: {
   text: string
   isStreaming?: boolean
   basePath?: string
   basePaths?: string[]
+  view?: WorkMessageView
 }): React.ReactElement {
   const { displayedContent } = useSmoothStream({
     content: text,
     isStreaming: isStreaming ?? false,
   })
-  return <MessageResponse basePath={basePath} basePaths={basePaths}>{displayedContent}</MessageResponse>
+  return <MessageResponse className={view === 'v2' ? 'text-[14px] prose-p:my-2 prose-p:leading-[1.8] prose-li:leading-[1.8] prose-headings:mt-5' : undefined} basePath={basePath} basePaths={basePaths}>{displayedContent}</MessageResponse>
 }
 
 // ===== ContentBlock 主组件 =====
 
-export function ContentBlock({ block, allMessages, basePath, basePaths, animate = false, index = 0, dimmed = false, childBlocks, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex }: ContentBlockProps): React.ReactElement | null {
+export function ContentBlock({ block, allMessages, basePath, basePaths, animate = false, index = 0, dimmed = false, childBlocks, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex, view = 'v1' }: ContentBlockProps): React.ReactElement | null {
   const effectiveToolPresentationIndex = React.useMemo(
     () => toolPresentationIndex ?? buildToolPresentationIndex(allMessages),
     [allMessages, toolPresentationIndex],
@@ -678,6 +742,7 @@ export function ContentBlock({ block, allMessages, basePath, basePaths, animate 
         isStreaming={isStreaming}
         basePath={basePath}
         basePaths={basePaths}
+        view={view}
       />
     )
   }
@@ -726,6 +791,7 @@ export function ContentBlock({ block, allMessages, basePath, basePaths, animate 
         isActivityTail={isActivityTail}
         sessionId={sessionId}
         toolPresentationIndex={effectiveToolPresentationIndex}
+        view={view}
       />
     )
   }
@@ -734,7 +800,7 @@ export function ContentBlock({ block, allMessages, basePath, basePaths, animate 
   if (block.type === 'thinking') {
     const thinkingBlock = block as SDKThinkingBlock
     if (!thinkingBlock.thinking) return null
-    return <ThinkingBlock block={thinkingBlock} dimmed={dimmed} isStreaming={isStreaming} />
+    return <ThinkingBlock block={thinkingBlock} dimmed={dimmed} isStreaming={isStreaming} view={view} />
   }
 
   return null

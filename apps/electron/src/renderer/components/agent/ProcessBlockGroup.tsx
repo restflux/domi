@@ -1,8 +1,12 @@
+// Work V2 的状态底线与工作项布局改编自 ZCode ConversationTurnGroup
+// (c) ZCode contributors，Apache-2.0；折叠状态及 Pi 工具明细沿用 Domi 实现。
 import * as React from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getWorkProcessFallbackLabel } from './process-activity-presentation'
+import type { WorkMessageView } from '@/atoms/work-message-view'
 import { extractPlanText } from './PlanPreviewBlock'
+import { ZCodeWorkStatus } from './ZCodeWorkPresentation'
 import type {
   SDKContentBlock,
   SDKTextBlock,
@@ -18,6 +22,7 @@ interface ProcessBlockGroupProps {
   isMessageTail?: boolean
   /** 用户中断本轮时保持展开（不随结束折叠），便于回看已执行的工具明细。 */
   keepExpanded?: boolean
+  view?: WorkMessageView
   /** 工作过程入口使用本轮起点显示实时耗时，完成后切换为最终耗时。 */
   startedAt?: number
   durationMs?: number
@@ -216,13 +221,13 @@ interface StableProcessChildCacheEntry {
 
 function getProcessChildSnapshot(child: React.ReactNode): string | null {
   if (!React.isValidElement(child)) return null
-  const props = child.props as { block?: SDKContentBlock; dimmed?: boolean }
+  const props = child.props as { block?: SDKContentBlock; dimmed?: boolean; view?: WorkMessageView }
   const block = props.block
   if (!block || (block.type !== 'text' && block.type !== 'thinking')) return null
   const presentation = props.dimmed ? 'dimmed' : 'normal'
   return block.type === 'text'
-    ? `text:${presentation}:${(block as SDKTextBlock).text}`
-    : `thinking:${presentation}:${(block as SDKThinkingBlock).thinking}`
+    ? `text:${presentation}:${props.view ?? 'v1'}:${(block as SDKTextBlock).text}`
+    : `thinking:${presentation}:${props.view ?? 'v1'}:${(block as SDKThinkingBlock).thinking}`
 }
 
 const StableProcessChild = React.memo(
@@ -275,6 +280,7 @@ export function ProcessBlockGroup({
   isStreaming,
   isMessageTail = false,
   keepExpanded = false,
+  view = 'v1',
   startedAt,
   durationMs,
   durationTooltip,
@@ -372,11 +378,14 @@ export function ProcessBlockGroup({
       }
       const isLast = index === childArray.length - 1
       const dimmed = isStreaming && !(isMessageTail && isLast)
+      const liveTail = !!isStreaming && isMessageTail && isLast
       return (
         <div
           key={key}
+          data-work-process-live-tail={view === 'v2' && liveTail ? 'true' : undefined}
           className={cn(
-            dimmed && 'opacity-80',
+            view === 'v2' && 'min-w-0',
+            view === 'v1' && dimmed && 'opacity-80',
             isStreaming && 'animate-in fade-in slide-in-from-top-1 duration-200 motion-reduce:animate-none',
           )}
         >
@@ -393,43 +402,45 @@ export function ProcessBlockGroup({
   return (
     <div
       className={cn(
-        'my-3 border-b border-border/35 pb-2.5 pt-1',
-        expanded && 'space-y-2.5',
+        view === 'v2'
+          ? 'my-6'
+          : 'my-3 border-b border-border/35 pb-2.5 pt-1',
       )}
       data-process-compact={!expanded ? 'true' : 'false'}
       data-work-process-boundary="true"
+      data-work-message-view={view}
     >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        disabled={!!isStreaming}
-        title={!isStreaming ? durationTooltip : undefined}
-        data-work-process-trigger="true"
-        className={cn(
-          'group inline-flex max-w-full items-center gap-1.5 text-left motion-reduce:transition-none',
-          isStreaming ? 'cursor-default' : 'transition-colors hover:text-foreground',
-        )}
-        onClick={() => {
-          userToggledRef.current = true
-          setExpanded((current) => !current)
-        }}
-      >
-        <span
-          data-process-summary={isStreaming ? 'shimmer' : undefined}
-          data-work-process-trigger-label="true"
-          className="min-w-0 truncate text-[14px] font-light tabular-nums text-muted-foreground"
-        >
-          {triggerLabel}
-        </span>
-
-        <ChevronRight
-          data-work-process-trigger-chevron="true"
-          className={cn(
-            'size-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-150 motion-reduce:transition-none',
-            expanded && 'rotate-90',
-          )}
+      {view === 'v2' ? (
+        <ZCodeWorkStatus
+          label={triggerLabel}
+          expanded={expanded}
+          running={!!isStreaming}
+          title={!isStreaming ? durationTooltip : undefined}
+          onToggle={() => {
+            userToggledRef.current = true
+            setExpanded((current) => !current)
+          }}
         />
-      </button>
+      ) : (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          disabled={!!isStreaming}
+          title={!isStreaming ? durationTooltip : undefined}
+          data-work-process-trigger="true"
+          className={cn(
+            'group inline-flex max-w-full items-center gap-1.5 text-left motion-reduce:transition-none',
+            isStreaming ? 'cursor-default' : 'transition-colors hover:text-foreground',
+          )}
+          onClick={() => {
+            userToggledRef.current = true
+            setExpanded((current) => !current)
+          }}
+        >
+          <span data-process-summary={isStreaming ? 'shimmer' : undefined} data-work-process-trigger-label="true" className="min-w-0 truncate text-[14px] font-light tabular-nums text-muted-foreground">{triggerLabel}</span>
+          <ChevronRight data-work-process-trigger-chevron="true" className={cn('size-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-150 motion-reduce:transition-none', expanded && 'rotate-90')} />
+        </button>
+      )}
 
       {shouldRenderContent && (
         <div
@@ -443,7 +454,9 @@ export function ProcessBlockGroup({
               : `opacity ${PROCESS_GROUP_COLLAPSE_DURATION_MS}ms ease-out`,
           }}
         >
-          <div className="space-y-2.5">
+          <div className={cn(
+            view === 'v2' ? 'flex flex-col gap-4 pt-5' : 'space-y-2.5',
+          )} data-work-process-timeline={view === 'v2' ? 'true' : undefined}>
             {renderContentChildren()}
             {!isStreaming && (
               <button

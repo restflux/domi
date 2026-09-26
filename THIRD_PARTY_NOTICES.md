@@ -6,6 +6,13 @@ This list is a distribution notice, not a replacement for the complete license t
 
 ## Upstream application source
 
+### ZCode Work conversation presentation
+
+- Source: https://github.com/zai-org/ZCode (commit `29628c9acdb81b703bbd4080c207a0e7ce5e276e`)
+- License: Apache License 2.0; license copy: `third-party-licenses/Apache-2.0.txt`
+- Ported first-party source: `packages/ui/src/v4/ConversationTurnGroup.tsx` (`AssistantHistoryStatus`), `packages/ui/src/v4/ConversationRowView.tsx` (`UserInputRowView`), `packages/ui/src/ToolCallBlocks/ToolSummaryRow.tsx` (`SummaryLeadingContent` / `SummaryContent`), `packages/ui/src/ToolCallBlocks/renderers/explore.tsx` (exploration child layout), `packages/ui/src/v4/ConversationFileSummaryPanel.tsx` (file-summary shell and rows), and `packages/ui/src/styles.css` (animated gradient text). Domi ports their relevant presentation structure to `ZCodeWorkPresentation.tsx`, `ProcessBlockGroup.tsx`, `ToolRunGroup.tsx`, `ContentBlock.tsx`, `SDKMessageRenderer.tsx`, `TurnFileChangesSummary.tsx` and `styles/globals.css` for Work V2 only.
+- Modification notice: ZCode's Tailwind v4 semantic colors and custom collapsible/animation/intl dependencies are mapped to Domi's Tailwind v3 theme, React buttons and Pi message model. Domi retains its own permission, error, result, attachment, image, file navigation and V1 logic. ZCode runtime, state management, brand assets and independent third-party resources are not copied; in particular its reasoning component derived from Vercel AI Elements is not copied. ZCode `NOTICE.md` section IV limits the Apache-2.0 grant to first-party material.
+
 ### Proma
 
 - Source: https://github.com/proma-ai/Proma

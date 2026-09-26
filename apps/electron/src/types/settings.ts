@@ -282,6 +282,8 @@ export interface AppSettings {
   themeStyle?: ThemeStyle
   /** 界面风格 */
   interfaceVariant?: InterfaceVariant
+  /** Work 消息区展示版本；旧设置默认保留 V1。 */
+  workMessageView?: 'v1' | 'v2'
   /** Work 项目会话列表的分组与排序偏好 */
   workSidebarPreferences?: WorkSidebarPreferences
   /** Agent 默认渠道 ID（由当前 Agent Core 解释） — 当前选中的渠道 */

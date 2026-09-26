@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils'
 import { AGENT_RUNNING_ORB_STATES, RotatingAgentActivityOrb } from '@/components/ui/agent-activity-orb'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { groupIntoTurns, MessageGroupRenderer, getGroupId, getGroupPreview, extractUserText, parseAttachedFiles as sdkParseAttachedFiles, buildTaskProgressDataForTurn, type MessageGroup } from './SDKMessageRenderer'
+import { workMessageViewAtom } from '@/atoms/work-message-view'
 import { extractMeta } from '@domi/session-core'
 import { buildLiveGroupSet } from './live-group-set'
 import { AgentHistorySelectionLayer } from './AgentHistorySelectionLayer'
@@ -591,6 +592,7 @@ function AgentBottomFollowManager({
 
 export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persistedSDKMessages, streaming, showRunningIndicator = true, streamState, liveMessages, sessionPath, attachedDirs, bottomFollowRevision = 0, stoppedByUser, onRetry, onRetryNow, retryNowPending, onRetryInNewSession, onRelinkProjectRoot, onRestoreProjectRoot, onFork, onForkToWorktree, onRewind, onCreateTodo, onCompact }: AgentMessagesProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
+  const workMessageView = useAtomValue(workMessageViewAtom)
   const setMinimapCache = useSetAtom(tabMinimapCacheAtom)
   const channels = useAtomValue(channelsAtom)
   const pendingExitPlanRequests = useAtomValue(allPendingExitPlanRequestsAtom)
@@ -971,6 +973,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
                     sessionId={sessionId}
                     sessionModelId={sessionModelId}
                     toolPresentationIndex={toolPresentationIndex}
+                    workMessageView={workMessageView}
                   />
                 )
               })}

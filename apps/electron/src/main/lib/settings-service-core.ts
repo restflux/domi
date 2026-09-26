@@ -157,6 +157,7 @@ function defaultSettings(): AppSettings {
   return {
     themeMode: DEFAULT_THEME_MODE,
     interfaceVariant: DEFAULT_INTERFACE_VARIANT,
+    workMessageView: 'v1',
     workSidebarPreferences: DEFAULT_WORK_SIDEBAR_PREFERENCES,
     onboardingCompleted: false,
     environmentCheckSkipped: false,
@@ -194,6 +195,7 @@ function normalizeSettings(data: PersistedSettings): {
       ...settings,
       themeMode: data.themeMode || DEFAULT_THEME_MODE,
       interfaceVariant: data.interfaceVariant || DEFAULT_INTERFACE_VARIANT,
+      workMessageView: data.workMessageView === 'v2' ? 'v2' : 'v1',
       workSidebarPreferences: normalizeWorkSidebarPreferences(data.workSidebarPreferences),
       agentRtkEnabled: data.agentRtkEnabled === true,
       onboardingCompleted: data.onboardingCompleted ?? false,
@@ -264,6 +266,7 @@ export function createSettingsService(dependencies: SettingsServiceDependencies)
       ...current,
       ...updates,
       agentRtkEnabled: (updates.agentRtkEnabled ?? current.agentRtkEnabled) === true,
+      workMessageView: updates.workMessageView === 'v2' ? 'v2' : updates.workMessageView === 'v1' ? 'v1' : current.workMessageView ?? 'v1',
       ...(updates.visionRelay ? { visionRelay: resolveVisionRelayUpdate(current.visionRelay, updates.visionRelay) } : {}),
       ...(updates.workSidebarPreferences
         ? { workSidebarPreferences: normalizeWorkSidebarPreferences(updates.workSidebarPreferences) }

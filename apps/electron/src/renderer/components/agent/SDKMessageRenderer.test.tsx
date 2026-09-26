@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { SDKAssistantMessage, SDKMessage, SDKUserMessage } from '@domi/shared'
-import type { AssistantTurn } from '@domi/session-core'
-import { AssistantTurnRenderer, SDKMessageRenderer } from './SDKMessageRenderer.tsx'
+import type { SDKAssistantMessage, SDKMessage, SDKSystemMessage, SDKUserMessage } from '@domi/shared'
+import type { AssistantTurn, MessageGroup } from '@domi/session-core'
+import { AssistantTurnRenderer, MessageGroupRenderer, SDKMessageRenderer } from './SDKMessageRenderer.tsx'
 
 describe('Worktree handoff notice', () => {
   test('Given 已创建 Worktree 子会话 When 渲染父会话系统提示 Then 显示可点击的目标会话', () => {
@@ -177,6 +177,171 @@ describe('Task progress output deduplication', () => {
     expect(html).toContain('aria-expanded="false"')
     expect(html).not.toContain('data-work-process-detail-summary="true"')
     expect(html).not.toContain('工作过程 · 读取 1 个文件')
+  })
+})
+
+describe('Work 消息 V2 视图', () => {
+  test('系统权限提示不因切换消息视图而改变', () => {
+    const message = {
+      type: 'system',
+      subtype: 'permission_denied',
+      tool_name: 'Bash',
+      message: '操作已拒绝',
+    } as SDKSystemMessage
+    const group: MessageGroup = {
+      type: 'system',
+      message,
+      identityMessage: message,
+    }
+    const v1 = renderToStaticMarkup(<MessageGroupRenderer group={group} allMessages={[message]} />)
+    const v2 = renderToStaticMarkup(<MessageGroupRenderer group={group} allMessages={[message]} workMessageView="v2" />)
+
+    expect(v2).toBe(v1)
+    expect(v2).toContain('操作已拒绝')
+  })
+
+  test('V2 用户气泡右对齐，时间位于气泡下方且附件继续显示；V1 保持旧布局', () => {
+    const user: SDKUserMessage & { _createdAt: number } = {
+      type: 'user', uuid: 'user-view-v2', parent_tool_use_id: null, _createdAt: 1,
+      message: { content: [
+        { type: 'text', text: '<attached_files>\n- image.png: /project/image.png\n</attached_files>\n查看这个截图' },
+      ] },
+    }
+    const group: MessageGroup = { type: 'user', message: user }
+    const v1 = renderToStaticMarkup(<MessageGroupRenderer group={group} allMessages={[user]} />)
+    const v2 = renderToStaticMarkup(<MessageGroupRenderer group={group} allMessages={[user]} workMessageView="v2" />)
+    expect(v1).not.toContain('data-work-v2-user="true"')
+    expect(v2).toContain('data-work-v2-user="true"')
+    expect(v2).toContain('rounded-tr-sm border border-border bg-card px-4 py-3')
+    expect(v2).toContain('查看这个截图')
+    expect(v2).toContain('w-[200px] h-[140px]')
+    expect(v2).toContain('message-time')
+    expect(v2.indexOf('rounded-tr-sm')).toBeLessThan(v2.indexOf('message-time'))
+  })
+
+  const assistant: SDKAssistantMessage = {
+    type: 'assistant',
+    uuid: 'assistant-view-v2',
+    parent_tool_use_id: null,
+    message: {
+      content: [
+        { type: 'thinking', thinking: '先检查目标文件' },
+        { type: 'tool_use', id: 'bash-view-v2', name: 'Bash', input: { command: 'git status' } },
+        { type: 'text', text: '最终交付结果' },
+      ],
+      model: 'test-model',
+    },
+  }
+  const turn: AssistantTurn = {
+    type: 'assistant-turn',
+    assistantMessages: [assistant],
+    turnMessages: [assistant],
+    model: 'test-model',
+  }
+
+  test('旧会话默认仍是 V1；选择 V2 才出现工作过程分区和当前活动', () => {
+    const runningAssistant: SDKAssistantMessage = {
+      ...assistant,
+      message: { ...assistant.message, content: assistant.message.content.slice(0, 2) },
+    }
+    const runningTurn: AssistantTurn = {
+      ...turn,
+      assistantMessages: [runningAssistant],
+      turnMessages: [runningAssistant],
+    }
+    const v1 = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={runningTurn} allMessages={[runningAssistant]} isStreaming />,
+    )
+    const v2 = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={runningTurn} allMessages={[runningAssistant]} isStreaming workMessageView="v2" />,
+    )
+
+    expect(v1).toContain('data-work-message-view="v1"')
+    expect(v1).not.toContain('data-work-process-timeline="true"')
+    expect(v2).toContain('data-work-message-view="v2"')
+    expect(v2).toContain('data-work-process-timeline="true"')
+    expect(v2).toContain('data-work-process-live-tail="true"')
+    expect(v2).toContain('data-work-thinking-view="v2"')
+    expect(v2).toContain('data-zcode-work-status="true"')
+    expect(v2).toContain('border-b border-border/50 pb-2')
+    expect(v2).toContain('data-zcode-reasoning-trigger="true"')
+    expect(v2).toContain('data-zcode-tool-summary="true"')
+    expect(v2).toContain('zcode-work-shimmer')
+    expect(v2).not.toContain('rounded-xl border border-border/45 bg-muted/30')
+    expect(v2).not.toContain('data-work-v2-answer="true"')
+    expect(v2).toContain('工作中')
+    expect(v2).not.toContain('读取 1 个文件')
+    expect(v2).not.toContain('条只读命令')
+    expect(v2).toContain('先检查目标文件')
+    expect(v1).toContain('data-work-thinking-view="v1"')
+    expect(v2).not.toContain('stroke-dasharray')
+  })
+
+  test('V2 子代理活动使用同一工具摘要，不在收起行重复工具数量', () => {
+    const agent: SDKAssistantMessage = {
+      ...assistant,
+      message: { model: 'test-model', content: [
+        { type: 'tool_use', id: 'agent-v2', name: 'Agent', input: { prompt: '查找相关文件' } },
+      ] },
+    }
+    const agentTurn: AssistantTurn = { ...turn, assistantMessages: [agent], turnMessages: [agent] }
+    const html = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={agentTurn} allMessages={[agent]} isStreaming workMessageView="v2" />,
+    )
+    expect(html).toContain('data-zcode-tool-summary="true"')
+    expect(html).toContain('Agent')
+    expect(html).not.toContain('项工具调用')
+  })
+
+  test('V2 完成态仍保留可展开过程和最终答案，中断时保持过程展开', () => {
+    const result = {
+      type: 'result', subtype: 'success', _durationMs: 19_000,
+    } as unknown as SDKMessage
+    const completeTurn: AssistantTurn = { ...turn, turnMessages: [assistant, result] }
+    const complete = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={completeTurn} allMessages={[assistant, result]} workMessageView="v2" />,
+    )
+    const interrupted = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={completeTurn} allMessages={[assistant, result]} workMessageView="v2" stoppedByUser />,
+    )
+
+    expect(complete).toContain('用时 19 秒')
+    expect(complete).toContain('data-zcode-work-status="true"')
+    expect(complete).not.toContain('zcode-work-shimmer')
+    expect(complete).toContain('aria-expanded="false"')
+    expect(complete).toContain('data-work-v2-answer="true"')
+    expect(complete.indexOf('用时 19 秒')).toBeLessThan(complete.indexOf('data-work-v2-answer="true"'))
+    expect(complete).not.toContain('1 项失败')
+    expect(complete).toContain('最终交付结果')
+    expect(complete).not.toContain('先检查目标文件')
+    expect(interrupted).toContain('aria-expanded="true"')
+    expect(interrupted).toContain('data-work-process-timeline="true"')
+    expect(interrupted).toContain('先检查目标文件')
+  })
+
+  test('V2 的最终回答和文件改动摘要独立呈现，元信息落在底部且不挤在过程旁', () => {
+    const edited: SDKAssistantMessage = {
+      ...assistant,
+      message: { model: 'test-model', content: [
+        { type: 'tool_use', id: 'write-v2', name: 'Write', input: { file_path: '/project/summary.ts', content: 'text' } },
+        { type: 'text', text: '结果正文区' },
+      ] },
+    }
+    const completed: AssistantTurn = {
+      ...turn, assistantMessages: [edited], turnMessages: [edited], createdAt: 1,
+    }
+    const v1 = renderToStaticMarkup(<AssistantTurnRenderer turn={completed} allMessages={[edited]} />)
+    const v2 = renderToStaticMarkup(<AssistantTurnRenderer turn={completed} allMessages={[edited]} workMessageView="v2" />)
+    expect(v1).not.toContain('data-work-v2-file-summary')
+    expect(v1).not.toContain('data-work-v2-metadata')
+    expect(v2).toContain('data-work-v2-file-summary="true"')
+    expect(v2).toContain('overflow-hidden rounded-xl border border-border bg-card')
+    expect(v2).toContain('已编辑文件')
+    expect(v2).toContain('summary.ts')
+    expect(v2).toContain('data-work-v2-answer="true"')
+    expect(v2).toContain('data-work-v2-metadata="true"')
+    expect(v2.indexOf('data-work-v2-answer="true"')).toBeLessThan(v2.indexOf('data-work-v2-file-summary="true"'))
+    expect(v2.indexOf('data-work-v2-file-summary="true"')).toBeLessThan(v2.indexOf('data-work-v2-metadata="true"'))
   })
 })
 
@@ -776,7 +941,7 @@ describe('Segmented process presentation', () => {
     expect(html.indexOf('需要你确认接下来的处理方式。')).toBeLessThan(html.indexOf('询问 选择保守方案还是完整方案？'))
   })
 
-  test('Given 完成过程存在失败结果 When 整体已折叠 Then 失败状态仅在实际探索阶段展示', () => {
+  test('Given 完成过程存在失败结果 When 整体已折叠 Then V2 不显示计数且保留失败工具回看入口', () => {
     const assistant: SDKAssistantMessage = {
       type: 'assistant',
       uuid: 'assistant-failed-process',
@@ -824,6 +989,20 @@ describe('Segmented process presentation', () => {
     expect(expandedHtml).not.toContain('执行 1 条命令')
     expect(expandedHtml).toContain('探索 · 1 个文件 · 1 次搜索')
     expect(expandedHtml).toContain('1 项失败')
+
+    const v2Collapsed = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={turn} allMessages={[assistant, failedResult]} workMessageView="v2" />,
+    )
+    const v2Expanded = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={turn} allMessages={[assistant, failedResult]} workMessageView="v2" stoppedByUser />,
+    )
+    expect(v2Collapsed).toContain('aria-expanded="false"')
+    expect(v2Collapsed).not.toContain('1 项失败')
+    expect(v2Expanded).toContain('aria-expanded="true"')
+    expect(v2Expanded).toContain('data-zcode-tool-summary="true"')
+    expect(v2Expanded).not.toContain('有失败')
+    expect(v2Expanded).not.toContain('1 项失败')
+    expect(v2Expanded).not.toContain('搜索失败')
   })
 
   test('Given Agent 在过程后以 provider 错误收尾 When 渲染完成消息 Then 错误尾栏保持独立可见', () => {

@@ -20,6 +20,23 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+describe('Work 消息视图设置', () => {
+  test('旧配置与非法值保持 V1，显式选择 V2 后持久恢复并可切回', () => {
+    for (const value of [undefined, 'unknown', false]) {
+      writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark', workMessageView: value }), 'utf-8')
+      expect(getSettings().workMessageView).toBe('v1')
+    }
+
+    atomicWrite = (path, data) => writeFileSync(path, JSON.stringify(data), 'utf-8')
+    updateSettings({ workMessageView: 'v2' })
+    expect(getSettings().workMessageView).toBe('v2')
+    updateSettings({ themeMode: 'light' })
+    expect(getSettings().workMessageView).toBe('v2')
+    updateSettings({ workMessageView: 'v1' })
+    expect(getSettings().workMessageView).toBe('v1')
+  })
+})
+
 describe('RTK 设置默认与规范化', () => {
   test('Given 旧配置或非布尔值 When 读取 Then 默认关闭；仅显式 true 开启', () => {
     for (const value of [undefined, 'true', 1, false, true]) {

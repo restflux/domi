@@ -8,6 +8,7 @@
 import * as React from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { Check } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   SettingsSection,
   SettingsCard,
@@ -30,6 +31,7 @@ import {
   updateMarkdownFontSize,
 } from '@/atoms/markdown-font-size'
 import { cn } from '@/lib/utils'
+import { saveWorkMessageView, workMessageViewAtom, type WorkMessageView } from '@/atoms/work-message-view'
 import type { InterfaceVariant, ThemeMode, ThemeStyle, MarkdownFontSize } from '../../../types'
 
 // ===== 主题预览图片导入 =====
@@ -56,6 +58,11 @@ const THEME_OPTIONS = [
 const INTERFACE_VARIANT_OPTIONS: { value: InterfaceVariant; label: string }[] = [
   { value: 'classic', label: '经典' },
   { value: 'modern', label: '现代' },
+]
+
+const WORK_MESSAGE_VIEW_OPTIONS: { value: WorkMessageView; label: string }[] = [
+  { value: 'v1', label: 'V1 · 经典过程' },
+  { value: 'v2', label: 'V2 · 工作时间线' },
 ]
 
 /** Markdown 字号选项 */
@@ -165,6 +172,8 @@ export function AppearanceSettings(): React.ReactElement {
   const [themeMode, setThemeMode] = useAtom(themeModeAtom)
   const [themeStyle, setThemeStyle] = useAtom(themeStyleAtom)
   const [interfaceVariant, setInterfaceVariant] = useAtom(interfaceVariantAtom)
+  const [workMessageView, setWorkMessageView] = useAtom(workMessageViewAtom)
+  const [savingWorkMessageView, setSavingWorkMessageView] = React.useState(false)
   const systemIsDark = useAtomValue(systemIsDarkAtom)
   const [markdownFontSize, setMarkdownFontSize] = useAtom(markdownFontSizeAtom)
 
@@ -199,6 +208,20 @@ export function AppearanceSettings(): React.ReactElement {
     applyInterfaceVariantToDOM(variant)
   }, [setInterfaceVariant])
 
+  /** 切换 Work 消息视图，保存失败时保持当前版本。 */
+  const handleWorkMessageViewChange = React.useCallback((value: string) => {
+    const view: WorkMessageView = value === 'v2' ? 'v2' : 'v1'
+    if (view === workMessageView || savingWorkMessageView) return
+    setSavingWorkMessageView(true)
+    void saveWorkMessageView(view).then(() => {
+      setWorkMessageView(view)
+    }).catch(() => {
+      toast.error('保存 Work 消息视图失败')
+    }).finally(() => {
+      setSavingWorkMessageView(false)
+    })
+  }, [savingWorkMessageView, setWorkMessageView, workMessageView])
+
   /** 切换 Markdown 字号 */
   const handleMarkdownFontSizeChange = React.useCallback((value: string) => {
     const size = value as MarkdownFontSize
@@ -228,6 +251,15 @@ export function AppearanceSettings(): React.ReactElement {
             value={interfaceVariant}
             onValueChange={handleInterfaceVariantChange}
             options={INTERFACE_VARIANT_OPTIONS}
+          />
+
+          <SettingsSegmentedControl
+            label="Work 消息视图"
+            description="V2 按工作时间线呈现执行过程；随时可切回 V1"
+            value={workMessageView}
+            onValueChange={handleWorkMessageViewChange}
+            options={WORK_MESSAGE_VIEW_OPTIONS}
+            disabled={savingWorkMessageView}
           />
 
           {/* 特殊风格 - 标签在上，卡片在下 */}
