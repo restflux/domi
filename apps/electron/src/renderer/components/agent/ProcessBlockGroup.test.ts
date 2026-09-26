@@ -20,6 +20,27 @@ const text = (value: string): SDKContentBlock => ({
 })
 
 describe('Agent 过程块折叠分组', () => {
+  test('正文后发起下一轮或验收工具时，用时过程入口仍先于正文，工具留在可回看的过程内', () => {
+    for (const name of ['RequestNextWorktreeIteration', 'RequestWorktreePreviewRevision', 'ReadyForReview']) {
+      for (const isStreaming of [true, false]) {
+        const items = buildAssistantTurnRenderItems([
+          thinking('检查变更'), tool('read-1'), text('最终回复。'), tool('terminal-1', name),
+        ], { isStreaming })
+        expect(items.map((item) => item.type)).toEqual(['process-group', 'block'])
+        if (items[0]?.type === 'process-group') {
+          expect(items[0].items.map((item) => item.index)).toEqual([0, 1, 3])
+        }
+        if (items[1]?.type === 'block') expect(items[1].item.index).toBe(2)
+      }
+    }
+  })
+
+  test('仅有回复正文和下一轮终止工具时，入口也先于正文而非尾随卡片', () => {
+    const items = buildAssistantTurnRenderItems([text('最终回复。'), tool('terminal-1', 'RequestNextWorktreeIteration')])
+    expect(items.map((item) => item.type)).toEqual(['process-group', 'block'])
+    if (items[0]?.type === 'process-group') expect(items[0].items.map((item) => item.index)).toEqual([1])
+  })
+
   test('given completed turn duration when formatting process entry then uses compact Chinese duration', () => {
     expect(formatWorkProcessDuration(320)).toBe('不足 1 秒')
     expect(formatWorkProcessDuration(10_400)).toBe('10 秒')

@@ -101,6 +101,8 @@ export type MessageGroup =
 export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string): MessageGroup[] {
   const groups: MessageGroup[] = []
   let currentTurn: AssistantTurn | null = null
+  // Worktree 操作卡可能先于终止工具消息落盘；延迟显示但不截断当前助手回合。
+  let pendingWorktreeCards: MessageGroup[] = []
   // 收到后台任务完成通知（task_notification）后，若没有用户输入就直接出现新的 assistant 输出，
   // 说明这是自动唤醒的新一轮，应另起独立消息块，而不是续接上一轮。
   // 注意：不能用 result 做信号——正常对话每轮也以 result 结束，会误伤普通回复。
@@ -111,6 +113,10 @@ export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string):
       groups.push(currentTurn)
     }
     currentTurn = null
+    if (pendingWorktreeCards.length > 0) {
+      groups.push(...pendingWorktreeCards)
+      pendingWorktreeCards = []
+    }
   }
 
   for (const msg of messages) {
@@ -155,6 +161,14 @@ export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string):
       // 仅需要独立渲染的 system 消息才中断 turn（压缩状态 / permission_denied）
       // 其他 system 消息（如 init、task_started、task_progress）归入当前 turn，不中断分组
       if (isPersistableSDKSystemMessage(sysMsg)) {
+        if (currentTurn && (
+          sysMsg.subtype === 'worktree_next_iteration_requested'
+          || sysMsg.subtype === 'worktree_preview_revision_requested'
+          || sysMsg.subtype === 'worktree_ready_for_review'
+        )) {
+          pendingWorktreeCards.push({ type: 'system', message: sysMsg, identityMessage: sysMsg })
+          continue
+        }
         flushTurn()
         const previousGroup = groups.at(-1)
         const compactStatus = getSDKCompactStatus(sysMsg)

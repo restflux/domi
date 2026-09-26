@@ -179,6 +179,32 @@ describe('Task progress output deduplication', () => {
 })
 
 describe('Work 消息 V2 视图', () => {
+  test('终止工具晚于最终正文时，过程耗时入口仍在正文上方且操作详情可展开', () => {
+    const first: SDKAssistantMessage = {
+      type: 'assistant', uuid: 'worktree-answer', parent_tool_use_id: null,
+      message: { content: [
+        { type: 'thinking', thinking: '先确认工作区' },
+        { type: 'text', text: '下面创建下一轮修改。' },
+      ], model: 'test-model' },
+    }
+    const last: SDKAssistantMessage = {
+      type: 'assistant', uuid: 'worktree-action', parent_tool_use_id: null,
+      message: { content: [
+        { type: 'tool_use', id: 'next-tool', name: 'RequestNextWorktreeIteration', input: {} },
+      ], model: 'test-model' },
+    }
+    const turn: AssistantTurn = {
+      type: 'assistant-turn', assistantMessages: [first, last], turnMessages: [first, last], model: 'test-model',
+    }
+    for (const props of [{}, { isStreaming: true }, { stoppedByUser: true }]) {
+      const html = renderToStaticMarkup(<AssistantTurnRenderer turn={turn} allMessages={[first, last]} {...props} />)
+      expect(html).toContain('data-work-process-trigger="true"')
+      expect(html).toContain('data-work-v2-answer="true"')
+      expect(html.indexOf('data-work-process-trigger="true"')).toBeLessThan(html.indexOf('下面创建下一轮修改。'))
+      if (props.stoppedByUser) expect(html).toContain('data-process-compact="false"')
+    }
+  })
+
   test('系统权限提示仍然正常显示', () => {
     const message = {
       type: 'system',

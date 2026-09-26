@@ -63,6 +63,11 @@ function getTrailingTextStartIndex(blocks: SDKContentBlock[]): number | null {
  * 此时正文仍应作为可见内容外置，而不是整体收进「工作过程」折叠组。
  */
 const USER_DECISION_TOOL_NAMES = new Set(['ExitPlanMode', 'RequestDirectWorkflow', 'AskUserQuestion'])
+const WORKTREE_TERMINATING_TOOL_NAMES = new Set([
+  'ReadyForReview',
+  'RequestNextWorktreeIteration',
+  'RequestWorktreePreviewRevision',
+])
 
 /**
  * 兜底计算尾部可见正文的起始位置：消息末尾只有裁决类 tool_use 或 thinking 块时，
@@ -145,6 +150,29 @@ export function buildAssistantTurnRenderItems(
       ))
     }
     return items
+  }
+
+  // Worktree 操作卡由 system 消息独立呈现；其 tool_use 晚于正文落盘。
+  // 这时依旧将工具留在过程内回看，但让同轮过程入口先于最终正文和卡片。
+  const lastBlock = blocks.at(-1)
+  if (lastBlock?.type === 'tool_use' && WORKTREE_TERMINATING_TOOL_NAMES.has((lastBlock as SDKToolUseBlock).name)) {
+    const textIndex = blocks.findLastIndex((block) => block.type === 'text')
+    if (textIndex >= 0) {
+      let finalStartIndex = textIndex
+      while (finalStartIndex > 0 && blocks[finalStartIndex - 1]?.type === 'text') finalStartIndex -= 1
+      return [
+        {
+          type: 'process-group',
+          items: blocks.flatMap((block, index) => (
+            index >= finalStartIndex && index <= textIndex ? [] : [{ block, index }]
+          )),
+        },
+        ...blocks.slice(finalStartIndex, textIndex + 1).map((block, offset) => ({
+          type: 'block' as const,
+          item: { block, index: finalStartIndex + offset },
+        })),
+      ]
+    }
   }
 
   // 流式末尾的 text 直接作为交付正文展示在过程区外；如果 Agent 后续继续调用工具，

@@ -141,6 +141,32 @@ describe('SDK 压缩状态分组', () => {
 })
 
 describe('可持久展示的系统消息分组', () => {
+  test('Given 回合正文后先写入下一轮确认卡再写入终止工具 When 分组 Then 正文与工具属于同轮且卡位于其后', () => {
+    const raw = jsonl([
+      { type: 'user', message: { content: [{ type: 'text', text: '调整消息区' }] }, parent_tool_use_id: null },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: '检查顺序' }, { type: 'text', text: '我会调整顺序。' }] }, parent_tool_use_id: null },
+      { type: 'system', subtype: 'worktree_next_iteration_requested', request_id: 'next-1', iteration: 2 },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'next-tool', name: 'RequestNextWorktreeIteration', input: {} }] }, parent_tool_use_id: null },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'next-tool', content: 'requested' }] }, parent_tool_use_id: null },
+      { type: 'result', subtype: 'success' },
+    ])
+    const groups = groupIntoTurns(readSessionMessagesFromString(raw))
+    expect(groups.map((group) => group.type)).toEqual(['user', 'assistant-turn', 'system'])
+    expect(groups[1]?.type === 'assistant-turn' && groups[1].assistantMessages).toHaveLength(2)
+    expect(groups[2]).toMatchObject({ type: 'system', message: { request_id: 'next-1' } })
+  })
+
+  test('Given 下一轮确认卡后先出现新用户输入 When 分组 Then 卡保留在旧回合且不会追到新回复', () => {
+    const raw = jsonl([
+      { type: 'user', message: { content: [{ type: 'text', text: '旧任务' }] }, parent_tool_use_id: null },
+      { type: 'assistant', message: { content: [{ type: 'text', text: '旧回复' }] }, parent_tool_use_id: null },
+      { type: 'system', subtype: 'worktree_next_iteration_requested', request_id: 'next-1' },
+      { type: 'user', message: { content: [{ type: 'text', text: '新任务' }] }, parent_tool_use_id: null },
+      { type: 'assistant', message: { content: [{ type: 'text', text: '新回复' }] }, parent_tool_use_id: null },
+    ])
+    const groups = groupIntoTurns(readSessionMessagesFromString(raw))
+    expect(groups.map((group) => group.type)).toEqual(['user', 'assistant-turn', 'system', 'user', 'assistant-turn'])
+  })
   test('Given Preview 调整确认在工具消息持久化前写入 When 分组 Then 确认卡仍生成独立 system group', () => {
     const raw = jsonl([
       { type: 'user', message: { content: [{ type: 'text', text: '继续调整布局' }] }, parent_tool_use_id: null },
