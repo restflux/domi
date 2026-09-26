@@ -146,6 +146,7 @@ import {
 } from '@/atoms/session-tree-atoms'
 import {
   agentStreamingStatesAtom,
+  agentSessionIndicatorMapAtom,
   agentSessionStreamingStateAtomFamily,
   agentChannelIdAtom,
   agentModelIdAtom,
@@ -647,6 +648,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   // atom 输出引用未变，订阅者跳过通知。
   const streamState = useAtomValue(agentSessionStreamingStateAtomFamily(sessionId))
   const streaming = streamState?.running ?? false
+  const sessionIndicator = useAtomValue(agentSessionIndicatorMapAtom).get(sessionId) ?? 'idle'
   // 软空闲态：本轮主体已结束、UI 可输入，但 SDK 通道仍开着等后台任务唤醒。
   // 此时服务端 activeSessions 仍保留，新消息须走注入通道而非新建 run。
   const backgroundWaiting = streamState?.backgroundWaiting ?? false
@@ -4287,7 +4289,15 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     return () => { store.set(sideChatHandoffAtomFamily(sessionId), null) }
   }, [store, sessionId, sendSideChatHandoff])
 
-  const inputToolbarItems = React.useMemo<ToolbarItem[]>(() => [
+  const inputToolbarItems = React.useMemo<ToolbarItem[]>(() => {
+    const statusItem: ToolbarItem = {
+      key: 'session-status',
+      node: <AgentStatusShortcut running={streaming || backgroundWaiting} status={sessionIndicator} onOpen={(trigger) => {
+        statusTriggerRef.current = trigger
+        setSlashStatusOpen(true)
+      }} />,
+    }
+    return [
     {
       key: 'composer-plus',
       node: (
@@ -4298,6 +4308,11 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           tools={modernLayout ? {
             onAttachFile: () => { void handleAttachContent('file') },
             onAttachDirectory: () => { void handleAttachContent('directory') },
+            onOpenStatus: () => {
+              statusTriggerRef.current = null
+              setSlashStatusOpen(true)
+            },
+            statusNeedsAttention: sessionIndicator === 'blocked',
             minimalPresetEnabled,
             presetDisabled: streaming || backgroundWaiting,
             onSetPreset: (preset) => { void setModelPresentationPreset(preset) },
@@ -4393,15 +4408,14 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         </Tooltip>
       ),
     },
-    {
-      key: 'session-status',
-      node: <AgentStatusShortcut running={streaming || backgroundWaiting} onOpen={() => setSlashStatusOpen(true)} />,
-    },
-  ].filter((item) => !modernLayout || item.key === 'composer-plus' || item.key === 'execution-controls'), [
+    ...(!modernLayout ? [statusItem] : []),
+  ].filter((item) => !modernLayout || item.key === 'composer-plus' || item.key === 'execution-controls')
+  }, [
     openSideChat,
     minimalPresetEnabled,
     setModelPresentationPreset,
     backgroundWaiting,
+    sessionIndicator,
     sessionId,
     streaming,
     handleAttachContent,
@@ -4559,11 +4573,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           branchCount={sessionTree?.branchCount ?? 0}
           onToggleSessionTree={toggleSessionTree}
           sessionTreeOpen={sessionTreeOpen}
-          statusWorking={streaming || backgroundWaiting}
-          onOpenStatus={modernLayout ? (trigger) => {
-            statusTriggerRef.current = trigger
-            setSlashStatusOpen(true)
-          } : undefined}
         />
 
         {/* 空会话欢迎区独立占满 Header 与 Composer 之间的空间，确保视觉中心稳定。 */}

@@ -26,6 +26,7 @@ import { sessionHeaderCommandAtom } from '@/atoms/session-header-actions.ts'
 interface AgentSessionTargetProps {
   sessionId: string
   projectName: string
+  hideProjectName?: boolean
   /** 当前会话实际使用的项目根；用于在入口处判断 Worktree 是否可用。 */
   projectRootPath?: string
   persistedTarget?: SessionTargetRef
@@ -66,6 +67,7 @@ export function useInspectAgentSessionTarget(sessionId: string): void {
 export function AgentSessionTargetBadge({
   sessionId,
   projectName: _projectName,
+  hideProjectName = false,
 }: AgentSessionTargetProps): React.ReactElement | null {
   const state = useAtomValue(sessionTargetStateAtomFamily(sessionId))
   const operate = useSetAtom(operateSessionTargetAtomFamily(sessionId))
@@ -115,7 +117,8 @@ export function AgentSessionTargetBadge({
         target={target}
         compact
         disabled
-        className="titlebar-no-drag max-w-[min(50vw,36rem)]"
+        hideProjectName={hideProjectName}
+        className="titlebar-no-drag max-w-[min(30vw,16rem)]"
         onChooseTarget={() => undefined}
         worktreeLifecycleAction={lifecycleAction}
         sessionHandoffAction={{

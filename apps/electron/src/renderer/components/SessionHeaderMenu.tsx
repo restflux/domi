@@ -7,6 +7,8 @@ import {
   FolderOpen,
   FolderInput,
   MoreHorizontal,
+  Images,
+  Share2,
   Pencil,
   Pin,
   PinOff,
@@ -45,6 +47,10 @@ function menuIcon(action: SessionHeaderMenuAction, label: string): React.ReactNo
       return label.startsWith('取消') ? <PinOff /> : <Pin />
     case 'followUp':
       return <Flag />
+    case 'sessionTree':
+      return <Share2 />
+    case 'gallery':
+      return <Images />
     case 'rename':
       return <Pencil />
     case 'archive':

@@ -1,11 +1,11 @@
 /**
  * ComposerPlusMenu — 输入框左下角「+」入口。
- * 经典界面保留引用菜单；现代 Work 在同一入口查找附件、语音与呈现设置。
+ * 经典界面保留引用菜单；现代 Work 在同一入口查找附件、状态、语音与呈现设置。
  * 引用触发符必须等菜单关闭并阻止焦点回到「+」后再插入，否则 suggestion 会被 blur 关闭。
  */
 
 import * as React from 'react'
-import { AtSign, Check, ChevronDown, Command, FileText, FolderOpen, Hash, MessagesSquare, MicIcon, Plus, SlidersHorizontal } from 'lucide-react'
+import { Activity, AtSign, Check, ChevronDown, Command, FileText, FolderOpen, Hash, MessagesSquare, MicIcon, Plus, SlidersHorizontal } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +27,8 @@ const MENU_ITEMS = [
 interface ComposerPlusTools {
   onAttachFile: () => void
   onAttachDirectory: () => void
+  onOpenStatus: () => void
+  statusNeedsAttention?: boolean
   minimalPresetEnabled: boolean
   presetDisabled: boolean
   onSetPreset: (preset: 'standard' | 'minimal') => void
@@ -37,7 +39,7 @@ export interface ComposerPlusMenuProps {
   onInsertTrigger?: (char: string) => void
   onSideChat?: () => void
   disabled?: boolean
-  /** 现代 Work 的次级工具；执行方式继续在输入框上直接可见。 */
+  /** 现代 Work 的次级工具；会话状态在菜单内仍可独立于渠道选择查看。 */
   tools?: ComposerPlusTools
 }
 
@@ -75,20 +77,20 @@ export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false
             variant="ghost"
             size="icon"
             className={`${inputToolbarButtonClass} relative`}
-            disabled={disabled}
-            aria-label="更多输入工具"
+            aria-label={tools.statusNeedsAttention ? '更多输入工具，会话需要处理' : '更多输入工具'}
             title="更多输入工具"
           >
             <Plus className="size-[17px]" />
             {voiceActive && <span aria-label="正在听写" role="status" className="absolute right-0 top-0 size-1.5 rounded-full bg-destructive" />}
+            {!voiceActive && tools.statusNeedsAttention && <span aria-hidden="true" className="absolute right-0 top-0 size-1.5 rounded-full bg-amber-500" />}
           </Button>
         </PopoverTrigger>
         <PopoverContent side="top" align="start" className="z-[9999] max-h-[min(68vh,30rem)] w-64 max-w-[calc(100vw-2rem)] overflow-y-auto p-1.5" onCloseAutoFocus={handleCloseAutoFocus}>
           <div className="composer-plus-group-label">添加内容</div>
-          <button type="button" className="composer-plus-item" onClick={() => closeThen(tools.onAttachFile)}><FileText /><span>添加文件</span></button>
-          <button type="button" className="composer-plus-item" onClick={() => closeThen(tools.onAttachDirectory)}><FolderOpen /><span>添加文件夹</span></button>
-          {tools.imageGeneration}
-          <button type="button" className="composer-plus-item" onClick={() => closeThen(() => { void toggleVoiceDictation() })}>
+          <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(tools.onAttachFile)}><FileText /><span>添加文件</span></button>
+          <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(tools.onAttachDirectory)}><FolderOpen /><span>添加文件夹</span></button>
+          {!disabled && tools.imageGeneration}
+          <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(() => { void toggleVoiceDictation() })}>
             <MicIcon /><span>{voiceActive ? '停止语音输入' : '语音输入'}</span>
           </button>
           <div className="composer-plus-group-label">引用与调用</div>
@@ -97,18 +99,20 @@ export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false
               key={char}
               type="button"
               className="composer-plus-item"
+              disabled={disabled}
               onClick={() => { pendingCharRef.current = char; setOpen(false) }}
             >
               <Icon /><span>{label}</span><span className="composer-plus-hint">{char}</span>
             </button>
           ))}
           <div className="composer-plus-group-label">会话与设置</div>
-          {onSideChat && <button type="button" className="composer-plus-item" onClick={() => closeThen(onSideChat)}><MessagesSquare /><span>打开侧边聊天</span></button>}
+          {onSideChat && <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(onSideChat)}><MessagesSquare /><span>打开侧边聊天</span></button>}
+          <button type="button" className="composer-plus-item" onClick={() => closeThen(tools.onOpenStatus)}><Activity /><span>会话状态与耗时</span>{tools.statusNeedsAttention && <span className="composer-plus-hint ml-auto text-amber-600 dark:text-amber-400">需要处理</span>}</button>
           <button
             type="button"
             className="composer-plus-item"
             aria-expanded={presetExpanded}
-            disabled={tools.presetDisabled}
+            disabled={disabled || tools.presetDisabled}
             onClick={() => setPresetExpanded((expanded) => !expanded)}
           >
             <SlidersHorizontal /><span>模型呈现</span>
@@ -116,10 +120,10 @@ export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false
           </button>
           {presetExpanded && (
             <div className="composer-plus-presets">
-              <button type="button" className="composer-plus-item" title="完整提示词与全量工具" onClick={() => closeThen(() => tools.onSetPreset('standard'))}>
+              <button type="button" className="composer-plus-item" title="完整提示词与全量工具" disabled={disabled || tools.presetDisabled} onClick={() => closeThen(() => tools.onSetPreset('standard'))}>
                 <span>标准</span>{!tools.minimalPresetEnabled && <Check />}
               </button>
-              <button type="button" className="composer-plus-item" title="固定提示词与精简工具，权限与门禁不变" onClick={() => closeThen(() => tools.onSetPreset('minimal'))}>
+              <button type="button" className="composer-plus-item" title="固定提示词与精简工具，权限与门禁不变" disabled={disabled || tools.presetDisabled} onClick={() => closeThen(() => tools.onSetPreset('minimal'))}>
                 <span>极简</span>{tools.minimalPresetEnabled && <Check />}
               </button>
             </div>

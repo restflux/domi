@@ -31,6 +31,20 @@ describe('session header menu model', () => {
     ])
   })
 
+  test('现代会话将会话树和图片画廊收入更多菜单，经典菜单不增加项目', () => {
+    const options = {
+      pinned: false, needsFollowUp: false, archived: false, canTransfer: true,
+      isDraft: false, canOpenProjectFolder: true, hasSessionPath: true,
+    }
+    const modern = buildAgentSessionHeaderMenu({ ...options, includeSessionTools: true })
+    const classic = buildAgentSessionHeaderMenu(options)
+    const actions = (entries: typeof modern) => entries.filter((entry) => entry.type === 'item').map((entry) => entry.action)
+    expect(actions(modern)).toContain('sessionTree')
+    expect(actions(modern)).toContain('gallery')
+    expect(actions(classic)).not.toContain('sessionTree')
+    expect(actions(classic)).not.toContain('gallery')
+  })
+
   test('运行中的 Agent 会话隐藏迁移，并分别按项目与会话路径可用性禁用目录操作', () => {
     const items = buildAgentSessionHeaderMenu({
       pinned: true,

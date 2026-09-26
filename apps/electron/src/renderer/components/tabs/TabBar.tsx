@@ -378,11 +378,11 @@ function TabBarInner({
         className={cn(
           'main-tabbar-track relative flex flex-1 min-w-0 overflow-x-auto scrollbar-none',
           isModern ? 'items-center' : 'items-end',
-          // 为固定在标签栏右侧的全局按钮预留空间；Windows 面板关闭时还需避开 WindowControls（~126px）。
-          isWindows && (showPanelButton
+          // 经典界面仍使用悬浮按钮区；现代界面通过 flex 自然分配标签与操作空间。
+          !isModern && isWindows && (showPanelButton
             ? (isPanelOpen ? 'pr-28' : 'pr-[258px]')
             : 'pr-[162px]'),
-          !isWindows && (showPanelButton ? (isPanelOpen ? 'pr-28' : 'pr-36') : 'pr-10'),
+          !isModern && !isWindows && (showPanelButton ? (isPanelOpen ? 'pr-28' : 'pr-36') : 'pr-10'),
         )}
       >
         {tabs.map((tab) => (
@@ -463,12 +463,14 @@ function TabBarActions({
   return (
     <div
       className={cn(
-        'absolute inset-y-0 z-10 flex gap-1 titlebar-no-drag',
-        isModern ? 'items-center' : 'items-end pb-[3px]',
-        isWindows && (!showPanelButton || !isPanelOpen) ? 'right-[130px]' : 'right-1',
+        'z-10 flex shrink-0 gap-1 titlebar-no-drag',
+        isModern ? 'relative h-full items-center pr-1' : 'absolute inset-y-0 items-end pb-[3px]',
+        isWindows && (!showPanelButton || !isPanelOpen) && (isModern ? 'pr-[130px]' : 'right-[130px]'),
+        !isModern && (isPanelOpen || !isWindows) && 'right-1',
       )}
     >
-      <Tooltip>
+      {isModern && activeAgentSessionId && <div id="agent-tabbar-session-actions" className="flex min-w-0 items-center" />}
+      {!isModern && <Tooltip>
         <TooltipTrigger asChild>
           <Button
             type="button"
@@ -484,7 +486,7 @@ function TabBarActions({
         <TooltipContent side="bottom">
           <p>查看快捷键地图</p>
         </TooltipContent>
-      </Tooltip>
+      </Tooltip>}
 
       {showPanelButton && (
         <RunningTerminalsPopover

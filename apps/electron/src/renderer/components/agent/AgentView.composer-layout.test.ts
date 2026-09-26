@@ -229,17 +229,19 @@ describe('Agent Composer controls', () => {
     expect(statusSource).toContain("'legacy-worktree-review-status mx-3 mt-2 rounded-md border-blue-500/20 bg-blue-500/5'")
   })
 
-  test('现代主题保留执行方式、精简次级操作，并将状态入口移至顶部', () => {
+  test('现代主题保留执行方式并将状态入口收进输入区加号菜单', () => {
     const view = readFileSync(resolve(import.meta.dir, 'AgentView.tsx'), 'utf8')
     const plusMenu = readFileSync(resolve(import.meta.dir, '../ai-elements/composer-plus-menu.tsx'), 'utf8')
 
     expect(view).toContain("item.key === 'execution-controls'")
     expect(view).toContain("!modernLayout || item.key === 'composer-plus' || item.key === 'execution-controls'")
-    expect(view).toContain('onOpenStatus={modernLayout ? (trigger) => {')
+    expect(view).toContain('onOpenStatus: () => {')
     expect(view).toContain('restoreFocusOnClose={restoreStatusFocus}')
     expect(view).toContain('if (trigger?.isConnected) trigger.focus()')
     expect(view).toContain("key: 'session-status'")
-    expect(plusMenu).not.toContain('onOpenSessionStatus')
+    expect(view).toContain("].filter((item) => !modernLayout || item.key === 'composer-plus' || item.key === 'execution-controls')")
+    expect(plusMenu).toContain('closeThen(tools.onOpenStatus)')
+    expect(plusMenu).toContain('会话状态与耗时')
     expect(view).toContain('imageSelections[`work:${sessionId}`] ? undefined : <ImageGenerationSelector')
     expect(plusMenu).toContain('onSetPreset(\'standard\')')
     expect(plusMenu).toContain('onSetPreset(\'minimal\')')

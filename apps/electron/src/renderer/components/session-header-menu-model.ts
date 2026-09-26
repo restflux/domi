@@ -7,6 +7,8 @@ export type SessionHeaderMenuAction =
   | 'openProject'
   | 'copyPath'
   | 'copyId'
+  | 'sessionTree'
+  | 'gallery'
   | 'delete'
 
 export type SessionHeaderMenuEntry =
@@ -27,6 +29,7 @@ interface AgentSessionHeaderMenuState {
   isDraft: boolean
   canOpenProjectFolder: boolean
   hasSessionPath: boolean
+  includeSessionTools?: boolean
 }
 
 export function getAgentSessionTransferLabel(isDraft: boolean): '迁移到其他项目' | '交接到新会话' {
@@ -47,6 +50,11 @@ export function buildAgentSessionHeaderMenu(
     { type: 'item', action: 'rename', label: '重命名' },
     { type: 'item', action: 'archive', label: state.archived ? '取消归档' : '归档' },
     { type: 'separator' },
+    ...(state.includeSessionTools ? [
+      { type: 'item', action: 'sessionTree', label: '会话树' } as const,
+      { type: 'item', action: 'gallery', label: '生成图片画廊' } as const,
+      { type: 'separator' } as const,
+    ] : []),
     ...(state.canTransfer
       ? [{
           type: 'item',

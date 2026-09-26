@@ -82,6 +82,17 @@ describe('SessionTargetControl compact header', () => {
     expect(html).toContain('Worktree · 修改中')
   })
 
+  test('Given 顶部标签已显示项目名 When 在同一行展示 Worktree Then 只保留简短环境状态', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <SessionTargetControl target={target('isolated')} compact hideProjectName disabled onChooseTarget={() => undefined} />
+      </TooltipProvider>,
+    )
+    expect(html).toContain('Worktree · 修改中')
+    expect(html).not.toContain('>domi<')
+    expect(html).toContain('aria-label="当前修改环境"')
+  })
+
   test('Given a Worktree has saved checkpoints When rendered Then it explains they remain unpublished to Local', () => {
     const checkpointed = {
       ...target('isolated'),

@@ -1,13 +1,14 @@
 /**
  * AgentHeader — Agent 会话工具栏
  *
- * 会话标题只在顶部标签页显示；本工具栏保留会话树、Session Target
- * 与当前会话操作，避免在相邻两层重复呈现同一个标题。
+ * 会话标题只在顶部标签页显示。现代界面将会话操作放进同一标签栏，
+ * 经典界面保留独立工具栏。
  */
 
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { Activity, Images, Share2 } from 'lucide-react'
+import { Images, Share2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   agentSessionIndicatorMapAtom,
@@ -17,6 +18,7 @@ import {
 } from '@/atoms/agent-atoms'
 import { sessionHeaderCommandAtom } from '@/atoms/session-header-actions'
 import { tabsAtom, updateTabTitle } from '@/atoms/tab-atoms'
+import { interfaceVariantAtom } from '@/atoms/theme'
 import { SessionHeaderMenu, SessionRenameDialog } from '@/components/SessionHeaderMenu.tsx'
 import { GeneratedGalleryDrawer } from '@/components/gallery/GeneratedGalleryDrawer'
 import { buildAgentSessionHeaderMenu, type SessionHeaderMenuAction } from '@/components/session-header-menu-model.ts'
@@ -31,8 +33,6 @@ interface AgentHeaderProps {
   branchCount?: number
   onToggleSessionTree?: () => void
   sessionTreeOpen?: boolean
-  statusWorking?: boolean
-  onOpenStatus?: (trigger: HTMLButtonElement) => void
 }
 
 export function AgentHeader({
@@ -40,10 +40,13 @@ export function AgentHeader({
   branchCount = 0,
   onToggleSessionTree,
   sessionTreeOpen = false,
-  statusWorking = false,
-  onOpenStatus,
 }: AgentHeaderProps): React.ReactElement | null {
   const isWindows = React.useMemo(() => detectIsWindows(), [])
+  const isModern = useAtomValue(interfaceVariantAtom) !== 'classic'
+  const [tabBarSlot, setTabBarSlot] = React.useState<HTMLElement | null>(null)
+  React.useEffect(() => {
+    setTabBarSlot(isModern ? document.getElementById('agent-tabbar-session-actions') : null)
+  }, [isModern, sessionId])
   const sessions = useAtomValue(agentSessionsAtom)
   const workspaces = useAtomValue(agentWorkspacesAtom)
   const indicatorMap = useAtomValue(agentSessionIndicatorMapAtom)
@@ -60,7 +63,6 @@ export function AgentHeader({
   const workspace = workspaces.find((item) => item.id === session.workspaceId)
   const sessionPath = sessionPathMap.get(session.id) ?? null
   const indicatorStatus = indicatorMap.get(session.id) ?? 'idle'
-  const statusLabel = indicatorStatus === 'idle' && statusWorking ? 'running' : indicatorStatus
   const canOpenProjectFolder = Boolean(
     workspace
     && (!workspace.projectRootPath || !workspace.projectRootStatus || workspace.projectRootStatus === 'available'),
@@ -74,6 +76,7 @@ export function AgentHeader({
     isDraft: session.sessionTarget?.kind === 'unselected',
     canOpenProjectFolder,
     hasSessionPath: !!sessionPath,
+    includeSessionTools: isModern,
   })
 
   const rename = async (title: string): Promise<void> => {
@@ -123,19 +126,25 @@ export function AgentHeader({
         })
       return
     }
+    if (action === 'sessionTree') {
+      onToggleSessionTree?.()
+      return
+    }
+    if (action === 'gallery') {
+      setGalleryOpen(true)
+      return
+    }
     if (action === 'pin' || action === 'followUp' || action === 'archive' || action === 'move' || action === 'delete') {
       setSessionCommand({ sessionType: 'agent', sessionId: session.id, action })
     }
   }
 
-  return (
-    <>
-      <div
-        data-session-toolbar="agent"
-        className="relative z-[51] flex h-10 items-center gap-2 px-4"
-      >
-        <div className={cn('absolute inset-0 titlebar-drag-region pointer-events-none', isWindows && WINDOW_CONTROLS_INSET_RIGHT)} />
-        <div className="relative ml-auto flex min-w-0 items-center gap-1 titlebar-no-drag">
+  // SSR 中保留可测试的工具栏；浏览器首帧等待标签栏槽位，避免闪现空白第二行。
+  const showInlineToolbar = !isModern || typeof document === 'undefined'
+  const toolbar = (
+    <div data-session-toolbar="agent" className="flex min-w-0 items-center gap-0.5 titlebar-no-drag">
+      {!isModern && (
+        <>
           <button
             type="button"
             onClick={() => setGalleryOpen(true)}
@@ -157,26 +166,25 @@ export function AgentHeader({
           >
             <Share2 className="size-3.5" />
           </button>
-          <AgentSessionTargetBadge
-            sessionId={session.id}
-            projectName={workspace?.name ?? '当前项目'}
-          />
-          {onOpenStatus && (
-            <button
-              type="button"
-              onClick={(event) => onOpenStatus(event.currentTarget)}
-              aria-label={statusLabel === 'blocked' ? '会话状态：需要处理' : statusLabel === 'running' ? '会话状态：运行中' : statusLabel === 'completed' ? '会话状态：已完成' : '会话状态与耗时'}
-              title="会话状态与耗时"
-              data-agent-status-shortcut="header"
-              className={cn('relative flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring', statusLabel === 'blocked' && 'text-amber-600 dark:text-amber-400', statusLabel === 'running' && 'text-primary')}
-            >
-              <Activity className="size-3.5" />
-              {statusLabel !== 'idle' && <span aria-hidden="true" className={cn('absolute right-0.5 top-0.5 size-1.5 rounded-full', statusLabel === 'blocked' ? 'bg-amber-500' : statusLabel === 'running' ? 'bg-primary' : 'bg-muted-foreground')} />}
-            </button>
-          )}
-          <SessionHeaderMenu entries={menuEntries} onAction={handleMenuAction} />
+        </>
+      )}
+      <AgentSessionTargetBadge
+        sessionId={session.id}
+        projectName={workspace?.name ?? '当前项目'}
+        hideProjectName={isModern}
+      />
+      <SessionHeaderMenu entries={menuEntries} onAction={handleMenuAction} />
+    </div>
+  )
+
+  return (
+    <>
+      {isModern && tabBarSlot ? createPortal(toolbar, tabBarSlot) : showInlineToolbar ? (
+        <div className="relative z-[51] flex h-10 items-center justify-end px-4">
+          <div className={cn('absolute inset-0 titlebar-drag-region pointer-events-none', isWindows && WINDOW_CONTROLS_INSET_RIGHT)} />
+          {toolbar}
         </div>
-      </div>
+      ) : null}
       <SessionRenameDialog
         open={renameOpen}
         title={session.title}

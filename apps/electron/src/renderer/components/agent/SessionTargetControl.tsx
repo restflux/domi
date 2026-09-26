@@ -13,6 +13,7 @@ import {
 export interface SessionTargetControlProps {
   target: SessionTargetDisplayInput
   compact?: boolean
+  hideProjectName?: boolean
   disabled?: boolean
   className?: string
   onChooseTarget: (choice: SessionTargetChoice) => void
@@ -53,6 +54,7 @@ const STATUS_CLASSES: Record<SessionTargetStatusViewModel['tone'], string> = {
 export function SessionTargetControl({
   target,
   compact = false,
+  hideProjectName = false,
   disabled = false,
   className,
   onChooseTarget: _onChooseTarget,
@@ -123,13 +125,15 @@ export function SessionTargetControl({
       ? target.delivery.iteration
       : target.delivery?.review.iteration
     const checkpointCount = target.checkpoints?.length ?? 0
-    const productLabel = isWorktree
-      ? model.status.label === '已交付' || model.status.label === '已放弃'
-        ? model.status.label
-        : checkpointCount > 0 && target.delivery?.state === 'working'
-          ? `Worktree · ${checkpointCount} 个阶段未交付`
-          : `Worktree · ${model.status.label}`
-      : 'Local'
+    const productLabel = hideProjectName
+      ? isWorktree ? `Worktree · ${model.status.label}` : 'Local'
+      : isWorktree
+        ? model.status.label === '已交付' || model.status.label === '已放弃'
+          ? model.status.label
+          : checkpointCount > 0 && target.delivery?.state === 'working'
+            ? `Worktree · ${checkpointCount} 个阶段未交付`
+            : `Worktree · ${model.status.label}`
+        : 'Local'
     const canReveal = !!onRevealTarget && target.checkout.phase !== 'discarded'
     const tooltip = (
       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
@@ -144,7 +148,7 @@ export function SessionTargetControl({
     )
     return (
       <section className={cn('flex min-w-0 items-center gap-2 text-foreground', className)} aria-label="当前修改环境">
-        <span className="min-w-0 truncate text-xs font-semibold">{model.identity.projectName}</span>
+        {!hideProjectName && <span className="min-w-0 truncate text-xs font-semibold">{model.identity.projectName}</span>}
         <Popover>
           <Tooltip>
             <TooltipTrigger asChild>
