@@ -1,5 +1,5 @@
 /**
- * SessionFilesPopover — 右侧工作区收起时固定在右上角的会话文件卡片。
+ * SessionFilesPopover — 顶部常驻入口与右上角的会话文件浮窗。
  *
  * 使用轻量的输出／来源清单；完整文件树只在用户显式查看全部时打开。
  * 用户按需点击入口展开，点击卡片外层或按 Escape 关闭。
@@ -8,7 +8,6 @@
 import * as React from 'react'
 import { createPortal } from 'react-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { FolderOpen } from 'lucide-react'
 import { agentFileSourceFilterMapAtom, agentSessionPathMapAtom } from '@/atoms/agent-atoms'
 import {
   activateSessionRightWorkspaceTool,
@@ -19,6 +18,7 @@ import { SessionFilesCard } from './SessionFilesCard'
 import { Button } from '@/components/ui/button'
 import {
   DEFAULT_SESSION_FILES_POPOVER_OPEN,
+  positionSessionFilesPopover,
   resolveRightWorkspaceToolAfterSessionFilesClose,
   shouldCloseSessionFilesPopoverOnPointerDown,
 } from './session-files-popover-model'
@@ -36,6 +36,7 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
   const viewAllRef = React.useRef(false)
   const [open, setOpen] = React.useState(DEFAULT_SESSION_FILES_POPOVER_OPEN)
+  const [position, setPosition] = React.useState<ReturnType<typeof positionSessionFilesPopover> | null>(null)
   const triggerRef = React.useRef<HTMLButtonElement>(null)
   const panelRef = React.useRef<HTMLDivElement>(null)
 
@@ -60,7 +61,41 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
   }, [rightWorkspaceOpen, sessionId, setRightWorkspaceSessionStateMap])
 
   React.useEffect(() => {
-    if (!open || rightWorkspaceOpen) return
+    if (!open) {
+      setPosition(null)
+      return
+    }
+
+    const trigger = triggerRef.current
+    const main = trigger?.closest('.main-tabbar')
+    if (!trigger || !main) return
+    const updatePosition = (): void => {
+      const triggerRect = trigger.getBoundingClientRect()
+      const mainRect = main.getBoundingClientRect()
+      const next = positionSessionFilesPopover({
+        viewportWidth: window.innerWidth,
+        mainLeft: mainRect.left,
+        mainRight: mainRect.right,
+        mainBottom: mainRect.bottom,
+        triggerRight: triggerRect.right,
+        triggerBottom: triggerRect.bottom,
+      })
+      setPosition((previous) => previous?.top === next.top && previous.right === next.right && previous.width === next.width
+        ? previous : next)
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    observer?.observe(main)
+    observer?.observe(trigger)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      observer?.disconnect()
+    }
+  }, [open, rightWorkspaceOpen, sessionId])
+
+  React.useEffect(() => {
+    if (!open) return
 
     const handlePointerDown = (event: PointerEvent): void => {
       if (!(event.target instanceof Node)) return
@@ -86,14 +121,12 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
   }, [open])
 
   const viewAll = (): void => {
-    viewAllRef.current = true
+    viewAllRef.current = !rightWorkspaceOpen
     setOpen(false)
     setFileSourceFilterMap((current) => ({ ...current, [sessionId]: 'session' }))
     setRightWorkspaceSessionStateMap((current) => activateSessionRightWorkspaceTool(current, sessionId, 'files'))
     setRightWorkspaceOpen(true)
   }
-
-  if (rightWorkspaceOpen) return null
 
   return (
     <>
@@ -110,14 +143,20 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
         title="会话文件"
         onClick={() => setOpen((current) => !current)}
       >
-        <FolderOpen className="size-3.5" />
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" className="size-3.5">
+          <circle cx="5" cy="7" r="1.2" />
+          <path d="M9 7h10" />
+          <circle cx="5" cy="16" r="1.2" />
+          <path d="M9 16h10" />
+        </svg>
       </Button>
 
-      {open && typeof document !== 'undefined' && createPortal(
+      {open && position && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
           data-session-files-popover
-          className="titlebar-no-drag fixed right-4 top-[58px] z-[100] flex max-h-[min(244px,calc(100vh-74px))] w-[min(300px,calc(100vw-24px))] flex-col overflow-hidden rounded-[22px] border border-border/25 bg-popover/98 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-150"
+          style={{ top: position.top, right: position.right, width: position.width }}
+          className="titlebar-no-drag fixed z-[100] flex max-h-[min(244px,calc(100vh-74px))] flex-col overflow-hidden rounded-[22px] border border-border/25 bg-popover/98 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-150"
         >
           <SessionFilesCard sessionId={sessionId} sessionPath={sessionPath} onViewAll={viewAll} />
         </div>,

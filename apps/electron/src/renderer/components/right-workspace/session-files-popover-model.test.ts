@@ -8,6 +8,7 @@ import { SessionFilesCard } from './SessionFilesCard'
 import { SessionFilesPopover } from './SessionFilesPopover'
 import {
   DEFAULT_SESSION_FILES_POPOVER_OPEN,
+  positionSessionFilesPopover,
   resolveRightWorkspaceToolAfterSessionFilesClose,
   selectConfirmedSessionOutputs,
   selectSessionFileSources,
@@ -102,13 +103,39 @@ describe('会话文件浮窗入口', () => {
     }))
     expect(html).toContain('查看会话文件')
     expect(html).toContain('aria-expanded="false"')
+    expect(html.match(/<circle /g)).toHaveLength(2)
+    expect(html).not.toContain('lucide-files')
   })
 
-  test('Given 完整右侧栏已经打开 When 渲染顶部工具 Then 隐藏会话文件入口', () => {
+  test('Given 完整右侧栏已经打开 When 渲染顶部工具 Then 仍显示可点击的会话文件入口', () => {
     const html = renderToStaticMarkup(React.createElement(SessionFilesPopover, {
       sessionId: 'session-1', rightWorkspaceOpen: true,
     }))
-    expect(html).toBe('')
+    expect(html).toContain('查看会话文件')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html.match(/<circle /g)).toHaveLength(2)
+  })
+
+  test('Given 侧栏展开或窗口缩小 When 浮窗靠入口定位 Then 卡片留在主内容区而非覆盖侧栏', () => {
+    const collapsed = positionSessionFilesPopover({
+      viewportWidth: 1000, mainLeft: 180, mainRight: 1000, mainBottom: 46,
+      triggerRight: 955, triggerBottom: 38,
+    })
+    expect(collapsed).toEqual({ top: 54, right: 45, width: 300 })
+
+    const expanded = positionSessionFilesPopover({
+      viewportWidth: 1000, mainLeft: 180, mainRight: 680, mainBottom: 46,
+      triggerRight: 635, triggerBottom: 38,
+    })
+    expect(expanded).toEqual({ top: 54, right: 365, width: 300 })
+    expect(1000 - expanded.right).toBeLessThan(680)
+
+    const narrow = positionSessionFilesPopover({
+      viewportWidth: 800, mainLeft: 120, mainRight: 350, mainBottom: 46,
+      triggerRight: 305, triggerBottom: 38,
+    })
+    expect(narrow).toEqual({ top: 54, right: 495, width: 173 })
+    expect(800 - narrow.right - narrow.width).toBeGreaterThanOrEqual(120)
   })
 
   test('Given 会话文件浮窗正在展示 When 打开完整右侧栏 Then 关闭浮窗并转到改动，不把文件恢复进侧栏', () => {

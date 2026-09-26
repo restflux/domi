@@ -52,6 +52,31 @@ export function selectSessionFileSources(
 
 export const DEFAULT_SESSION_FILES_POPOVER_OPEN = false
 
+export interface SessionFilesPopoverAnchor {
+  viewportWidth: number
+  mainLeft: number
+  mainRight: number
+  mainBottom: number
+  triggerRight: number
+  triggerBottom: number
+}
+
+/** 卡片贴在入口下方，右缘始终留在主内容区，侧栏展开时不得遮挡侧栏。 */
+export function positionSessionFilesPopover(anchor: SessionFilesPopoverAnchor): {
+  top: number
+  right: number
+  width: number
+} {
+  const inset = 12
+  const rightEdge = Math.min(anchor.triggerRight, anchor.mainRight - inset, anchor.viewportWidth - inset)
+  const leftEdge = Math.max(anchor.mainLeft + inset, inset)
+  return {
+    top: Math.max(anchor.triggerBottom, anchor.mainBottom) + 8,
+    right: Math.max(inset, anchor.viewportWidth - rightEdge),
+    width: Math.max(0, Math.min(300, rightEdge - leftEdge)),
+  }
+}
+
 /** 会话文件使用浮窗后，展开完整右侧工作区时不再回落到文件工具。 */
 export function resolveRightWorkspaceToolAfterSessionFilesClose(
   activeTool: RightWorkspaceTool | undefined,
