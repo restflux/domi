@@ -37,10 +37,13 @@ import { terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
 import {
   browserSessionIdFromTab,
   browserTabId,
+  closeRightWorkspaceV2OptionalTab,
+  openRightWorkspaceV2OptionalTab,
   resolveClosedTabFallback,
   terminalIdFromTab,
   terminalTabId,
   toolFromRightWorkspaceTab,
+  visibleRightWorkspaceTabs,
   type RightWorkspaceSessionState,
   type RightWorkspaceTabId,
   type RightWorkspaceTool,
@@ -138,8 +141,8 @@ function ActiveRightSidePanel({
   }
 
   const tabs: RightWorkspaceToolbarTab[] = [
-    { id: 'files', tool: 'files', label: '文件', closeable: false },
-    { id: 'changes', tool: 'changes', label: '改动', closeable: false },
+    { id: 'files', tool: 'files', label: isWorkbenchV2 ? (fileSourceFilterMap[currentSessionId] === 'session' ? '会话文件' : '项目文件') : '文件', closeable: isWorkbenchV2 },
+    { id: 'changes', tool: 'changes', label: '改动', closeable: isWorkbenchV2 },
     ...(state.scratchVisible ? [{ id: 'scratch' as const, tool: 'scratch' as const, label: '草稿', closeable: true }] : []),
     ...workspaceTerminals.map((terminal) => ({
       id: terminalTabId(terminal.terminalId),
@@ -156,8 +159,8 @@ function ActiveRightSidePanel({
     ...(previewFile ? [{ id: 'preview' as const, tool: 'preview' as const, label: getPreviewTitle(previewFile.filePath) ?? '预览', closeable: true }] : []),
     ...((sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) ? [{ id: 'side-chat' as const, tool: 'side-chat' as const, label: '侧边聊天', closeable: true }] : []),
   ]
-  // v2 不把旧文件/改动面板充作 ZCode 右侧工作区的默认页；v1 标签与内容保持原样。
-  const visibleTabs = isWorkbenchV2 ? tabs.filter((tab) => tab.tool !== 'files' && tab.tool !== 'changes') : tabs
+  // v2 文件与改动仅由用户按需打开；v1 始终展示原有固定标签。
+  const visibleTabs = visibleRightWorkspaceTabs(tabs, isWorkbenchV2, state)
   const showV2Launcher = isWorkbenchV2 && visibleTabs.length === 0
   const activeTabId = resolveAvailableTabId(state, visibleTabs)
   const activeTool = toolFromRightWorkspaceTab(activeTabId)
@@ -249,6 +252,16 @@ function ActiveRightSidePanel({
       })
   }
 
+  const openOptionalTool = (tool: 'files' | 'changes'): void => {
+    if (tool === 'files') setFileSourceFilter('project')
+    setActiveTab(tool)
+    setWorkspaceStateMap((current) => {
+      const next = new Map(current)
+      next.set(currentSessionId, openRightWorkspaceV2OptionalTab(current.get(currentSessionId), tool))
+      return next
+    })
+  }
+
   const showScratch = (): void => {
     setWorkspaceStateMap((current) => {
       const next = activateSessionRightWorkspaceTab(current, currentSessionId, 'scratch')
@@ -260,6 +273,18 @@ function ActiveRightSidePanel({
 
   const closeTab = (tabId: RightWorkspaceTabId): void => {
     if (workspaceFocus?.sessionId === currentSessionId && (workspaceFocus.tabId ?? workspaceFocus.tool) === tabId) setWorkspaceFocus(null)
+    if (isWorkbenchV2 && (tabId === 'files' || tabId === 'changes')) {
+      const remaining = visibleTabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id)
+      if (activeTabId === tabId && remaining.length > 0) {
+        setActiveTab(resolveClosedTabFallback(visibleTabs.map((tab) => tab.id), tabId, state.previousTabId))
+      }
+      setWorkspaceStateMap((current) => {
+        const next = new Map(current)
+        next.set(currentSessionId, closeRightWorkspaceV2OptionalTab(current.get(currentSessionId) ?? state, tabId, remaining))
+        return next
+      })
+      return
+    }
     const fallbackTabId = resolveClosedTabFallback(tabs.map((tab) => tab.id), tabId, state.previousTabId)
     const terminalId = terminalIdFromTab(tabId)
     if (terminalId) {
@@ -322,6 +347,8 @@ function ActiveRightSidePanel({
           onCloseTab={closeTab}
           onAddBrowser={addBrowser}
           onOpenTerminal={() => void createWorkspaceTerminal()}
+          onOpenFiles={() => openOptionalTool('files')}
+          onOpenChanges={() => openOptionalTool('changes')}
           onShowScratch={showScratch}
           onToggleExpand={() => setWorkspaceFocus((current) => toggleRightWorkspaceFocus(current, currentSessionId, activeTabId))}
         />

@@ -9,6 +9,8 @@ import * as React from 'react'
 import { createPortal } from 'react-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { agentFileSourceFilterMapAtom, agentSessionPathMapAtom } from '@/atoms/agent-atoms'
+import { interfaceVariantAtom } from '@/atoms/theme'
+import { openRightWorkspaceV2OptionalTab } from '@/lib/right-workspace-model'
 import {
   activateSessionRightWorkspaceTool,
   rightWorkspaceOpenAtom,
@@ -33,6 +35,7 @@ interface SessionFilesPopoverProps {
 export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFilesPopoverProps): React.ReactElement | null {
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
   const sessionPath = sessionPathMap.get(sessionId) ?? null
+  const isWorkbenchV2 = useAtomValue(interfaceVariantAtom) === 'workbench-v2'
   const setRightWorkspaceSessionStateMap = useSetAtom(rightWorkspaceSessionStateMapAtom)
   const setRightWorkspaceOpen = useSetAtom(rightWorkspaceOpenAtom)
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
@@ -57,11 +60,12 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
     }
     setRightWorkspaceSessionStateMap((current) => {
       const currentState = current.get(sessionId)
+      if (isWorkbenchV2 && currentState?.v2OpenTools?.includes('files')) return current
       const nextTool = resolveRightWorkspaceToolAfterSessionFilesClose(currentState?.activeTool)
       if (currentState?.activeTool === nextTool) return current
       return activateSessionRightWorkspaceTool(current, sessionId, nextTool)
     })
-  }, [rightWorkspaceOpen, sessionId, setRightWorkspaceSessionStateMap])
+  }, [rightWorkspaceOpen, sessionId, setRightWorkspaceSessionStateMap, isWorkbenchV2])
 
   React.useEffect(() => {
     const updateReservation = (width: number): void => {
@@ -153,7 +157,12 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
     viewAllRef.current = !rightWorkspaceOpen
     setOpen(false)
     setFileSourceFilterMap((current) => ({ ...current, [sessionId]: 'session' }))
-    setRightWorkspaceSessionStateMap((current) => activateSessionRightWorkspaceTool(current, sessionId, 'files'))
+    setRightWorkspaceSessionStateMap((current) => {
+      if (!isWorkbenchV2) return activateSessionRightWorkspaceTool(current, sessionId, 'files')
+      const next = new Map(current)
+      next.set(sessionId, openRightWorkspaceV2OptionalTab(current.get(sessionId), 'files'))
+      return next
+    })
     setRightWorkspaceOpen(true)
   }
 

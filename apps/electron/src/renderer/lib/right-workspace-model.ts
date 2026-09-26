@@ -50,12 +50,15 @@ export interface RightWorkspaceAvailability {
 
 export type RightWorkspaceTabId = RightWorkspaceTool | `browser:${string}` | `terminal:${string}`
 
+export type RightWorkspaceOptionalTab = 'files' | 'changes'
+
 export interface RightWorkspaceSessionState {
   activeTool: RightWorkspaceTool
   previousTool?: RightWorkspaceTool
   activeTabId?: RightWorkspaceTabId
   previousTabId?: RightWorkspaceTabId
   scratchVisible?: boolean
+  v2OpenTools?: RightWorkspaceOptionalTab[]
 }
 
 export function browserTabId(browserSessionId: string): `browser:${string}` {
@@ -182,6 +185,34 @@ export function resolveRightWorkspaceTool(
   return isRightWorkspaceToolAvailable(activeTool, availability)
     ? activeTool
     : DEFAULT_RIGHT_WORKSPACE_TOOL
+}
+
+export function visibleRightWorkspaceTabs<T extends { tool: RightWorkspaceTool }>(tabs: readonly T[], isWorkbenchV2: boolean, state: RightWorkspaceSessionState): T[] {
+  if (!isWorkbenchV2) return [...tabs]
+  return tabs.filter((tab) => (tab.tool !== 'files' && tab.tool !== 'changes') || state.v2OpenTools?.includes(tab.tool))
+}
+
+export function openRightWorkspaceV2OptionalTab(state: RightWorkspaceSessionState | undefined, tool: RightWorkspaceOptionalTab): RightWorkspaceSessionState {
+  const opened = state?.v2OpenTools ?? []
+  return {
+    ...activateRightWorkspaceTab(state, tool),
+    v2OpenTools: opened.includes(tool) ? opened : [...opened, tool],
+  }
+}
+
+export function closeRightWorkspaceV2OptionalTab(state: RightWorkspaceSessionState, tool: RightWorkspaceOptionalTab, remainingTabs: RightWorkspaceTabId[]): RightWorkspaceSessionState {
+  const opened = (state.v2OpenTools ?? []).filter((item) => item !== tool)
+  if (opened.length === (state.v2OpenTools ?? []).length) return state
+  const activeId = state.activeTabId ?? state.activeTool
+  const fallback = remainingTabs.includes(state.previousTabId ?? 'files')
+    ? state.previousTabId!
+    : remainingTabs[0] ?? 'files'
+  return {
+    ...state,
+    v2OpenTools: opened,
+    ...(activeId === tool ? { activeTool: toolFromRightWorkspaceTab(fallback), activeTabId: fallback } : {}),
+    ...(state.previousTabId === tool ? { previousTabId: fallback } : {}),
+  }
 }
 
 export function activateRightWorkspaceTab(

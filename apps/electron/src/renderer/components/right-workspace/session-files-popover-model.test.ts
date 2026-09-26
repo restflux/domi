@@ -75,6 +75,8 @@ describe('会话文件浮窗入口', () => {
     expect(html).toContain('参考.pdf')
     expect(html).toContain('资料')
     expect(html).toContain('添加来源')
+    expect(html).toContain('aria-label="操作 参考.pdf"')
+    expect(html).toContain('aria-label="操作 资料"')
     expect(html).not.toContain('/source/参考.pdf</span>')
   })
 

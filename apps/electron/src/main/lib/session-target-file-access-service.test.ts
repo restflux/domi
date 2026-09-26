@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SessionTargetFileAccessService } from './session-target-file-access-service.ts'
@@ -210,6 +210,17 @@ describe('SessionTargetFileAccessService IPC authorization seam', () => {
     await expect(service.authorizeSessionFileRequest(join(local, 'file.txt'), {
       workspaceSlug: 'workspace-a',
     })).resolves.toBeFalse()
+  })
+
+  test('Given 附加文件的绝对路径 When 文件夹显示复用只读预览解析 Then 仅解析当前会话授权路径且显式工作台范围不可降级', async () => {
+    const { attached, sibling, service } = createFixture()
+    const attachment = join(attached, 'note.txt')
+    writeFileSync(attachment, 'attachment\n')
+    const access = { sessionId: 'session-isolated' }
+
+    await expect(service.resolveLegacyAbsolutePreviewPath(attachment, access)).resolves.toBe(realpathSync(attachment))
+    await expect(service.resolveLegacyAbsolutePreviewPath(join(sibling, 'file.txt'), access)).resolves.toBeNull()
+    await expect(service.resolveLegacyAbsolutePreviewPath(attachment, { ...access, pathSpace: 'session-workbench' })).resolves.toBeNull()
   })
 
   test('Given an attached root and a missing file below a canonical existing parent When session file IPC authorizes paths Then attached access and safe creation remain available', async () => {

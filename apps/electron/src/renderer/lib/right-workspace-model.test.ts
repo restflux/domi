@@ -3,8 +3,10 @@ import {
   activateRightWorkspaceTool,
   canCloseRightWorkspaceTool,
   closeRightWorkspaceTool,
+  closeRightWorkspaceV2OptionalTab,
   getRightWorkspaceMenuTools,
   getRightWorkspaceToolbarTools,
+  openRightWorkspaceV2OptionalTab,
   resolveClosedTabFallback,
   resolveRightWorkspaceActivation,
   resolveRightWorkspaceAutoWidth,
@@ -15,6 +17,7 @@ import {
   terminalIdFromTab,
   terminalTabId,
   toolFromRightWorkspaceTab,
+  visibleRightWorkspaceTabs,
   type RightWorkspaceAvailability,
 } from './right-workspace-model'
 
@@ -24,6 +27,37 @@ const allAvailable: RightWorkspaceAvailability = {
 }
 
 describe('Right Workspace 状态模型', () => {
+  test('Given 文件和改动原本常驻 When 切到 v2 Then 仅显式打开的标签出现，v1 始终保留', () => {
+    const tabs = [{ tool: 'files' as const }, { tool: 'changes' as const }]
+    expect(visibleRightWorkspaceTabs(tabs, true, { activeTool: 'files' })).toEqual([])
+    expect(visibleRightWorkspaceTabs(tabs, true, openRightWorkspaceV2OptionalTab(undefined, 'changes'))).toEqual([{ tool: 'changes' }])
+    expect(visibleRightWorkspaceTabs(tabs, false, { activeTool: 'files' })).toEqual(tabs)
+  })
+
+  test('Given v2 空工作区 When 从加号按需打开文件与改动 Then 不重复并可关闭回到启动页', () => {
+    const files = openRightWorkspaceV2OptionalTab(undefined, 'files')
+    expect(files.v2OpenTools).toEqual(['files'])
+    const both = openRightWorkspaceV2OptionalTab(files, 'changes')
+    expect(both.v2OpenTools).toEqual(['files', 'changes'])
+    expect(openRightWorkspaceV2OptionalTab(both, 'changes').v2OpenTools).toEqual(['files', 'changes'])
+    const afterChanges = closeRightWorkspaceV2OptionalTab(both, 'changes', ['files'])
+    expect(afterChanges.activeTabId).toBe('files')
+    expect(afterChanges.v2OpenTools).toEqual(['files'])
+    const empty = closeRightWorkspaceV2OptionalTab(afterChanges, 'files', [])
+    expect(empty.v2OpenTools).toEqual([])
+    expect(empty.activeTabId).toBe('files')
+
+    const withBrowser = openRightWorkspaceV2OptionalTab({ activeTool: 'browser', activeTabId: 'browser:owned' }, 'files')
+    expect(closeRightWorkspaceV2OptionalTab(withBrowser, 'files', ['browser:owned']).activeTabId).toBe('browser:owned')
+  })
+
+  test('Given 会话 A 的可选标签 When 打开或关闭 Then 会话 B 与旧版默认文件标签不受影响', () => {
+    const a = openRightWorkspaceV2OptionalTab(undefined, 'files')
+    const b = { activeTool: 'changes' as const }
+    expect(a.v2OpenTools).toEqual(['files'])
+    expect(b.activeTool).toBe('changes')
+    expect(getRightWorkspaceToolbarTools(b.activeTool)).toContain('files')
+  })
   test('活动身份同时包含会话和实例标签，未初始化时回退到文件', () => {
     expect(resolveRightWorkspaceActivation('session-a', undefined)).toEqual({
       key: 'session-a:files',

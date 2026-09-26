@@ -3943,17 +3943,13 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
     }
   )
 
-  // 在系统文件管理器中显示文件
+  // 在系统文件管理器中显示文件；历史绝对附件沿用只读预览解析，最终仍按当前 Session 根校验。
   ipcMain.handle(
     AGENT_IPC_CHANNELS.SHOW_IN_FOLDER,
     async (_, filePath: string, access?: FileAccessOptions): Promise<void> => {
-      const { resolve } = await import('node:path')
-
       const options = normalizeSessionFileAccessOptions(access)
       if (!options) throw new Error('Agent 文件 IPC 缺少 Session 上下文')
-      const safePath = sessionTargetAccess.usesSessionTargetPathSpace(options)
-        ? await sessionTargetAccess.resolveRelative(options.sessionId, filePath)
-        : resolve(filePath)
+      const safePath = await resolvePreviewReadPath(filePath, options, sessionTargetAccess)
       if (!safePath || !(await isPathAllowedForSession(safePath, options, sessionTargetAccess))) {
         throw new Error('访问路径超出当前会话的授权范围')
       }
