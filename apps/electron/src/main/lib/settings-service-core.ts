@@ -22,6 +22,8 @@ import type {
 } from '../../types'
 
 type PersistedSettings = Partial<AppSettings> & {
+  // 旧版 Work 消息视图偏好只用于剔除，不再控制展示或触发磁盘迁移。
+  workMessageView?: unknown
   experimentalAgentRuntimeSwitchEnabled?: boolean
   agentRuntime?: unknown
   agentChannelIds?: unknown
@@ -157,7 +159,6 @@ function defaultSettings(): AppSettings {
   return {
     themeMode: DEFAULT_THEME_MODE,
     interfaceVariant: DEFAULT_INTERFACE_VARIANT,
-    workMessageView: 'v1',
     workSidebarPreferences: DEFAULT_WORK_SIDEBAR_PREFERENCES,
     onboardingCompleted: false,
     environmentCheckSkipped: false,
@@ -187,6 +188,7 @@ function normalizeSettings(data: PersistedSettings): {
     experimentalAgentRuntimeSwitchEnabled: legacyRuntimeSwitch,
     agentRuntime: legacyAgentRuntime,
     agentChannelIds: legacyAgentChannelIds,
+    workMessageView: _legacyWorkMessageView,
     ...settings
   } = data
 
@@ -195,7 +197,6 @@ function normalizeSettings(data: PersistedSettings): {
       ...settings,
       themeMode: data.themeMode || DEFAULT_THEME_MODE,
       interfaceVariant: data.interfaceVariant || DEFAULT_INTERFACE_VARIANT,
-      workMessageView: data.workMessageView === 'v2' ? 'v2' : 'v1',
       workSidebarPreferences: normalizeWorkSidebarPreferences(data.workSidebarPreferences),
       agentRtkEnabled: data.agentRtkEnabled === true,
       onboardingCompleted: data.onboardingCompleted ?? false,
@@ -262,11 +263,12 @@ export function createSettingsService(dependencies: SettingsServiceDependencies)
 
   function updateSettings(updates: Partial<AppSettings>): AppSettings {
     const current = getSettings()
+    // 旧 renderer 或插件仍可能在运行时提交已废弃字段，写回前必须剔除。
+    const { workMessageView: _legacyWorkMessageView, ...supportedUpdates } = updates as PersistedSettings
     const updated: AppSettings = {
       ...current,
-      ...updates,
+      ...supportedUpdates,
       agentRtkEnabled: (updates.agentRtkEnabled ?? current.agentRtkEnabled) === true,
-      workMessageView: updates.workMessageView === 'v2' ? 'v2' : updates.workMessageView === 'v1' ? 'v1' : current.workMessageView ?? 'v1',
       ...(updates.visionRelay ? { visionRelay: resolveVisionRelayUpdate(current.visionRelay, updates.visionRelay) } : {}),
       ...(updates.workSidebarPreferences
         ? { workSidebarPreferences: normalizeWorkSidebarPreferences(updates.workSidebarPreferences) }

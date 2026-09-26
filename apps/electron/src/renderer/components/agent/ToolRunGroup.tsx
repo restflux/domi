@@ -1,103 +1,48 @@
-/**
- * ToolRunGroup — 流式过程中的探索阶段摘要。
- *
- * 相邻的读取、搜索、网页访问和明显只读命令收拢为一行低权重摘要；thinking
- * 与中间正文仍由父级按原顺序直接展示。用户可展开阶段查看完整工具参数和结果。
- */
-
+/** 相邻的只读工具作为探索阶段呈现；详情仍由 ContentBlock 完整渲染。 */
 import * as React from 'react'
-import { ChevronRight, Search, XCircle } from 'lucide-react'
+import { Search } from 'lucide-react'
 import type { SDKContentBlock, SDKToolUseBlock } from '@domi/shared'
 import { cn } from '@/lib/utils'
-import { summarizeExplorationStage } from './tool-run-group'
 import { getToolDisplayName } from './tool-utils'
-import type { WorkMessageView } from '@/atoms/work-message-view'
 import type { ToolPresentationIndex } from './tool-presentation-index'
 import { ZCodeToolSummaryRow } from './ZCodeWorkPresentation'
 
 interface ToolRunGroupProps {
   blocks: SDKToolUseBlock[]
   toolPresentationIndex: ToolPresentationIndex
-  view?: WorkMessageView
   animate?: boolean
   isStreaming?: boolean
-  /** 是否为当前流式过程最后一个可见活动单元。 */
   isActivityTail?: boolean
-  /** 明细行渲染器：由调用方注入以复用 ContentBlock 的完整 props 组装逻辑。 */
   renderRow: (block: SDKContentBlock, index: number) => React.ReactNode
 }
 
 export function ToolRunGroup({
   blocks,
   toolPresentationIndex,
-  view = 'v1',
   animate = false,
   isStreaming = false,
   isActivityTail = false,
   renderRow,
 }: ToolRunGroupProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
-  const pendingCount = isStreaming
-    ? blocks.filter((block) => !toolPresentationIndex.get(block.id)?.completed).length
-    : 0
-  const failedCount = blocks.filter((block) => toolPresentationIndex.get(block.id)?.isError).length
+  const pending = isStreaming && blocks.some((block) => !toolPresentationIndex.get(block.id)?.completed)
   const latestBlock = blocks.at(-1)
-  const latestBlockFailed = latestBlock
-    ? toolPresentationIndex.get(latestBlock.id)?.isError === true
-    : false
-  const showActivityShimmer = pendingCount > 0 || (
-    isStreaming
-    && isActivityTail
-    && !latestBlockFailed
-  )
-  const summary = view === 'v1' ? summarizeExplorationStage(blocks) : ''
+  const latestFailed = latestBlock ? toolPresentationIndex.get(latestBlock.id)?.isError === true : false
+  const running = pending || (isStreaming && isActivityTail && !latestFailed)
 
   return (
     <div className={cn(animate && 'animate-in fade-in slide-in-from-left-1 duration-150 fill-mode-both motion-reduce:animate-none')}>
-      {view === 'v2' ? (
-        <ZCodeToolSummaryRow
-          icon={<Search className="size-4" />}
-          kindLabel="探索"
-          primaryText={isStreaming && isActivityTail && latestBlock && !latestBlockFailed ? `正在${getToolDisplayName(latestBlock.name)}` : ''}
-          running={showActivityShimmer}
-          expanded={expanded}
-          onToggle={() => setExpanded((current) => !current)}
-          statusNode={showActivityShimmer ? <span className="sr-only" role="status">探索进行中</span> : undefined}
-        />
-      ) : <button
-        type="button"
-        aria-expanded={expanded}
-        className="flex max-w-full items-center gap-2 py-0.5 text-left text-muted-foreground/65 transition-colors hover:text-muted-foreground motion-reduce:transition-none"
-        onClick={() => setExpanded((current) => !current)}
-      >
-        <ChevronRight
-          className={cn(
-            'size-3 shrink-0 text-muted-foreground/35 transition-transform duration-150 motion-reduce:transition-none',
-            expanded && 'rotate-90',
-          )}
-        />
-        <Search className="size-3.5 shrink-0" />
-        <span
-          data-process-summary={showActivityShimmer ? 'shimmer' : undefined}
-          className="min-w-0 truncate text-[13px]"
-        >
-          {summary}
-        </span>
-        {showActivityShimmer && (
-          <span className="sr-only" role="status">
-            {pendingCount > 0 ? `${pendingCount} 项探索进行中` : '正在处理探索结果'}
-          </span>
-        )}
-        {failedCount > 0 && (
-          <span className="flex shrink-0 items-center gap-1 text-[11px] text-destructive/75">
-            <XCircle className="size-3.5" />
-            {`${failedCount} 项失败`}
-          </span>
-        )}
-      </button>}
-
+      <ZCodeToolSummaryRow
+        icon={<Search className="size-4" />}
+        kindLabel="探索"
+        primaryText={isStreaming && isActivityTail && latestBlock && !latestFailed ? `正在${getToolDisplayName(latestBlock.name)}` : ''}
+        running={running}
+        expanded={expanded}
+        onToggle={() => setExpanded((current) => !current)}
+        statusNode={running ? <span className="sr-only" role="status">探索进行中</span> : undefined}
+      />
       {expanded && (
-        <div className={cn(view === 'v2' ? 'ml-2 space-y-2 border-l border-border pl-3.5 pt-2' : 'ml-[5px] mb-1.5 mt-1 space-y-0.5 border-l-2 border-border/30 pl-3 animate-in fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none')}>
+        <div className="ml-2 space-y-2 border-l border-border pl-3.5 pt-2">
           {blocks.map((block, index) => renderRow(block, index))}
         </div>
       )}

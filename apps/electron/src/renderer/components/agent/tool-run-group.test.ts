@@ -3,7 +3,6 @@ import type { SDKContentBlock, SDKToolUseBlock } from '@domi/shared'
 import {
   buildProcessDetailUnits,
   isExplorationCommand,
-  summarizeExplorationStage,
 } from './tool-run-group'
 
 function toolUse(name: string, input: Record<string, unknown>, id = ''): SDKToolUseBlock {
@@ -76,15 +75,6 @@ describe('buildProcessDetailUnits', () => {
     expect(units[5]?.blocks[0]).toBe(plan)
   })
 
-  test('Given 重复路径与搜索调用 When 生成探索摘要 Then 文件去重且搜索按调用计数', () => {
-    expect(summarizeExplorationStage([
-      toolUse('Read', { path: 'C:\\w\\a.ts' }),
-      toolUse('Read', { file_path: 'c:/w/a.ts' }),
-      toolUse('Read', { path: '/w/b.ts' }),
-      toolUse('Grep', { pattern: 'process' }),
-      toolUse('Glob', { pattern: '**/*.tsx' }),
-    ])).toBe('探索 · 2 个文件 · 2 次搜索')
-  })
 })
 
 describe('isExplorationCommand', () => {

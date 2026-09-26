@@ -4,18 +4,15 @@
  * 支持三种内容块类型：
  * - text: 通过 MessageResponse 渲染 Markdown
  * - tool_use: 语义化短语行（如 "读取 foo.ts 第 10-60 行"），展开显示结构化结果
- * - thinking: 默认折叠，左上角 "Thinking" 标签 + 虚线边框内容区
+ * - thinking: 运行时展开，完成后可手动查看的思考内容
  */
 
 import * as React from 'react'
-import type { WorkMessageView } from '@/atoms/work-message-view'
 import { ZCodeReasoningHeading, ZCodeToolSummaryRow } from './ZCodeWorkPresentation'
 import {
-  ChevronRight,
-  ChevronDown,
   ChevronUp,
+  ChevronRight,
   XCircle,
-  Brain,
   MessageSquareText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -27,13 +24,11 @@ import { getToolPhrase } from './tool-phrase'
 import { ToolResultRenderer } from './tool-result-renderers'
 import { PreviewOpenButton } from './tool-result-renderers/preview-open-button'
 import { GeneratedImageStrip } from './generated-image-strip'
-import { buildToolPresentationIndex, type SubAgentPresentationMeta, type ToolPresentationIndex } from './tool-presentation-index'
+import { buildToolPresentationIndex, type ToolPresentationIndex } from './tool-presentation-index'
 import { DirectWorkflowPreviewBlock, extractDirectWorkflowToolPresentation } from './DirectWorkflowPreviewBlock'
 import { PlanPreviewBlock, extractPlanText } from './PlanPreviewBlock'
 import { getTaskGetStatusLabel, parseTaskGetResult, type ParsedTaskGetResult } from './tool-result-renderers/task-get-result'
 import { parseTaskListResult, type ParsedTaskListItem } from './tool-result-renderers/task-list-result'
-import { formatDuration } from './AgentMessages'
-import { measureThinkingCollapse } from './thinking-collapse'
 import { useSmoothStream } from '@domi/ui'
 import type {
   SDKContentBlock,
@@ -45,87 +40,24 @@ import type {
 
 // ===== SubAgent 结果文本解析 =====
 
-interface ParsedAgentResult {
-  /** 清理后的输出文本（去除元数据） */
-  text: string
-  /** 从 <usage> 标签解析的用量数据（作为 task_notification 的备用） */
-  usage?: SubAgentPresentationMeta
+/** 从 Agent tool_result 文本中剔除元数据，保留子代理的可读输出。 */
+function parseAgentResultText(raw: string): string {
+  return raw
+    .replace(/<usage>[\s\S]*?<\/usage>/, '')
+    .replace(/agentId:.*\n?/g, '')
+    .replace(/<\/?output>/g, '')
+    .trim()
 }
 
-/** 从 Agent tool_result 文本中分离内容与元数据（agentId 行 + <usage> 标签） */
-function parseAgentResultText(raw: string): ParsedAgentResult {
-  let text = raw
-
-  // 提取 <usage> 标签中的用量数据
-  let usage: SubAgentPresentationMeta | undefined
-  const usageMatch = text.match(/<usage>([\s\S]*?)<\/usage>/)
-  if (usageMatch) {
-    const body = usageMatch[1]!
-    const totalTokens = Number(body.match(/total_tokens:\s*(\d+)/)?.[1]) || 0
-    const toolUses = Number(body.match(/tool_uses:\s*(\d+)/)?.[1]) || 0
-    const durationMs = Number(body.match(/duration_ms:\s*(\d+)/)?.[1]) || 0
-    if (totalTokens > 0 || toolUses > 0 || durationMs > 0) {
-      usage = { durationMs, totalTokens, toolUses }
-    }
-    text = text.replace(/<usage>[\s\S]*?<\/usage>/, '')
-  }
-
-  // 移除 agentId 行
-  text = text.replace(/agentId:.*\n?/g, '')
-
-  // 移除 <output> 标签包裹
-  text = text.replace(/<\/?output>/g, '')
-
-  return { text: text.trim(), usage }
-}
-
-// ===== SubAgent 完成信息尾部 =====
-
-function SubAgentFooter({
-  meta,
-  resultText,
-  showUsage = true,
-}: {
-  meta: SubAgentPresentationMeta | null
-  resultText?: string
-  showUsage?: boolean
-}): React.ReactElement | null {
-  // 解析结果文本，分离内容与元数据
-  const parsed = React.useMemo(
-    () => resultText ? parseAgentResultText(resultText) : null,
-    [resultText],
-  )
-
-  // 优先使用 task_notification 的用量数据，备用从 result 文本中解析
-  const effectiveMeta = meta ?? parsed?.usage ?? null
-  const cleanText = parsed?.text || ''
-
-  // 没有任何信息时不渲染
-  if (!(showUsage && effectiveMeta) && !cleanText) return null
+function SubAgentFooter({ resultText }: { resultText?: string }): React.ReactElement | null {
+  const cleanText = React.useMemo(() => resultText ? parseAgentResultText(resultText) : '', [resultText])
+  if (!cleanText) return null
 
   return (
-    <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
-      {/* 最终输出文本（Markdown 渲染） */}
-      {cleanText && (
-        <div className="text-muted-foreground/70">
-          <MessageResponse>{cleanText}</MessageResponse>
-        </div>
-      )}
-
-      {/* 用量统计行（最底部） */}
-      {showUsage && effectiveMeta && (
-        <div className="flex items-center gap-3 text-[12px] text-muted-foreground/60 tabular-nums">
-          {effectiveMeta.durationMs > 0 && (
-            <span>{formatDuration(effectiveMeta.durationMs)}</span>
-          )}
-          {effectiveMeta.totalTokens > 0 && (
-            <span>{effectiveMeta.totalTokens.toLocaleString()} tokens</span>
-          )}
-          {effectiveMeta.toolUses > 0 && (
-            <span>{effectiveMeta.toolUses} 次工具调用</span>
-          )}
-        </div>
-      )}
+    <div className="mt-2 space-y-1.5 border-t border-border/20 pt-2">
+      <div className="text-muted-foreground/70">
+        <MessageResponse>{cleanText}</MessageResponse>
+      </div>
     </div>
   )
 }
@@ -157,7 +89,6 @@ export interface ContentBlockProps {
   sessionId?: string
   /** 由消息列表一次构建的工具展示索引。独立渲染入口可省略并回退本地构建。 */
   toolPresentationIndex?: ToolPresentationIndex
-  view?: WorkMessageView
 }
 
 // ===== 提示词折叠行 =====
@@ -291,10 +222,9 @@ interface ToolUseBlockProps {
   /** 当前权威 Domi session ID，用于嵌套计划预览入口。 */
   sessionId?: string
   toolPresentationIndex: ToolPresentationIndex
-  view?: WorkMessageView
 }
 
-function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed = false, childBlocks, basePath, basePaths, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex, view = 'v1' }: ToolUseBlockProps): React.ReactElement {
+function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed = false, childBlocks, basePath, basePaths, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex }: ToolUseBlockProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
   const skillTriggers = useAtomValue(skillTriggersByToolCallAtom)
   const skillTrigger = skillTriggers[block.id]
@@ -312,7 +242,6 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
   }, [block.name, resultText, isError])
   const isAgentTool = block.name === 'Agent' || block.name === 'Task'
   const hasChildren = isAgentTool && childBlocks && childBlocks.length > 0
-  const subAgentMeta = toolResult?.subAgentMeta ?? null
 
   // Agent/Task 子代理内容默认折叠
   const [childrenExpanded, setChildrenExpanded] = React.useState(false)
@@ -350,9 +279,6 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
     ? (typeof block.input.prompt === 'string' ? block.input.prompt : undefined)
     : undefined
 
-  // 子代理工具调用统计
-  const childToolCount = childBlocks?.filter((b) => b.type === 'tool_use').length ?? 0
-
   // ===== Agent/Task 工具：特殊渲染 =====
   if (isAgentTool) {
     return (
@@ -362,9 +288,8 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
         )}
         style={animate ? { animationDelay: delay } : undefined}
       >
-        {/* V2 沿用 ZCode ToolSummaryRow，子代理详情仍由 Domi 管理。 */}
-        {view === 'v2' ? (
-          <ZCodeToolSummaryRow
+        {/* ZCode ToolSummaryRow 保持视觉结构，子代理详情仍由 Domi 管理。 */}
+        <ZCodeToolSummaryRow
             icon={<ToolIcon className="size-4" />}
             kindLabel={block.name === 'Agent' ? 'Agent' : '任务'}
             primaryText={displayLabel}
@@ -373,43 +298,12 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
             onToggle={() => setChildrenExpanded((current) => !current)}
             statusNode={isError ? <XCircle className="size-4 text-destructive" aria-label="工具执行失败" /> : undefined}
             title={displayLabel}
-          />
-        ) : <button
-          type="button"
-          className="w-full flex items-center gap-2 py-0.5 text-left hover:opacity-70 transition-opacity group"
-          onClick={() => setChildrenExpanded(!childrenExpanded)}
-        >
-          <ChevronRight
-            className={cn(
-              'size-3 text-muted-foreground/50 transition-transform duration-150 shrink-0',
-              childrenExpanded && 'rotate-90',
-            )}
-          />
-
-          {isError && <XCircle className="size-3.5 text-destructive/70 shrink-0" aria-label="工具执行失败" />}
-
-          <ToolIcon className={cn('size-3.5 shrink-0', dimmed ? 'text-muted-foreground/70' : 'text-muted-foreground')} />
-
-          <span
-            data-process-summary={showActivityShimmer ? 'shimmer' : undefined}
-            className={cn(
-              'truncate text-[14px]',
-              dimmed ? 'text-muted-foreground/70' : 'text-muted-foreground',
-            )}
-          >{displayLabel}</span>
-
-          {/* 子工具计数（折叠时显示） */}
-          {childToolCount > 0 && !childrenExpanded && (
-            <span className="shrink-0 text-[11px] text-muted-foreground/50 tabular-nums">
-              {childToolCount} 项工具调用
-            </span>
-          )}
-        </button>}
+        />
 
         {/* 展开内容 */}
         {childrenExpanded && (
           <div className={cn(
-            view === 'v2' ? 'ml-2 mt-2 space-y-2 border-l border-border pl-3.5' : 'pl-5 mt-1.5 space-y-2 border-l-2 border-primary/20 ml-[5px]',
+            'ml-2 mt-2 space-y-2 border-l border-border pl-3.5',
             animate && 'animate-in fade-in slide-in-from-top-1 duration-150',
           )}>
             {/* 提示词：可折叠行 */}
@@ -429,17 +323,12 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
                 isStreaming={isStreaming}
                 sessionId={sessionId}
                 toolPresentationIndex={toolPresentationIndex}
-                view={view}
               />
             ))}
 
             {/* SubAgent 完成信息 */}
             {isCompleted && (
-              <SubAgentFooter
-                meta={subAgentMeta}
-                resultText={toolResult?.result}
-                showUsage={view === 'v1'}
-              />
+              <SubAgentFooter resultText={toolResult?.result} />
             )}
 
             {/* 底部收起按钮 */}
@@ -465,7 +354,6 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
       )}
       style={animate ? { animationDelay: delay } : undefined}
     >
-      {view === 'v2' ? (
         <div className="flex min-w-0 items-center gap-2">
           <ZCodeToolSummaryRow
             icon={<ToolIcon className="size-4" />}
@@ -486,82 +374,10 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
           />
           {isPreviewable && <PreviewOpenButton filePath={filePath} basePath={basePath} basePaths={basePaths} />}
         </div>
-      ) : (
-      <button
-        type="button"
-        title={filePath ?? displayLabel}
-        className={cn(
-          'inline-flex max-w-full items-center gap-2 py-0.5 text-left transition-opacity group',
-          'hover:opacity-70',
-        )}
-        onClick={() => setExpanded(!expanded)}
-      >
-        {isError && <XCircle className="size-3.5 text-destructive/70 shrink-0" aria-label="工具执行失败" />}
-
-        <ToolIcon className={cn('size-3.5 shrink-0', dimmed ? 'text-muted-foreground/70' : 'text-muted-foreground')} />
-
-        <span
-          data-process-summary={showActivityShimmer ? 'shimmer' : undefined}
-          className={cn(
-            'min-w-0 truncate text-[14px]',
-            taskGetSummary || taskListSummary ? 'shrink-0' : '',
-            dimmed ? 'text-muted-foreground/70' : 'text-muted-foreground',
-          )}
-        >{displayLabel}</span>
-
-        {skillTrigger && (
-          <span
-            className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px text-[11px] leading-4 text-primary/80"
-            title={`触发技能：${skillTrigger.skillName}（${skillTrigger.source === 'workspace' ? '工作区' : '全局'}）`}
-          >
-            ⚡ {skillTrigger.skillSlug}
-          </span>
-        )}
-
-        {phrase.diffStats && (isCompleted || !isStreaming) && (
-          <span className="shrink-0 text-[14px] tabular-nums">
-            {phrase.diffStats.additions > 0 && (
-              <span className="text-green-500">+{phrase.diffStats.additions}</span>
-            )}
-            {phrase.diffStats.additions > 0 && phrase.diffStats.deletions > 0 && ' '}
-            {phrase.diffStats.deletions > 0 && (
-              <span className="text-red-500">-{phrase.diffStats.deletions}</span>
-            )}
-          </span>
-        )}
-
-        {taskGetSummary && (
-          <span className="flex min-w-0 items-center gap-1.5">
-            <TaskGetCollapsedSummary task={taskGetSummary} />
-          </span>
-        )}
-
-        {taskListSummary && (
-          <span className="flex min-w-0 items-center gap-1.5">
-            <TaskListCollapsedSummary tasks={taskListSummary} />
-          </span>
-        )}
-
-        <ChevronRight
-          className={cn(
-            'shrink-0 size-3 text-muted-foreground/45 transition-transform duration-150',
-            expanded && 'rotate-90',
-          )}
-        />
-
-        {isPreviewable && (
-          <PreviewOpenButton
-            filePath={filePath}
-            basePath={basePath}
-            basePaths={basePaths}
-          />
-        )}
-      </button>
-      )}
 
       {(resultImages.length > 0 || (expanded && resultText)) && (
         <div className={cn(
-          view === 'v2' ? 'mt-2 ml-6 space-y-2 text-muted-foreground' : 'ml-5.5 mt-1 mb-2 pl-3 border-l-2 border-border/30 space-y-2',
+          'mt-2 ml-6 space-y-2 text-muted-foreground',
           animate && 'animate-in fade-in slide-in-from-top-1 duration-150',
         )}>
           {/* 图片工具完成后直接展示；文本结果仍遵循工具展开状态 */}
@@ -581,126 +397,52 @@ function ToolUseBlock({ block, allMessages, animate = false, index = 0, dimmed =
   )
 }
 
-// ===== 思考块（默认折叠，Thinking 标签 + 虚线边框） =====
+// ===== 思考块 =====
 
 interface ThinkingBlockProps {
   block: SDKThinkingBlock
   dimmed?: boolean
   isStreaming?: boolean
-  view?: WorkMessageView
 }
 
-/** 思考块折叠行数阈值 */
-const THINKING_COLLAPSE_LINE_THRESHOLD = 4
-
-function ThinkingBlock({ block, dimmed = false, isStreaming = false, view = 'v1' }: ThinkingBlockProps): React.ReactElement {
-  const [isExpanded, setIsExpanded] = React.useState(isStreaming && view === 'v2')
-  const [shouldCollapse, setShouldCollapse] = React.useState(false)
+function ThinkingBlock({ block, dimmed = false, isStreaming = false }: ThinkingBlockProps): React.ReactElement {
+  const [isExpanded, setIsExpanded] = React.useState(!!isStreaming)
   const manuallyToggledRef = React.useRef(false)
   React.useEffect(() => {
-    if (view === 'v2' && isStreaming && !manuallyToggledRef.current) setIsExpanded(true)
-  }, [view, isStreaming])
-  const contentRef = React.useRef<HTMLDivElement>(null)
-  const lastMeasuredContentRef = React.useRef<string | null>(null)
+    if (isStreaming && !manuallyToggledRef.current) setIsExpanded(true)
+  }, [isStreaming])
   const { displayedContent } = useSmoothStream({
     content: block.thinking,
     isStreaming,
   })
-
-  // 流式和 smooth-drain 期间不读取 scrollHeight；显示内容追上权威终态后只测量一次。
-  React.useLayoutEffect(() => {
-    if (
-      isStreaming
-      || displayedContent !== block.thinking
-      || lastMeasuredContentRef.current === block.thinking
-    ) return
-    const el = contentRef.current
-    const lineHeight = el ? (parseFloat(getComputedStyle(el).lineHeight) || 22) : 22
-    const measurement = measureThinkingCollapse({
-      element: el,
-      isStreaming,
-      displayedContent,
-      finalContent: block.thinking,
-      lastMeasuredContent: lastMeasuredContentRef.current,
-      lineHeight,
-      lineThreshold: THINKING_COLLAPSE_LINE_THRESHOLD,
-    })
-    if (!measurement) return
-    lastMeasuredContentRef.current = measurement.measuredContent
-    setShouldCollapse(measurement.shouldCollapse)
-  }, [block.thinking, displayedContent, isStreaming])
 
   const toggleExpand = React.useCallback(() => {
     setIsExpanded((prev) => !prev)
   }, [])
 
   return (
-    <div className={cn('relative mb-3', view === 'v2' && 'mb-1')} data-work-thinking-view={view}>
-      {view === 'v2' ? (
-        <ZCodeReasoningHeading
-          label={isStreaming ? '思考中' : '思考'}
-          isStreaming={isStreaming}
-          isOpen={isExpanded}
-          onToggle={() => {
-            manuallyToggledRef.current = true
-            toggleExpand()
-          }}
-        />
-      ) : (
-        <div className="flex items-center gap-1.5 mb-1">
-          <Brain className={cn('size-3', dimmed ? 'text-muted-foreground/55' : 'text-muted-foreground/70')} />
-          <span className={cn('text-[11px] uppercase tracking-[0.08em]', dimmed ? 'text-muted-foreground/55' : 'text-muted-foreground/70')}>Thinking</span>
+    <div className="relative mb-1" data-work-thinking-view="v2">
+      <ZCodeReasoningHeading
+        label={isStreaming ? '思考中' : '思考'}
+        isStreaming={isStreaming}
+        isOpen={isExpanded}
+        onToggle={() => {
+          manuallyToggledRef.current = true
+          toggleExpand()
+        }}
+      />
+      {isExpanded && (
+        <div className="relative ml-6 pt-2 text-muted-foreground">
+          <div className={cn(
+            'prose prose-sm dark:prose-invert max-w-none prose-p:my-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 text-[14px] leading-relaxed',
+            dimmed ? 'text-muted-foreground' : 'text-foreground/90',
+          )}>
+            <MessageResponse className="font-normal prose-strong:font-normal [&_strong]:font-normal [&_b]:font-normal">
+              {displayedContent}
+            </MessageResponse>
+          </div>
         </div>
       )}
-      <div
-        className={cn(
-          'relative rounded-lg',
-          view === 'v2' ? 'ml-6 pt-2 text-muted-foreground' : 'px-3.5 py-2.5',
-          view === 'v2' && !isExpanded && 'hidden',
-          view === 'v1' && (dimmed ? 'bg-muted/20' : 'bg-muted/[0.34]'),
-        )}
-        style={{
-          border: 'none',
-          backgroundImage: view === 'v1'
-            ? `url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='8' ry='8' stroke='${dimmed ? 'rgba(128,128,128,0.18)' : 'rgba(128,128,128,0.26)'}' stroke-width='1' stroke-dasharray='8%2c 6' stroke-dashoffset='0' stroke-linecap='round'/%3e%3c/svg%3e")`
-            : 'none',
-        }}
-      >
-        <div
-          ref={contentRef}
-          className={cn(
-            'prose prose-sm dark:prose-invert max-w-none prose-p:my-1 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 text-[14px] leading-relaxed overflow-hidden transition-[max-height] duration-200',
-            dimmed ? 'text-muted-foreground' : 'text-foreground/90',
-            view === 'v1' && shouldCollapse && !isExpanded && 'max-h-[5.6em]',
-          )}
-        >
-          <MessageResponse className="font-normal prose-strong:font-normal [&_strong]:font-normal [&_b]:font-normal">
-            {displayedContent}
-          </MessageResponse>
-        </div>
-        {view === 'v1' && shouldCollapse && (
-          <button
-            type="button"
-            onClick={toggleExpand}
-            className={cn(
-              'mt-2 flex items-center gap-1 text-xs text-foreground/35 transition-colors',
-              'hover:text-foreground/55'
-            )}
-          >
-            {isExpanded ? (
-              <>
-                <ChevronUp className="size-3" />
-                <span>收起</span>
-              </>
-            ) : (
-              <>
-                <ChevronDown className="size-3" />
-                <span>展开思考</span>
-              </>
-            )}
-          </button>
-        )}
-      </div>
     </div>
   )
 }
@@ -710,24 +452,22 @@ function StreamingTextBlock({
   isStreaming,
   basePath,
   basePaths,
-  view = 'v1',
 }: {
   text: string
   isStreaming?: boolean
   basePath?: string
   basePaths?: string[]
-  view?: WorkMessageView
 }): React.ReactElement {
   const { displayedContent } = useSmoothStream({
     content: text,
     isStreaming: isStreaming ?? false,
   })
-  return <MessageResponse className={view === 'v2' ? 'text-[14px] prose-p:my-2 prose-p:leading-[1.8] prose-li:leading-[1.8] prose-headings:mt-5' : undefined} basePath={basePath} basePaths={basePaths}>{displayedContent}</MessageResponse>
+  return <MessageResponse className="text-[14px] prose-p:my-2 prose-p:leading-[1.8] prose-li:leading-[1.8] prose-headings:mt-5" basePath={basePath} basePaths={basePaths}>{displayedContent}</MessageResponse>
 }
 
 // ===== ContentBlock 主组件 =====
 
-export function ContentBlock({ block, allMessages, basePath, basePaths, animate = false, index = 0, dimmed = false, childBlocks, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex, view = 'v1' }: ContentBlockProps): React.ReactElement | null {
+export function ContentBlock({ block, allMessages, basePath, basePaths, animate = false, index = 0, dimmed = false, childBlocks, isStreaming, isActivityTail = false, sessionId, toolPresentationIndex }: ContentBlockProps): React.ReactElement | null {
   const effectiveToolPresentationIndex = React.useMemo(
     () => toolPresentationIndex ?? buildToolPresentationIndex(allMessages),
     [allMessages, toolPresentationIndex],
@@ -742,7 +482,6 @@ export function ContentBlock({ block, allMessages, basePath, basePaths, animate 
         isStreaming={isStreaming}
         basePath={basePath}
         basePaths={basePaths}
-        view={view}
       />
     )
   }
@@ -791,7 +530,6 @@ export function ContentBlock({ block, allMessages, basePath, basePaths, animate 
         isActivityTail={isActivityTail}
         sessionId={sessionId}
         toolPresentationIndex={effectiveToolPresentationIndex}
-        view={view}
       />
     )
   }
@@ -800,7 +538,7 @@ export function ContentBlock({ block, allMessages, basePath, basePaths, animate 
   if (block.type === 'thinking') {
     const thinkingBlock = block as SDKThinkingBlock
     if (!thinkingBlock.thinking) return null
-    return <ThinkingBlock block={thinkingBlock} dimmed={dimmed} isStreaming={isStreaming} view={view} />
+    return <ThinkingBlock block={thinkingBlock} dimmed={dimmed} isStreaming={isStreaming} />
   }
 
   return null

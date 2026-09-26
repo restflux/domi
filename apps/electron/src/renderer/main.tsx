@@ -42,7 +42,6 @@ import {
   unviewedCompletedSessionIdsAtom,
 } from './atoms/agent-atoms'
 import { automationsAtom } from './atoms/automation-atoms'
-import { workMessageViewAtom } from './atoms/work-message-view'
 import { calendarEventsAtom, calendarPlanningGroupsAtom, planningTagsAtom, todoPlanningGroupsAtom, todosAtom } from './atoms/planning-atoms'
 import {
   notificationsEnabledAtom,
@@ -189,7 +188,6 @@ function AgentSettingsInitializer(): null {
   const setMaxBudget = useSetAtom(agentMaxBudgetUsdAtom)
   const setMaxTurns = useSetAtom(agentMaxTurnsAtom)
   const setAutomationGroupOrder = useSetAtom(automationGroupOrderAtom)
-  const setWorkMessageView = useSetAtom(workMessageViewAtom)
 
   const setAgentSettingsReady = useSetAtom(agentSettingsReadyAtom)
   const setChannels = useSetAtom(channelsAtom)
@@ -245,7 +243,6 @@ function AgentSettingsInitializer(): null {
         window.electronAPI.updateSettings(updates).catch(console.error)
       }
 
-      setWorkMessageView(settings.workMessageView === 'v2' ? 'v2' : 'v1')
       if (settings.agentThinking) {
         setThinking(settings.agentThinking)
       }
@@ -281,7 +278,7 @@ function AgentSettingsInitializer(): null {
       console.error(err)
       setAgentSettingsReady(true) // 即使出错也标记就绪，避免永远阻塞
     })
-  }, [setAgentChannelId, setAgentModelId, setAgentWorkspaces, setCurrentWorkspaceId, setThinking, setEffort, setMaxBudget, setMaxTurns, setAutomationGroupOrder, setWorkMessageView, setChannels, setChannelsLoaded, setAgentSettingsReady])
+  }, [setAgentChannelId, setAgentModelId, setAgentWorkspaces, setCurrentWorkspaceId, setThinking, setEffort, setMaxBudget, setMaxTurns, setAutomationGroupOrder, setChannels, setChannelsLoaded, setAgentSettingsReady])
 
   // 工作区切换时重置能力缓存，预加载基线
   useEffect(() => {

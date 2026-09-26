@@ -32,7 +32,6 @@ import {
 } from './tool-result-images'
 import { TurnFileChangesSummary, buildTurnFileNameMap } from './TurnFileChangesSummary'
 import { ProcessBlockGroup, buildAssistantTurnRenderItems } from './ProcessBlockGroup'
-import type { WorkMessageView } from '@/atoms/work-message-view'
 import { ToolRunGroup } from './ToolRunGroup'
 import { buildProcessDetailUnits } from './tool-run-group'
 import { buildToolPresentationIndex, type ToolPresentationIndex } from './tool-presentation-index'
@@ -417,7 +416,6 @@ export interface AssistantTurnRendererProps {
   /** 用户在前端选择的模型 ID（优先用于显示名称） */
   sessionModelId?: string
   toolPresentationIndex?: ToolPresentationIndex
-  workMessageView?: WorkMessageView
 }
 
 function findLatestVisibleActivityBlock(blocks: SDKContentBlock[]): SDKContentBlock | undefined {
@@ -431,7 +429,7 @@ function findLatestVisibleActivityBlock(blocks: SDKContentBlock[]): SDKContentBl
   return undefined
 }
 
-export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, onFork, onForkToWorktree, onRewind, onCreateTodo, onRetry, onRetryInNewSession, onCompact, onRelinkProjectRoot, onRestoreProjectRoot, isStreaming, stoppedByUser, sessionId, sessionModelId, toolPresentationIndex, workMessageView = 'v1' }: AssistantTurnRendererProps): React.ReactElement | null {
+export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, onFork, onForkToWorktree, onRewind, onCreateTodo, onRetry, onRetryInNewSession, onCompact, onRelinkProjectRoot, onRestoreProjectRoot, isStreaming, stoppedByUser, sessionId, sessionModelId, toolPresentationIndex }: AssistantTurnRendererProps): React.ReactElement | null {
   const channels = useAtomValue(channelsAtom)
   const effectiveToolPresentationIndex = React.useMemo(
     () => toolPresentationIndex ?? buildToolPresentationIndex(allMessages),
@@ -602,7 +600,6 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
         isActivityTail={isActivityTail}
         sessionId={sessionId}
         toolPresentationIndex={effectiveToolPresentationIndex}
-        view={workMessageView}
       />
     )
   }
@@ -612,21 +609,14 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
   }
 
   return (
-    <Message from="assistant" className={cn('px-0', workMessageView === 'v2' && 'pb-6 pt-1')} data-work-v2-turn={workMessageView === 'v2' ? 'true' : undefined}>
-      {workMessageView === 'v1' && (
-        <MessageHeader
-          compact
-          model={turn.model ? resolveModelDisplayName(turn.model, channels) : undefined}
-          time={turn.createdAt ? formatMessageTime(turn.createdAt) : undefined}
-        />
-      )}
+    <Message from="assistant" className="px-0 pb-6 pt-1" data-work-v2-turn="true">
       <MessageContent className="pl-0">
         <TurnFileMapProvider map={turnFileMap}>
-        <div className={cn(workMessageView === 'v2' ? 'space-y-5' : 'space-y-2')}>
+        <div className="space-y-5">
           {renderItems.map((item, itemIndex) => {
             if (item.type === 'block') {
               const content = renderTopLevelBlock(item.item.block, item.item.index)
-              return workMessageView === 'v2' && item.item.block.type === 'text'
+              return item.item.block.type === 'text'
                 ? <section key={`answer-${item.item.index}`} data-work-v2-answer="true" className="pt-1 text-foreground">{content}</section>
                 : content
             }
@@ -648,7 +638,6 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
                 isStreaming={isStreaming}
                 isMessageTail={itemIndex === renderItems.length - 1}
                 keepExpanded={!!stoppedByUser}
-                view={workMessageView}
                 startedAt={itemIndex === firstProcessGroupIndex ? turn.createdAt : undefined}
                 durationMs={itemIndex === firstProcessGroupIndex ? durationMs : undefined}
                 durationTooltip={itemIndex === firstProcessGroupIndex && durationMs != null
@@ -663,7 +652,6 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
                         key={`exploration-stage-${unit.startIndex}`}
                         blocks={unit.blocks as SDKToolUseBlock[]}
                         toolPresentationIndex={effectiveToolPresentationIndex}
-                        view={workMessageView}
                         isStreaming={isStreaming}
                         isActivityTail={unit.blocks.at(-1) === activityTailBlock}
                         animate={!!isStreaming}
@@ -690,7 +678,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
       </MessageContent>
       {/* 文件改动汇总：流式结束后展示本轮所有 Edit/Write/MultiEdit/NotebookEdit 文件 */}
       {!isStreaming && (
-        <TurnFileChangesSummary turnMessages={turn.turnMessages} basePath={basePath} view={workMessageView} />
+        <TurnFileChangesSummary turnMessages={turn.turnMessages} basePath={basePath} />
       )}
       {/* 操作栏：流式输出完成后显示操作按钮 */}
       {!isStreaming && (() => {
@@ -707,9 +695,9 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
           : undefined
         const hasActions = !!(textContent || (onFork && lastUuid) || (onForkToWorktree && lastUuid) || (onRewind && lastUuid))
         const hasDuration = durationMs != null && !hasProcessGroup
-        if (!hasDuration && !hasActions && !showStoppedBadge && (workMessageView === 'v1' || (!turn.model && !turn.createdAt))) return null
+        if (!hasDuration && !hasActions && !showStoppedBadge && !turn.model && !turn.createdAt) return null
         return (
-          <MessageActions className={cn('mt-0.5 min-h-[28px] justify-start', workMessageView === 'v2' && 'mt-4 gap-3')}>
+          <MessageActions className="mt-4 min-h-[28px] justify-start gap-3">
             {hasDuration && <DurationBadge durationMs={durationMs!} usage={usage} />}
             {textContent && <CopyButton content={textContent} />}
             {textContent && onCreateTodo && (
@@ -749,7 +737,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
                 已被用户中断
               </Badge>
             )}
-            {workMessageView === 'v2' && (turn.model || turn.createdAt) && (
+            {(turn.model || turn.createdAt) && (
               <span data-work-v2-metadata="true" className="text-[11px] text-muted-foreground/65">
                 {turn.model ? resolveModelDisplayName(turn.model, channels) : ''}
                 {turn.model && turn.createdAt ? ' · ' : ''}
@@ -1011,7 +999,7 @@ function UserAsideList({ asides }: { asides: NonNullable<SDKUserMessage['_asides
   )
 }
 
-function UserInputMessage({ message, view = 'v1' }: { message: SDKUserMessage; view?: WorkMessageView }): React.ReactElement {
+function UserInputMessage({ message }: { message: SDKUserMessage }): React.ReactElement {
   const rawText = extractUserText(message) ?? ''
   const isScheduledRun = rawText.includes(SCHEDULED_RUN_MARKER)
   const { files: attachedFiles, quotes, text } = parseAttachedFiles(stripScheduledRunMarker(rawText))
@@ -1074,13 +1062,10 @@ function UserInputMessage({ message, view = 'v1' }: { message: SDKUserMessage; v
   )
 
   return (
-    <Message from="user" className={cn('px-0', view === 'v2' && 'py-5')} data-work-v2-user={view === 'v2' ? 'true' : undefined}>
-      {((view === 'v1' && meta.createdAt) || isScheduledRun) && (
+    <Message from="user" className="px-0 py-5" data-work-v2-user="true">
+      {isScheduledRun && (
         <div className="mb-1.5 flex items-center justify-end gap-2 leading-none">
-          {view === 'v1' && meta.createdAt && (
-            <span className="message-time text-[10px] text-foreground/[0.38]">{formatMessageTime(meta.createdAt)}</span>
-          )}
-          {isScheduledRun && <ScheduledRunBadge />}
+          <ScheduledRunBadge />
         </div>
       )}
       <MessageContent className="pl-0 group-[.is-user]:items-end">
@@ -1116,7 +1101,7 @@ function UserInputMessage({ message, view = 'v1' }: { message: SDKUserMessage; v
           </div>
         )}
         {/* ZCode ConversationRowView.UserInputRowView 的气泡结构；bg-surface 对应 Domi bg-card。 */}
-        {text && <UserMessageContent className={view === 'v2' ? 'max-w-xl rounded-xl rounded-tr-sm border border-border bg-card px-4 py-3 text-sm text-foreground' : undefined}>{text}</UserMessageContent>}
+        {text && <UserMessageContent className="max-w-xl rounded-xl rounded-tr-sm border border-border bg-card px-4 py-3 text-sm text-foreground">{text}</UserMessageContent>}
       </MessageContent>
       {/* 共享大图预览 — 单图时无翻页，行为同以前 */}
       {imageFiles.length > 0 && (
@@ -1128,9 +1113,9 @@ function UserInputMessage({ message, view = 'v1' }: { message: SDKUserMessage; v
           onIndexChange={setLightboxIndex}
         />
       )}
-      {(text || (view === 'v2' && meta.createdAt)) && (
-        <MessageActions className={cn('mt-0.5 justify-end', view === 'v2' && 'gap-2')}>
-          {view === 'v2' && meta.createdAt && (
+      {(text || meta.createdAt) && (
+        <MessageActions className="mt-0.5 justify-end gap-2">
+          {meta.createdAt && (
             <span className="message-time text-[11px] text-muted-foreground/60">{formatMessageTime(meta.createdAt)}</span>
           )}
           {text && <CopyButton content={text} />}
@@ -1469,7 +1454,6 @@ export interface MessageGroupRendererProps {
   /** 用户在前端选择的模型 ID（优先用于显示名称） */
   sessionModelId?: string
   toolPresentationIndex?: ToolPresentationIndex
-  workMessageView?: WorkMessageView
 }
 
 /**
@@ -1518,13 +1502,13 @@ export function getGroupId(group: MessageGroup): string {
 
 // getGroupPreview 已迁移至 @domi/session-core（本文件从该包 import 并 re-export）
 
-export function MessageGroupRenderer({ group, allMessages, basePath, basePaths, onFork, onForkToWorktree, onRewind, onCreateTodo, onRetry, onRetryInNewSession, onCompact, onRelinkProjectRoot, onRestoreProjectRoot, isStreaming, stoppedByUser, sessionId, sessionModelId, toolPresentationIndex, workMessageView = 'v1' }: MessageGroupRendererProps): React.ReactElement | null {
+export function MessageGroupRenderer({ group, allMessages, basePath, basePaths, onFork, onForkToWorktree, onRewind, onCreateTodo, onRetry, onRetryInNewSession, onCompact, onRelinkProjectRoot, onRestoreProjectRoot, isStreaming, stoppedByUser, sessionId, sessionModelId, toolPresentationIndex }: MessageGroupRendererProps): React.ReactElement | null {
   const groupId = getGroupId(group)
 
   if (group.type === 'user') {
     return (
       <div data-message-id={groupId} data-message-role="user">
-        <UserInputMessage message={group.message} view={workMessageView} />
+        <UserInputMessage message={group.message} />
       </div>
     )
   }
@@ -1561,7 +1545,6 @@ export function MessageGroupRenderer({ group, allMessages, basePath, basePaths, 
         sessionId={sessionId}
         sessionModelId={sessionModelId}
         toolPresentationIndex={toolPresentationIndex}
-        workMessageView={workMessageView}
       />
     </div>
   )

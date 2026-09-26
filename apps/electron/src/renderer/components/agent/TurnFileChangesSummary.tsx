@@ -21,7 +21,6 @@ import type {
 } from '@domi/shared'
 import { FilePathChip } from '@/components/ai-elements/file-path-chip'
 import { cn } from '@/lib/utils'
-import type { WorkMessageView } from '@/atoms/work-message-view'
 
 const MUTATING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
@@ -104,21 +103,18 @@ export function buildTurnFileNameMap(turnMessages: SDKMessage[]): Map<string, st
 export interface TurnFileChangesSummaryProps {
   turnMessages: SDKMessage[]
   basePath?: string
-  view?: WorkMessageView
 }
 
 export function TurnFileChangesSummary({
   turnMessages,
   basePath,
-  view = 'v1',
 }: TurnFileChangesSummaryProps): React.ReactElement | null {
   const paths = React.useMemo(() => collectFilePaths(turnMessages), [turnMessages])
   const [expanded, setExpanded] = React.useState(true)
 
   if (paths.length === 0) return null
 
-  if (view === 'v2') {
-    return (
+  return (
       // ZCode ConversationFileSummaryPanel：移植容器、标题触发器及文件行结构；
       // 不搬运其 Git 回滚、diff 预览与额外状态管理，文件入口沿用 Domi FilePathChip。
       <section data-work-v2-file-summary="true" className="mt-5 overflow-hidden rounded-xl border border-border bg-card shadow-none">
@@ -142,18 +138,5 @@ export function TurnFileChangesSummary({
           ))}
         </div>}
       </section>
-    )
-  }
-
-  return (
-    <div className="mt-3">
-      <div className="pt-3 border-t-2 border-dashed border-border/60">
-        <div className="flex flex-wrap gap-1.5">
-          {paths.map((filePath) => (
-            <FilePathChip key={filePath} filePath={filePath} basePath={basePath} />
-          ))}
-        </div>
-      </div>
-    </div>
   )
 }

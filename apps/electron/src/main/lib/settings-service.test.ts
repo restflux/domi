@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createSettingsService } from './settings-service-core.ts'
@@ -20,20 +20,29 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('Work 消息视图设置', () => {
-  test('旧配置与非法值保持 V1，显式选择 V2 后持久恢复并可切回', () => {
-    for (const value of [undefined, 'unknown', false]) {
-      writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark', workMessageView: value }), 'utf-8')
-      expect(getSettings().workMessageView).toBe('v1')
+describe('Work 消息旧视图设置兼容', () => {
+  test('新设置或旧配置含 V1/V2 时均忽略废弃偏好，读取不写盘，其他设置保持不变', () => {
+    let writes = 0
+    atomicWrite = () => { writes += 1 }
+    for (const value of [undefined, 'v1', 'v2', 'unknown', false]) {
+      const raw = JSON.stringify({ themeMode: 'dark', workMessageView: value })
+      writeFileSync(settingsPath, raw, 'utf-8')
+      const settings = getSettings()
+      expect(settings.themeMode).toBe('dark')
+      expect('workMessageView' in settings).toBe(false)
+      expect(readFileSync(settingsPath, 'utf-8')).toBe(raw)
+      expect(writes).toBe(0)
     }
 
     atomicWrite = (path, data) => writeFileSync(path, JSON.stringify(data), 'utf-8')
-    updateSettings({ workMessageView: 'v2' })
-    expect(getSettings().workMessageView).toBe('v2')
-    updateSettings({ themeMode: 'light' })
-    expect(getSettings().workMessageView).toBe('v2')
-    updateSettings({ workMessageView: 'v1' })
-    expect(getSettings().workMessageView).toBe('v1')
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark', workMessageView: 'v1' }), 'utf-8')
+    const updated = updateSettings({ themeMode: 'light' })
+    expect(updated.themeMode).toBe('light')
+    expect('workMessageView' in updated).toBe(false)
+    expect('workMessageView' in getSettings()).toBe(false)
+    const legacyUpdate = updateSettings({ workMessageView: 'v1' } as Parameters<typeof updateSettings>[0])
+    expect('workMessageView' in legacyUpdate).toBe(false)
+    expect('workMessageView' in JSON.parse(readFileSync(settingsPath, 'utf-8'))).toBe(false)
   })
 })
 

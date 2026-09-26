@@ -20,11 +20,6 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
-/** 归一化路径分隔符，让 Windows 反斜杠与 POSIX 斜杠视为同一文件。 */
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').toLowerCase()
-}
-
 function isReadOnlyShellSegment(segment: string): boolean {
   const command = segment.trim().toLowerCase()
   if (!command) return true
@@ -84,43 +79,4 @@ export function buildProcessDetailUnits(blocks: SDKContentBlock[]): ProcessDetai
 
   flushExploration()
   return units
-}
-
-function normalizedFilePath(block: SDKToolUseBlock): string | null {
-  const input = (block.input ?? {}) as Record<string, unknown>
-  const path = str(input.file_path) ?? str(input.filePath) ?? str(input.path)
-  return path ? normalizePath(path) : null
-}
-
-/** 生成「探索 · 2 个文件 · 3 次搜索」阶段摘要。 */
-export function summarizeExplorationStage(blocks: SDKToolUseBlock[]): string {
-  const files = new Set<string>()
-  let searchCount = 0
-  let webCount = 0
-  let commandCount = 0
-  let otherCount = 0
-
-  for (const block of blocks) {
-    if (block.name === 'Read') {
-      const path = normalizedFilePath(block)
-      if (path) files.add(path)
-      else otherCount += 1
-    } else if (block.name === 'Grep' || block.name === 'Glob' || block.name === 'LS') {
-      searchCount += 1
-    } else if (block.name === 'WebFetch' || block.name === 'WebSearch') {
-      webCount += 1
-    } else if (block.name === 'Bash') {
-      commandCount += 1
-    } else {
-      otherCount += 1
-    }
-  }
-
-  const parts: string[] = []
-  if (files.size > 0) parts.push(`${files.size} 个文件`)
-  if (searchCount > 0) parts.push(`${searchCount} 次搜索`)
-  if (webCount > 0) parts.push(`${webCount} 项网页访问`)
-  if (commandCount > 0) parts.push(`${commandCount} 条只读命令`)
-  if (otherCount > 0) parts.push(`${otherCount} 项操作`)
-  return `探索 · ${parts.join(' · ') || `${blocks.length} 项操作`}`
 }
