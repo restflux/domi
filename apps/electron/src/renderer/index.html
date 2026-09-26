@@ -34,7 +34,18 @@
       </div>
       <div class="sp-rings" aria-hidden="true"></div>
       <div class="sp-wave" aria-hidden="true"></div>
-      <div class="sp-word" aria-hidden="true">Domi</div>
+      <!-- 首帧复用 Domi 自有字标轮廓，不等待 React 主界面。 -->
+      <svg class="sp-word" aria-hidden="true" viewBox="0 0 409 104" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="sp-word-outline" x="-10%" y="-10%" width="120%" height="120%">
+            <feMorphology in="SourceAlpha" operator="dilate" radius="1.6" result="expanded" />
+            <feComposite in="expanded" in2="SourceAlpha" operator="out" result="outline" />
+            <feFlood flood-color="currentColor" flood-opacity="0.8" result="ink" />
+            <feComposite in="ink" in2="outline" operator="in" />
+          </filter>
+        </defs>
+        <image href="/assets/brand/domi-wordmark.png" x="0" y="0" width="409" height="104" filter="url(#sp-word-outline)" />
+      </svg>
       <div class="sp-line" aria-hidden="true"></div>
     </div>
     <script>

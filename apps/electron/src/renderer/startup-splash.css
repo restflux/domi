@@ -131,26 +131,19 @@ html.dark .sp-wave {
 	--po: 0.45;
 }
 
-/* 品牌字：粒子团浮现后淡入；底色同色光晕把字从粒子里托出来 */
+/* 只留 Domi 字标轮廓，不叠加图形标识与构字辅助线。 */
 .sp-word {
-	font:
-		600 44px / 1 "Inter Variable", Inter, -apple-system,
-		BlinkMacSystemFont,
-		"SF Pro Text",
-		"Helvetica Neue",
-		"PingFang SC",
-		sans-serif;
-	color: #18181b;
-	letter-spacing: 0.02em;
-	text-shadow: 0 0 18px rgba(250, 250, 250, 0.9);
+	width: min(18rem, calc(100vw - 3rem));
+	height: auto;
+	overflow: visible;
+	color: rgba(24, 24, 27, 0.78);
 	user-select: none;
 	opacity: 0;
 	transform: translateY(6px);
 	animation: sp-word-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.55s forwards;
 }
 html.dark .sp-word {
-	color: #e6e6ea;
-	text-shadow: 0 0 18px rgba(23, 23, 26, 0.85);
+	color: rgba(244, 244, 245, 0.82);
 }
 
 /* 慢加载细线：2.4s 后才淡入（正常启动永远看不到） */

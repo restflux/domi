@@ -57,15 +57,20 @@ function launch(search = '', reducedMotion = false) {
   }
 }
 
-test('首帧加载 Percho 黑白粒子开屏，品牌文字使用 Domi 字体', () => {
+test('首帧只显示 Domi 自有字标轮廓，并保留 Percho 黑白粒子开屏', () => {
   expect(html).toContain('id="splash" role="status" aria-label="Domi 正在启动"')
-  expect(html).toContain('<div class="sp-word" aria-hidden="true">Domi</div>')
-  expect(html).not.toContain('domi-splash-mark')
+  expect(html).toContain('<svg class="sp-word" aria-hidden="true" viewBox="0 0 409 104"')
+  expect(html).toContain('<image href="/assets/brand/domi-wordmark.png"')
+  expect((html.match(/<image /g) ?? []).length).toBe(1)
+  expect(html).not.toContain('domi-mark.png')
+  expect(html).not.toContain('M30 45H601')
+  expect(html).not.toContain('>cap</text>')
+  expect(html).not.toContain('<div class="sp-word"')
   expect(html.indexOf('startup-splash.css')).toBeLessThan(html.indexOf('src="/main.tsx"'))
   expect(css).toContain('prefers-reduced-motion: reduce')
   expect(css).toContain('body:has(#splash) #root')
   expect(css).toContain('sp-wave-out 1.8s')
-  expect(css).toContain('"Inter Variable"')
+  expect(css).toContain('html.dark .sp-word')
   expect(css).not.toContain('#f04438')
   expect(app).toContain("if (!isLoading) window.dispatchEvent(new Event('domi-app-ready'))")
 })
