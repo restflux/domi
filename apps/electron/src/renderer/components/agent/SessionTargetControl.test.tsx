@@ -171,6 +171,21 @@ describe('SessionTargetControl compact header', () => {
     expect(html).toContain('Worktree · 1 个阶段未交付')
   })
 
+  test('Given a new session When the location chooser renders Then default Local is not shown', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <SessionTargetControl
+          target={{ project: { name: 'domi' }, checkout: { id: '', kind: 'unselected', phase: 'unselected' }, source: null, current: null, ownership: null, dirty: false }}
+          hideProjectName
+          onToggleWorktree={() => undefined}
+          onChooseTarget={() => undefined}
+        />
+      </TooltipProvider>,
+    )
+    expect(html).not.toContain('Local')
+    expect(html).toContain('Worktree')
+  })
+
   test('Given a non-Git project When the target chooser renders Then Worktree is disabled with an actionable explanation', () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>

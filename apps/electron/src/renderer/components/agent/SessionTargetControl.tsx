@@ -262,10 +262,12 @@ export function SessionTargetControl({
       aria-label="当前修改环境"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]">
-        <span className="truncate text-xs font-semibold">{model.identity.projectName}</span>
-        <span className="shrink-0 rounded-md bg-background/70 px-1.5 py-0.5 text-xs font-semibold">
-          {model.identity.targetLabel}
-        </span>
+        {!hideProjectName ? <span className="truncate text-xs font-semibold">{model.identity.projectName}</span> : null}
+        {target.checkout.kind !== 'unselected' ? (
+          <span className="shrink-0 rounded-md bg-background/70 px-1.5 py-0.5 text-xs font-semibold">
+            {model.identity.targetLabel}
+          </span>
+        ) : null}
         {statusBadge}
         {model.identity.branchLabel ? (
           <span className="flex min-w-0 items-center gap-1 text-muted-foreground">

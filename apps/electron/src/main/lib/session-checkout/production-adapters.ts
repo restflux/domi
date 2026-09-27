@@ -615,6 +615,17 @@ export function createNodeSessionCheckoutDependencies(
           headRef,
         }
       },
+      listBranches: async (root) => {
+        const output = await runSessionGitChecked(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
+        return output.split(/\r?\n/).filter(Boolean).slice(0, 200)
+      },
+      resolveBranch: async (root, branch) => {
+        // 不把 Renderer 文本当作 Git revision 表达式；只解析确切的本地 ref。
+        const result = await runSessionGit(root, ['show-ref', '--verify', '--hash', `refs/heads/${branch}`])
+        if (result.interrupted) throw result.interrupted
+        return result.code === 0 && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(result.stdout)
+          ? result.stdout : null
+      },
       findContainingWorktreeRoot: async (root) => {
         if (!existsSync(root)) return null
         const topLevel = await runSessionGit(root, ['rev-parse', '--show-toplevel'])

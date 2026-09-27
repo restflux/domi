@@ -36,6 +36,7 @@ import { AskUserBanner } from './AskUserBanner'
 import { ExitPlanModeBanner } from './ExitPlanModeBanner'
 import { PlanModeDashedBorder } from './PlanModeDashedBorder'
 import { AgentSessionTargetChooser } from './AgentSessionTarget.tsx'
+import { selectLocalDraftProject } from './new-session-project.ts'
 import { WorktreeReviewStatus } from './worktree-review/WorktreeReviewStatus.tsx'
 import {
   ComposerActionRail,
@@ -269,6 +270,8 @@ import {
   bindSessionTargetAtomFamily,
   sessionTargetStateAtomFamily,
   sessionTargetWorktreePendingAtomFamily,
+  sessionTargetBranchAtomFamily,
+  sessionTargetSelectionPendingAtomFamily,
 } from '@/atoms/session-target-atoms.ts'
 
 const LONG_TEXT_ATTACHMENT_THRESHOLD = 2000
@@ -708,6 +711,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const [draftSessionIds, setDraftSessionIds] = useAtom(draftSessionIdsAtom)
   const globalWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
+  const setGlobalWorkspaceId = useSetAtom(currentAgentWorkspaceIdAtom)
   // 从会话元数据派生 workspaceId：会话数据已加载时以自身为准，未加载时回退全局 atom
   const currentWorkspaceId = React.useMemo(() => {
     if (!sessionMeta) return globalWorkspaceId // 数据未加载，回退全局
@@ -733,6 +737,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   // 避免 setter 写入 → atom 引用变化 → effect 重跑的自循环（React #185）。
   const sessionTargetState = useAtomValue(sessionTargetStateAtomFamily(sessionId))
   const sessionWorktreePending = useAtomValue(sessionTargetWorktreePendingAtomFamily(sessionId))
+  const setSessionWorktreePending = useSetAtom(sessionTargetWorktreePendingAtomFamily(sessionId))
+  const setSelectedSourceBranch = useSetAtom(sessionTargetBranchAtomFamily(sessionId))
+  const [targetSelectionPending, setTargetSelectionPending] = useAtom(sessionTargetSelectionPendingAtomFamily(sessionId))
   const bindSessionTarget = useSetAtom(bindSessionTargetAtomFamily(sessionId))
   // 是否已绑定 Session Target：首次发送前（未绑定）只能预览/引用 Local 项目文件；
   // @ 引用回退搜索与文件树均需区分该状态。
@@ -2610,26 +2617,32 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return
     }
     if (!messagesLoaded) return
+    if (store.get(sessionTargetSelectionPendingAtomFamily(sessionId))) {
+      toast.info('正在切换项目，请稍后发送')
+      return
+    }
     if (isAuthorizedWorktreeContinuation && (streaming || backgroundWaiting || messagesRefreshingRef.current)) {
       toast.error('本次执行未启动', { description: '会话已有新活动，请在续跑卡片中重新确认。' })
       return
     }
     // 全新会话未绑定 target：发送前自动绑定（默认 Local；已勾选 Worktree 则创建隔离 Worktree）。
     if (!targetStateForSend.snapshot) {
-      const kind = sessionWorktreePending ? 'isolated' : 'local'
+      const branch = store.get(sessionTargetBranchAtomFamily(sessionId))
+      const kind = sessionWorktreePending || branch ? 'isolated' : 'local'
+      const choice = kind === 'isolated' ? { kind, ...(branch ? { sourceBranch: branch } : {}) } as const : { kind } as const
       let bound = false
       if (kind === 'isolated') {
         initialWorktreePreparationRef.current = true
         setInitialWorktreePreparing(true)
         try {
           await ensureInitialWorktreeTitle(effectiveText, pendingFilesSnapshot)
-          bound = await bindSessionTarget(kind)
+          bound = await bindSessionTarget(choice, currentWorkspaceId ?? undefined)
         } finally {
           initialWorktreePreparationRef.current = false
           setInitialWorktreePreparing(false)
         }
       } else {
-        bound = await bindSessionTarget(kind)
+        bound = await bindSessionTarget(choice, currentWorkspaceId ?? undefined)
       }
       if (!bound) {
         const bindError = store.get(sessionTargetStateAtomFamily(sessionId)).error?.message
@@ -4456,6 +4469,62 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     </Button>
   )
 
+  const canChangeDraftProject = (): boolean => {
+    const target = store.get(sessionTargetStateAtomFamily(sessionId))
+    return !store.get(sessionTargetSelectionPendingAtomFamily(sessionId))
+      && !initialWorktreePreparationRef.current
+      && !target.loading && !target.snapshot
+      && (!sessionMeta?.sessionTarget || sessionMeta.sessionTarget.kind === 'unselected')
+  }
+
+  const moveDraftProject = async (workspaceId: string): Promise<void> => {
+    const session = store.get(agentSessionsAtom).find((item) => item.id === sessionId)
+    if (!session || (session.workspaceId ?? null) !== currentWorkspaceId || store.get(sessionTargetStateAtomFamily(sessionId)).snapshot) {
+      throw new Error('会话项目或工作位置已变化，请刷新后重试')
+    }
+    if (workspaceId === currentWorkspaceId) return
+    const updated = await window.electronAPI.moveAgentSessionToWorkspace({ sessionId, targetWorkspaceId: workspaceId })
+    setAgentSessions((prev) => prev.map((item) => item.id === sessionId ? updated : item))
+    setGlobalWorkspaceId(workspaceId)
+    setSelectedSourceBranch(null)
+    setSessionWorktreePending(false)
+  }
+
+  const handleSelectDraftProject = async (workspaceId: string): Promise<void> => {
+    if (!canChangeDraftProject()) return
+    setTargetSelectionPending(true)
+    try {
+      await moveDraftProject(workspaceId)
+    } catch (error) {
+      toast.error('切换项目失败', { description: error instanceof Error ? error.message : '请重试' })
+    } finally {
+      setTargetSelectionPending(false)
+    }
+  }
+
+  const handleOpenLocalDraftProject = async (): Promise<void> => {
+    if (!canChangeDraftProject()) return
+    setTargetSelectionPending(true)
+    let created = false
+    try {
+      const selection = await selectLocalDraftProject({
+        workspaces,
+        chooseFolder: () => window.electronAPI.openFolderDialog(),
+        createWorkspace: (input) => window.electronAPI.createAgentWorkspace(input),
+      })
+      if (!selection) return
+      created = selection.created
+      if (created) setWorkspaces((prev) => [selection.workspace, ...prev])
+      await moveDraftProject(selection.workspace.id)
+    } catch (error) {
+      toast.error(created ? '项目已创建，但草稿切换失败' : '打开本地项目失败', {
+        description: error instanceof Error ? error.message : '请重试',
+      })
+    } finally {
+      setTargetSelectionPending(false)
+    }
+  }
+
   const sendButton = (
     <div className="flex items-center gap-0.5">
       <Tooltip>
@@ -4638,6 +4707,11 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
               projectName={currentWorkspace?.name ?? '当前项目'}
               projectRootPath={currentWorkspace?.projectRootPath ?? workspaceFilesPath ?? undefined}
               persistedTarget={sessionMeta?.sessionTarget}
+              workspaceId={currentWorkspaceId}
+              workspaces={workspaces}
+              projectChangePending={targetSelectionPending || initialWorktreePreparing}
+              onSelectProject={handleSelectDraftProject}
+              onOpenLocalProject={handleOpenLocalDraftProject}
             />
             {/* modern 模式只显示一个最高优先级 Action Rail：
                 AI 异常/重试 → AI Runtime → urgent Worktree → active Worktree → 本轮完成摘要 → 渠道配置 → settled Worktree。

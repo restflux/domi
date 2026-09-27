@@ -173,7 +173,8 @@ export interface SessionCheckoutModule {
     sessionId: string,
     operation: (target: SessionTargetView) => Promise<T>,
   ): Promise<T>
-  bind(sessionId: string, choice: SessionTargetBindChoice): Promise<SessionTargetView>
+  bind(sessionId: string, choice: SessionTargetBindChoice, expectedProjectId?: string): Promise<SessionTargetView>
+  listBranches?(sessionId: string): Promise<{ current: string | null; local: string[] }>
   /** 将已有 Isolated Worktree 的稳定 Git 状态复制为 child 自己拥有的独立 target。 */
   cloneIsolatedTarget(sourceSessionId: string, childSessionId: string, expectedSourceRevision: number): Promise<SessionTargetView>
   /** 仅 main 内部 handoff 使用：在同一 binding lock 内校验最终 HEAD/dirty snapshot 并创建。 */

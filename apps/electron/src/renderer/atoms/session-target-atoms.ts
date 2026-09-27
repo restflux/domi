@@ -347,11 +347,15 @@ export const confirmWorktreeIterationAtomFamily = atomFamily((sessionId: string)
   })
 })
 
+export const sessionTargetBranchAtomFamily = atomFamily((_sessionId: string) => atom<string | null>(null))
+export const sessionTargetSelectionPendingAtomFamily = atomFamily((_sessionId: string) => atom(false))
+
 export const bindSessionTargetAtomFamily = atomFamily((sessionId: string) => {
   const stateAtom = sessionTargetStateAtomFamily(sessionId)
   // 按 store/session 隔离；未完成时禁止切换目标或重复创建。
   const pendingAtom = pendingBindAtomFamily(sessionId)
-  return atom(null, (get, set, kind: RendererSessionTargetChoice['kind']): Promise<boolean> => {
+  return atom(null, (get, set, requested: RendererSessionTargetChoice | RendererSessionTargetChoice['kind'], expectedProjectId?: string): Promise<boolean> => {
+    const choice: RendererSessionTargetChoice = typeof requested === 'string' ? { kind: requested } : requested
     const pending = get(pendingAtom)
     if (pending) return pending
     set(bindGenerationAtomFamily(sessionId), (generation) => generation + 1)
@@ -359,7 +363,7 @@ export const bindSessionTargetAtomFamily = atomFamily((sessionId: string) => {
       set(stateAtom, (state) => ({ ...state, loading: true, error: null }))
       try {
         // Renderer 等待超时不能取消 Main；必须消费宿主最终结果。
-        const result = await window.electronAPI.sessionCheckout.bind({ sessionId, choice: { kind } })
+        const result = await window.electronAPI.sessionCheckout.bind({ sessionId, choice, ...(expectedProjectId ? { expectedProjectId } : {}) })
         if (result.ok) {
           set(stateAtom, {
             snapshot: result.value,

@@ -50,6 +50,9 @@ export interface GitCheckoutSnapshot {
 
 export interface SessionCheckoutGitPort {
   inspect(root: string): Promise<GitCheckoutSnapshot | null>
+  /** 只读列出和解析本地分支；由宿主基于会话项目根调用。 */
+  listBranches?(root: string): Promise<string[]>
+  resolveBranch?(root: string, branch: string): Promise<string | null>
   /** 返回指定目录所属的 Git checkout 顶层；不要求仓库已有 HEAD。 */
   findContainingWorktreeRoot(root: string): Promise<string | null>
   status(root: string): Promise<{ dirty: boolean }>

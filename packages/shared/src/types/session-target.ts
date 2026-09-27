@@ -207,7 +207,7 @@ export interface SessionTargetView {
 
 export type SessionTargetBindChoice =
   | { kind: 'local' }
-  | { kind: 'isolated' }
+  | { kind: 'isolated'; sourceBranch?: string }
   | { kind: 'inherit'; parentSessionId: string }
 
 interface SessionCheckoutOperationBase {

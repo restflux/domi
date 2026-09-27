@@ -1877,6 +1877,7 @@ export function createSessionCheckoutModule(
       baseOid: applyBaseOid,
       isolatedPath: applying.managedRoot,
       localPath: applying.localRoot,
+      expectedLocalHeadRef: applying.sourceRef.startsWith("refs/heads/") ? applying.sourceRef : undefined,
     })
     if (planResult.status === 'conflict') {
       updateManagedCheckout(applying.checkoutId, (current) => ({ ...current, phase: 'ready', journal: null, revision: current.revision + 1 }))
@@ -2063,6 +2064,10 @@ export function createSessionCheckoutModule(
     if (findProjectAcceptanceHolder(record)) {
       return blockedPreflight(record, 'project_acceptance_busy', '另一个任务正在占用该项目的 Local 验收槽位')
     }
+    const local = await dependencies.git.inspect(record.localRoot)
+    if (record.sourceRef.startsWith('refs/heads/') && local?.headRef !== record.sourceRef) {
+      return blockedPreflight(record, 'git_error', '原项目当前分支与 Worktree 来源分支不同，不能交付到其他分支')
+    }
     const validated = await validateManagedCheckoutDetailed(binding, record, false)
     if (validated.status !== 'valid') {
       return blockedPreflight(record, 'checkout_unavailable', 'Worktree 身份、路径或 Git 状态暂时无法确认')
@@ -2072,6 +2077,7 @@ export function createSessionCheckoutModule(
       baseOid: record.applyBaseOid ?? record.baseOid,
       isolatedPath: validated.checkout.canonicalManagedRoot,
       localPath: record.localRoot,
+      expectedLocalHeadRef: record.sourceRef.startsWith("refs/heads/") ? record.sourceRef : undefined,
     })
     const current = dependencies.registry.read().managedCheckouts[record.checkoutId]
     if (
@@ -2172,6 +2178,7 @@ export function createSessionCheckoutModule(
       baseOid: applyBaseOid,
       isolatedPath: mutating.managedRoot,
       localPath: mutating.localRoot,
+      expectedLocalHeadRef: mutating.sourceRef.startsWith("refs/heads/") ? mutating.sourceRef : undefined,
     })
     if (planResult.status === 'conflict') {
       updateManagedCheckout(mutating.checkoutId, (current) => ({ ...current, phase: 'ready', journal: null, revision: current.revision + 1 }))
@@ -3183,6 +3190,7 @@ export function createSessionCheckoutModule(
       baseOid: applyBaseOid,
       isolatedPath: applying.managedRoot,
       localPath: applying.localRoot,
+      expectedLocalHeadRef: applying.sourceRef.startsWith("refs/heads/") ? applying.sourceRef : undefined,
     })
     if (planResult.status === 'conflict') {
       updateManagedCheckout(applying.checkoutId, (current) => ({
@@ -3698,6 +3706,15 @@ export function createSessionCheckoutModule(
   async function operateTarget(input: SessionCheckoutOperation): Promise<SessionCheckoutOperationResult> {
     try {
       const binding = await resolveBinding(input.sessionId)
+      if (binding.target.kind === 'isolated' && ['apply', 'preview', 'finish', 'finalize_preview'].includes(input.action)) {
+        const record = dependencies.registry.read().managedCheckouts[binding.target.checkoutId]
+        if (record?.sourceRef.startsWith('refs/heads/')) {
+          const local = await dependencies.git.inspect(record.localRoot)
+          if (local?.headRef !== record.sourceRef) {
+            throw new SessionCheckoutError('stale_target', '原项目当前分支与 Worktree 来源分支不同，不能交付到其他分支')
+          }
+        }
+      }
       if (input.action === 'apply') return await operateApply(input, binding)
       if (input.action === 'finish') return await operateFinish(input, binding)
       if (input.action === 'preview') return await operatePreview(input, binding)
@@ -3946,7 +3963,7 @@ export function createSessionCheckoutModule(
     let cursor = 0
     const worker = async (): Promise<void> => {
       while (cursor < uniqueCandidates.length) {
-        const candidate = uniqueCandidates[cursor++]
+        const candidate = uniqueCandidates[cursor++]!
       let outcome: 'cleaned' | 'retained' | 'skipped' = 'skipped'
       try {
         // 每项独立 maintenance 锁：无关会话的 inspect 永不阻塞，项间让出队列供用户请求插队；
@@ -4190,15 +4207,26 @@ export function createSessionCheckoutModule(
     return cleaned
   }
 
+  async function listSessionBranches(sessionId: string): Promise<{ current: string | null; local: string[] }> {
+    const { project } = await resolveSessionProject(sessionId)
+    const snapshot = await dependencies.git.inspect(project.root)
+    if (!snapshot) return { current: null, local: [] }
+    return { current: snapshot.branch, local: await dependencies.git.listBranches?.(project.root) ?? [] }
+  }
+
   async function bindTarget(
     sessionId: string,
     choice: SessionTargetBindChoice,
     verifiedIsolatedProof?: VerifiedIsolatedBindProof,
     createAttempt = 0,
     requestStartedAt = Date.now(),
+    expectedProjectId?: string,
   ): Promise<SessionTargetView> {
       const bindStartedAt = requestStartedAt
       const session = requireSession(sessionId)
+      if (expectedProjectId && session.projectId !== expectedProjectId) {
+        throw new SessionCheckoutError('project_mismatch', '会话项目已变化，请刷新后重新发送')
+      }
       if (session.delegationCheckoutReleasedAt !== undefined) {
         throw new SessionCheckoutError(
           'operation_not_allowed',
@@ -4313,6 +4341,18 @@ export function createSessionCheckoutModule(
       if (!snapshot) {
         throw new SessionCheckoutError('not_git_repository', '非 Git 项目不能创建 Isolated Checkout')
       }
+      let selectedSource: { ref: string; oid: string } | null = null
+      if (choice.kind === 'isolated' && choice.sourceBranch !== undefined) {
+        const branches = await dependencies.git.listBranches?.(project.root) ?? []
+        if (!branches.includes(choice.sourceBranch)) {
+          throw new SessionCheckoutError('stale_target', '所选分支不存在，请重新选择')
+        }
+        const oid = await dependencies.git.resolveBranch?.(project.root, choice.sourceBranch)
+        if (!oid || !GIT_OID_PATTERN.test(oid)) {
+          throw new SessionCheckoutError('stale_target', '所选分支已变化，请重新选择')
+        }
+        selectedSource = { ref: `refs/heads/${choice.sourceBranch}`, oid }
+      }
       if (verifiedIsolatedProof) {
         if (snapshot.headOid !== verifiedIsolatedProof.expectedCurrentOid) {
           throw new SessionCheckoutError('stale_target', 'Local HEAD 在确认后已变化，请重新发起 Worktree handoff')
@@ -4379,9 +4419,9 @@ export function createSessionCheckoutModule(
         managedGitRoot: resolve(managedGitRoot),
         gitCommonDir: snapshot.commonDir,
         gitDir: '',
-        baseOid: seedSnapshot?.baseOid ?? snapshot.headOid,
+        baseOid: seedSnapshot?.baseOid ?? selectedSource?.oid ?? snapshot.headOid,
         ...(seedSnapshot?.applyBaseOid ? { applyBaseOid: seedSnapshot.applyBaseOid } : {}),
-        sourceRef: seedSnapshot?.sourceRef ?? snapshot.headRef,
+        sourceRef: seedSnapshot?.sourceRef ?? selectedSource?.ref ?? snapshot.headRef,
         phase: 'preparing',
         delivery: { state: 'working', iteration: nextIteration },
         journal: {
@@ -4398,8 +4438,8 @@ export function createSessionCheckoutModule(
         projectName: project.name,
         target: { kind: 'isolated', checkoutId },
         ownerSessionId: sessionId,
-        sourceRef: seedSnapshot?.sourceRef ?? snapshot.headRef,
-        sourceOid: seedSnapshot?.baseOid ?? snapshot.headOid,
+        sourceRef: seedSnapshot?.sourceRef ?? selectedSource?.ref ?? snapshot.headRef,
+        sourceOid: seedSnapshot?.baseOid ?? selectedSource?.oid ?? snapshot.headOid,
         revision: 1,
       }
       const preparingRegistry = dependencies.registry.read()
@@ -4414,7 +4454,7 @@ export function createSessionCheckoutModule(
         await dependencies.git.createDetachedWorktree(
           localGitRoot,
           managedGitRoot,
-          seedSnapshot?.headOid ?? snapshot.headOid,
+          seedSnapshot?.headOid ?? selectedSource?.oid ?? snapshot.headOid,
         )
         const createdAt = Date.now()
         createTimingRecorded = true
@@ -4571,10 +4611,10 @@ export function createSessionCheckoutModule(
     runExclusiveSessionMutation: (sessionId, operation) => withBindingLock(async () => (
       operation(await inspectTarget(sessionId, true))
     ), { operation: 'runExclusiveSessionMutation', sessionIds: [sessionId] }),
-    bind: (sessionId, choice) => {
+    bind: (sessionId, choice, expectedProjectId) => {
       const requestStartedAt = Date.now()
       return withBindingLock(
-        () => bindTarget(sessionId, choice, undefined, 0, requestStartedAt),
+        () => bindTarget(sessionId, choice, undefined, 0, requestStartedAt, expectedProjectId),
         { operation: 'bind', sessionIds: choice.kind === 'inherit' ? [sessionId, choice.parentSessionId] : [sessionId] },
       )
     },
@@ -4614,6 +4654,7 @@ export function createSessionCheckoutModule(
     ),
     // 只读管理列表不占用全局 mutation lock；慢速目录诊断与用户操作互不阻塞。
     listManagedWorktrees,
+    listBranches: listSessionBranches,
     listSessionTargetBindings,
     inspectManagedWorktreeCleanup,
     bulkCleanupManagedWorktrees: (candidates, onProgress) => bulkCleanupManagedWorktrees(candidates, onProgress),

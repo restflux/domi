@@ -38,8 +38,12 @@ function setup(): {
         changedFiles: ['src/task.ts'],
       }
     },
-    bind: async (sessionId, choice) => {
-      calls.push(`bind:${sessionId}:${choice.kind}`)
+    listBranches: async (sessionId) => {
+      calls.push(`branches:${sessionId}`)
+      return { current: 'main', local: ['main', 'feature'] }
+    },
+    bind: async (sessionId, choice, expectedProjectId) => {
+      calls.push(`bind:${sessionId}:${choice.kind}${choice.kind === 'isolated' && choice.sourceBranch ? `:${choice.sourceBranch}` : ''}${expectedProjectId ? `:${expectedProjectId}` : ''}`)
       return targetView(choice.kind)
     },
     operate: async (input) => {
@@ -201,6 +205,22 @@ describe('Session Checkout IPC', () => {
     expect(forgedPath).toEqual(inherit)
     expect(forgedOperate).toEqual(inherit)
     expect(calls).toEqual([])
+  })
+
+  test('Given 新会话分支请求 When 通过 IPC Then 只接受会话 ID 和无路径的隔离分支选择', async () => {
+    const { handlers, calls } = setup()
+    const branches = await handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.LIST_BRANCHES)!({}, { sessionId: 'session-1' })
+    expect(branches).toMatchObject({ ok: true, value: { current: 'main', local: ['main', 'feature'] } })
+    const bind = handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.BIND)!
+    expect(await bind({}, { sessionId: 'session-1', expectedProjectId: 'project-1', choice: { kind: 'isolated', sourceBranch: 'feature' } }))
+      .toMatchObject({ ok: true })
+    expect(await bind({}, { sessionId: 'session-1', choice: { kind: 'local', sourceBranch: 'feature' } }))
+      .toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    expect(await bind({}, { sessionId: 'session-1', choice: { kind: 'isolated', sourceBranch: 'feature\nmain' } }))
+      .toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    expect(await bind({}, { sessionId: 'session-1', expectedProjectId: { id: 'project-1' }, choice: { kind: 'local' } }))
+      .toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    expect(calls).toEqual(['branches:session-1', 'bind:session-1:isolated:feature:project-1'])
   })
 
   test('Given a generic session handoff When it crosses IPC Then renderer can only choose target kind and explicit dirty confirmation', async () => {

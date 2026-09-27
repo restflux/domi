@@ -34,8 +34,9 @@ interface SessionCheckoutIpcRegistrar {
 
 export interface SessionCheckoutIpcModule {
   inspect(sessionId: string): Promise<SessionTargetView>
+  listBranches?(sessionId: string): Promise<{ current: string | null; local: string[] }>
   preflight?(sessionId: string, expectedRevision: number): Promise<WorktreeApplyPreflightView>
-  bind(sessionId: string, choice: RendererSessionTargetChoice): Promise<SessionTargetView>
+  bind(sessionId: string, choice: RendererSessionTargetChoice, expectedProjectId?: string): Promise<SessionTargetView>
   operate(input: OperateSessionCheckoutInput): Promise<SessionCheckoutOperationResult>
   listManagedWorktrees?(input?: ListManagedWorktreesInput): Promise<ManagedWorktreeSummaryView[]>
   inspectManagedWorktreeCleanup?(input?: ListManagedWorktreesInput): Promise<ManagedWorktreeSummaryView[]>
@@ -101,14 +102,23 @@ function parsePreflightInput(input: unknown): PreflightSessionCheckoutInput | nu
 }
 
 function parseChoice(value: unknown): RendererSessionTargetChoice | null {
-  if (!isRecord(value) || !hasExactKeys(value, ['kind'])) return null
-  return value.kind === 'local' || value.kind === 'isolated' ? { kind: value.kind } : null
+  if (!isRecord(value)) return null
+  if (hasExactKeys(value, ['kind']) && (value.kind === 'local' || value.kind === 'isolated')) return { kind: value.kind }
+  if (value.kind === 'isolated' && hasExactKeys(value, ['kind', 'sourceBranch'])
+    && typeof value.sourceBranch === 'string' && value.sourceBranch.length > 0 && value.sourceBranch.length <= 256
+    && !/[\x00-\x1f\x7f]/.test(value.sourceBranch)) {
+    return { kind: 'isolated', sourceBranch: value.sourceBranch }
+  }
+  return null
 }
 
-function parseBindInput(input: unknown): { sessionId: string; choice: RendererSessionTargetChoice } | null {
-  if (!isRecord(input) || !hasExactKeys(input, ['sessionId', 'choice']) || !isSessionId(input.sessionId)) return null
+function parseBindInput(input: unknown): { sessionId: string; choice: RendererSessionTargetChoice; expectedProjectId?: string } | null {
+  if (!isRecord(input) || !hasExactKeys(input, ['sessionId', 'choice'], ['expectedProjectId'])
+    || !isSessionId(input.sessionId)
+    || (input.expectedProjectId !== undefined && !isSessionId(input.expectedProjectId))) return null
   const choice = parseChoice(input.choice)
-  return choice ? { sessionId: input.sessionId, choice } : null
+  return choice ? { sessionId: input.sessionId, choice,
+    ...(typeof input.expectedProjectId === 'string' ? { expectedProjectId: input.expectedProjectId } : {}) } : null
 }
 
 function parseConfirmIterationInput(input: unknown): ConfirmWorktreeIterationInput | null {
@@ -417,11 +427,17 @@ export function registerSessionCheckoutIpc(
     return invoke(() => module.preflight!(parsed.sessionId, parsed.expectedRevision))
   })
 
+  ipc.handle(SESSION_CHECKOUT_IPC_CHANNELS.LIST_BRANCHES, async (_, input) => {
+    if (!isRecord(input) || !hasExactKeys(input, ['sessionId']) || !isSessionId(input.sessionId)) return INVALID_REQUEST
+    const sessionId = input.sessionId
+    return invoke(async () => module.listBranches?.(sessionId) ?? { current: null, local: [] })
+  })
+
   ipc.handle(SESSION_CHECKOUT_IPC_CHANNELS.BIND, async (_, input) => {
     const parsed = parseBindInput(input)
     if (!parsed) return INVALID_REQUEST
     return invoke(async () => {
-      const target = await module.bind(parsed.sessionId, parsed.choice)
+      const target = await module.bind(parsed.sessionId, parsed.choice, parsed.expectedProjectId)
       persistTarget?.(
         parsed.sessionId,
         target.checkout.kind === 'isolated'

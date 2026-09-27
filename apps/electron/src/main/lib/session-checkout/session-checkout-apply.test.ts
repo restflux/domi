@@ -69,6 +69,21 @@ async function readyPlan(engine: SessionCheckoutApplyEngine, fixture: CheckoutFi
 }
 
 describe('SessionCheckoutApplyEngine', () => {
+  test('Given Local switches branches at the same OID When planning or applying Then no patch reaches the other branch', async () => {
+    const fixture = await createFixture()
+    const engine = createSessionCheckoutApplyEngine()
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'new work\n')
+    await runGit(fixture.localPath, ['branch', 'other-branch'])
+    await runGit(fixture.localPath, ['switch', 'other-branch'])
+    const wrongBranch = await engine.plan({ ...fixture, expectedLocalHeadRef: `refs/heads/${fixture.branchName}` })
+    expect(wrongBranch).toMatchObject({ status: 'error', error: { code: 'stale_local' } })
+    await runGit(fixture.localPath, ['switch', fixture.branchName])
+    const plan = await readyPlan(engine, fixture)
+    await runGit(fixture.localPath, ['switch', 'other-branch'])
+    expect(await engine.apply(plan)).toMatchObject({ status: 'error', error: { code: 'stale_local' } })
+    expect(await readFile(join(fixture.localPath, 'tracked.txt'), 'utf8')).not.toBe('new work\n')
+  })
+
   test('Given staged, unstaged and untracked changes When cloning a session handoff snapshot Then the new detached Worktree preserves the exact Git state without mutating the source', async () => {
     const fixture = await createFixture()
     await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'handoff staged\n')

@@ -12,6 +12,7 @@ import type {
 
 export const SESSION_CHECKOUT_IPC_CHANNELS = {
   INSPECT: 'session-checkout:inspect',
+  LIST_BRANCHES: 'session-checkout:list-branches',
   PREFLIGHT: 'session-checkout:preflight',
   BIND: 'session-checkout:bind',
   CONFIRM_ITERATION: 'session-checkout:confirm-iteration',
@@ -27,7 +28,7 @@ export const SESSION_CHECKOUT_IPC_CHANNELS = {
 } as const
 
 /** Renderer 只能选择公开 target，inherit 仅供主进程协作会话接线。 */
-export type RendererSessionTargetChoice = { kind: 'local' } | { kind: 'isolated' }
+export type RendererSessionTargetChoice = { kind: 'local' } | { kind: 'isolated'; sourceBranch?: string }
 export type SessionCheckoutAction =
   | 'apply'
   | 'finish'
@@ -53,6 +54,8 @@ export interface PreflightSessionCheckoutInput {
 export interface BindSessionCheckoutInput {
   sessionId: string
   choice: RendererSessionTargetChoice
+  /** 防止首次发送准备期间草稿迁移造成绑定到另一个项目。 */
+  expectedProjectId?: string
 }
 
 export interface ConfirmWorktreeIterationInput {
@@ -194,6 +197,7 @@ export type SessionCheckoutIpcResult<T> =
 
 export interface SessionCheckoutRendererApi {
   inspect(input: InspectSessionCheckoutInput): Promise<SessionCheckoutIpcResult<SessionTargetView>>
+  listBranches?(input: InspectSessionCheckoutInput): Promise<SessionCheckoutIpcResult<{ current: string | null; local: string[] }>>
   preflight?(input: PreflightSessionCheckoutInput): Promise<SessionCheckoutIpcResult<WorktreeApplyPreflightView>>
   bind(input: BindSessionCheckoutInput): Promise<SessionCheckoutIpcResult<SessionTargetView>>
   confirmIteration?(input: ConfirmWorktreeIterationInput): Promise<SessionCheckoutIpcResult<ConfirmWorktreeIterationResult>>

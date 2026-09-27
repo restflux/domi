@@ -12,6 +12,8 @@ export interface ApplyPlanInput {
   baseOid: string
   isolatedPath: string
   localPath: string
+  /** 来源分支须与 plan 所见 Local ref 一致。 */
+  expectedLocalHeadRef?: string
 }
 
 export interface ApplyPlan {
@@ -1392,6 +1394,9 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         objectDirectory,
         localObjects,
       )
+      if (input.expectedLocalHeadRef && local.headRef !== input.expectedLocalHeadRef) {
+        return { status: 'error', error: { code: 'stale_local', message: '原项目当前分支与 Worktree 来源分支不同' } }
+      }
       const isolated = await captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
@@ -1495,7 +1500,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         objectDirectory,
         sourceObjects,
       )
-      if (local.headOid !== stored.plan.localHeadOid || local.fingerprint !== stored.plan.localFingerprint) {
+      if (local.headOid !== stored.plan.localHeadOid || local.headRef !== stored.plan.localHeadRef || local.fingerprint !== stored.plan.localFingerprint) {
         return { status: 'error', error: { code: 'stale_local', message: 'Local 在 plan 后发生变化，请重新计算' } }
       }
 
@@ -1536,7 +1541,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         objectDirectory,
         sourceObjects,
       )
-      if (finalLocal.headOid !== stored.plan.localHeadOid || finalLocal.fingerprint !== stored.plan.localFingerprint) {
+      if (finalLocal.headOid !== stored.plan.localHeadOid || finalLocal.headRef !== stored.plan.localHeadRef || finalLocal.fingerprint !== stored.plan.localFingerprint) {
         return {
           status: 'error',
           error: { code: 'stale_local', message: 'Local 在 Apply 写入前发生变化，请重新计算' },
@@ -1664,7 +1669,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         objectDirectory,
         sourceObjects,
       )
-      if (finalLocal.headOid !== stored.plan.localHeadOid || finalLocal.fingerprint !== stored.plan.localFingerprint) {
+      if (finalLocal.headOid !== stored.plan.localHeadOid || finalLocal.headRef !== stored.plan.localHeadRef || finalLocal.fingerprint !== stored.plan.localFingerprint) {
         return { status: 'error', error: { code: 'stale_local', message: 'Local 在 Preview 写入前发生变化，请重新计算' } }
       }
       await options.beforeWrite?.(preparedReceipt)

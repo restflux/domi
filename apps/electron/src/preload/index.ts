@@ -1554,6 +1554,7 @@ const electronAPI: ElectronAPI = {
   },
   sessionCheckout: {
     inspect: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.INSPECT, input),
+    listBranches: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.LIST_BRANCHES, input),
     preflight: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.PREFLIGHT, input),
     bind: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.BIND, input),
     confirmIteration: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.CONFIRM_ITERATION, input),

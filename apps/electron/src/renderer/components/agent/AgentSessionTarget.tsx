@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import type { SessionTargetRef, SessionTargetView } from '@domi/shared'
+import type { AgentWorkspace, SessionTargetRef, SessionTargetView } from '@domi/shared'
+import { SessionLocationPicker } from './SessionLocationPicker.tsx'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,6 +17,7 @@ import {
   operateSessionTargetAtomFamily,
   sessionTargetStateAtomFamily,
   sessionTargetWorktreePendingAtomFamily,
+  sessionTargetBranchAtomFamily,
 } from '@/atoms/session-target-atoms.ts'
 import { SessionTargetControl } from './SessionTargetControl.tsx'
 import type { SessionTargetDisplayInput } from '@/lib/session-target-view-model.ts'
@@ -30,6 +32,11 @@ interface AgentSessionTargetProps {
   /** 当前会话实际使用的项目根；用于在入口处判断 Worktree 是否可用。 */
   projectRootPath?: string
   persistedTarget?: SessionTargetRef
+  workspaceId?: string | null
+  workspaces?: AgentWorkspace[]
+  projectChangePending?: boolean
+  onSelectProject?: (workspaceId: string) => Promise<void>
+  onOpenLocalProject?: () => Promise<void>
 }
 
 function displayTarget(
@@ -182,15 +189,25 @@ export function AgentSessionTargetChooser({
   projectName,
   projectRootPath,
   persistedTarget: _persistedTarget,
+  workspaceId,
+  workspaces = [],
+  projectChangePending = false,
+  onSelectProject,
+  onOpenLocalProject,
 }: AgentSessionTargetProps): React.ReactElement | null {
   const state = useAtomValue(sessionTargetStateAtomFamily(sessionId))
   const [worktreePending, setWorktreePending] = useAtom(sessionTargetWorktreePendingAtomFamily(sessionId))
+  const [selectedBranch, setSelectedBranch] = useAtom(sessionTargetBranchAtomFamily(sessionId))
+  const [branches, setBranches] = React.useState<{ current: string | null; local: string[] } | null>(null)
+  const [branchError, setBranchError] = React.useState<string | null>(null)
   const inspect = useSetAtom(inspectSessionTargetAtomFamily(sessionId))
   const [worktreeAvailable, setWorktreeAvailable] = React.useState<boolean | null>(null)
 
   React.useEffect(() => {
     let disposed = false
     setWorktreeAvailable(null)
+    setBranches(null)
+    setBranchError(null)
     if (!projectRootPath) {
       setWorktreeAvailable(false)
       return () => { disposed = true }
@@ -204,6 +221,25 @@ export function AgentSessionTargetChooser({
       })
     return () => { disposed = true }
   }, [projectRootPath])
+
+  React.useEffect(() => {
+    let disposed = false
+    const request = window.electronAPI.sessionCheckout.listBranches?.({ sessionId })
+    if (!request) return () => { disposed = true }
+    void request.then((result) => {
+      if (disposed) return
+      if (result.ok) {
+        setBranches(result.value)
+        setSelectedBranch((current) => current && !result.value.local.includes(current) ? null : current)
+        setBranchError(null)
+      } else {
+        setBranchError(result.error.message)
+      }
+    }).catch(() => {
+      if (!disposed) setBranchError('无法读取项目分支')
+    })
+    return () => { disposed = true }
+  }, [sessionId, workspaceId])
 
   React.useEffect(() => {
     if (worktreeAvailable === false && worktreePending) setWorktreePending(false)
@@ -229,15 +265,48 @@ export function AgentSessionTargetChooser({
   }
 
   return (
-    <SessionTargetControl
-      target={unselectedTarget(projectName)}
-      className="w-full"
-      worktreeChecked={worktreePending}
-      worktreeDisabled={state.loading || worktreeAvailable === null || worktreeAvailable === false}
-      worktreeAvailable={worktreeAvailable !== false}
-      worktreeUnavailableReason="当前项目不是 Git 仓库，Worktree 仅支持 Git 项目"
-      onToggleWorktree={(checked) => { setWorktreePending(checked) }}
-      onChooseTarget={() => undefined}
-    />
+    <div className="flex min-h-9 flex-wrap items-center gap-1" aria-label="新会话工作位置">
+      {onSelectProject ? (
+        <SessionLocationPicker
+          kind="project"
+          currentLabel={projectName}
+          selectedValue={workspaceId ?? null}
+          options={workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name }))}
+          onSelect={(id) => { void onSelectProject(id) }}
+          onOpenLocalProject={onOpenLocalProject ? () => { void onOpenLocalProject() } : undefined}
+          disabled={projectChangePending || state.loading}
+        />
+      ) : <span className="px-2 text-xs font-semibold">{projectName}</span>}
+      {projectRootPath && worktreeAvailable !== false ? (
+        <SessionLocationPicker
+          kind="branch"
+          currentLabel={selectedBranch ?? branches?.current ?? '选择分支'}
+          selectedValue={selectedBranch ?? branches?.current ?? null}
+          options={branches?.local.map((branch) => ({ value: branch, label: branch === branches.current ? `${branch}（当前）` : branch })) ?? []}
+          onSelect={(branch) => {
+            setSelectedBranch(branch === branches?.current ? null : branch)
+            setWorktreePending(branch !== branches?.current)
+          }}
+          disabled={projectChangePending || state.loading}
+          loading={branches === null && branchError === null}
+        />
+      ) : null}
+      <SessionTargetControl
+        target={unselectedTarget(projectName)}
+        hideProjectName
+        className="min-h-8 px-1"
+        worktreeChecked={worktreePending || !!selectedBranch}
+        worktreeDisabled={projectChangePending || state.loading || worktreeAvailable === null || worktreeAvailable === false}
+        worktreeAvailable={worktreeAvailable !== false}
+        worktreeUnavailableReason="当前项目不是 Git 仓库，Worktree 仅支持 Git 项目"
+        onToggleWorktree={(checked) => {
+          setWorktreePending(checked)
+          if (!checked) setSelectedBranch(null)
+        }}
+        onChooseTarget={() => undefined}
+      />
+      {selectedBranch ? <span className="text-[11px] text-muted-foreground">交付前需将原项目切至此分支</span> : null}
+      {branchError ? <span className="text-xs text-destructive" role="alert">{branchError}</span> : null}
+    </div>
   )
 }
