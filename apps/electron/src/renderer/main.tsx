@@ -55,7 +55,6 @@ import {
   stickyUserMessageEnabledAtom,
   longTextPasteAsAttachmentEnabledAtom,
   richTextRenderingEnabledAtom,
-  sessionHoverPreviewEnabledAtom,
   initializeUiPreferences,
 } from './atoms/ui-preferences'
 import { workSidebarPreferencesAtom } from './atoms/sidebar-atoms'
@@ -510,7 +509,6 @@ function UiPreferencesInitializer(): null {
   const setStickyUserMessageEnabled = useSetAtom(stickyUserMessageEnabledAtom)
   const setLongTextPasteAsAttachmentEnabled = useSetAtom(longTextPasteAsAttachmentEnabledAtom)
   const setRichTextRenderingEnabled = useSetAtom(richTextRenderingEnabledAtom)
-  const setSessionHoverPreviewEnabled = useSetAtom(sessionHoverPreviewEnabledAtom)
   const setWorkSidebarPreferences = useSetAtom(workSidebarPreferencesAtom)
 
   useEffect(() => {
@@ -518,14 +516,12 @@ function UiPreferencesInitializer(): null {
       setStickyUserMessageEnabled,
       setLongTextPasteAsAttachmentEnabled,
       setRichTextRenderingEnabled,
-      setSessionHoverPreviewEnabled,
       setWorkSidebarPreferences,
     )
   }, [
     setStickyUserMessageEnabled,
     setLongTextPasteAsAttachmentEnabled,
     setRichTextRenderingEnabled,
-    setSessionHoverPreviewEnabled,
     setWorkSidebarPreferences,
   ])
 

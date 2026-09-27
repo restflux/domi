@@ -349,7 +349,7 @@ export interface AppSettings {
   shortcutOverrides?: ShortcutOverrides
   /** 是否显示返回上一条提问的快捷按钮（默认 true） */
   stickyUserMessageEnabled?: boolean
-  /** 左侧会话列表悬浮预览迷你地图（默认 false，需手动开启） */
+  /** @deprecated 旧版会话悬浮预览开关；保留以读取旧 settings.json，新版始终开启。 */
   sessionHoverPreviewEnabled?: boolean
   /** 粘贴超过阈值的长文本时是否自动转为附件（默认 false） */
   longTextPasteAsAttachmentEnabled?: boolean
