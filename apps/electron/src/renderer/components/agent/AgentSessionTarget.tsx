@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import type { AgentWorkspace, SessionTargetRef, SessionTargetView } from '@domi/shared'
+import type { AgentWorkspace, SDKSystemMessage, SessionTargetRef, SessionTargetView } from '@domi/shared'
 import { SessionLocationPicker } from './SessionLocationPicker.tsx'
 import {
   AlertDialog,
@@ -24,6 +24,8 @@ import type { SessionTargetDisplayInput } from '@/lib/session-target-view-model.
 import { toast } from 'sonner'
 import { worktreeManagerAtom } from '@/atoms/worktree-manager-atoms.ts'
 import { sessionHeaderCommandAtom } from '@/atoms/session-header-actions.ts'
+import { worktreeDetailSelectionAtomFamily } from './worktree-review/WorktreeDetailDialog.tsx'
+import { resolveWorktreeHeaderReviewAction } from './worktree-review/worktree-header-review-action.ts'
 
 interface AgentSessionTargetProps {
   sessionId: string
@@ -37,6 +39,8 @@ interface AgentSessionTargetProps {
   projectChangePending?: boolean
   onSelectProject?: (workspaceId: string) => Promise<void>
   onOpenLocalProject?: () => Promise<void>
+  /** 当前回合有效的 Worktree 续轮/修订请求，来自 AgentView 的实时分组。 */
+  currentIterationRequest?: SDKSystemMessage | null
 }
 
 function displayTarget(
@@ -75,11 +79,13 @@ export function AgentSessionTargetBadge({
   sessionId,
   projectName: _projectName,
   hideProjectName = false,
+  currentIterationRequest = null,
 }: AgentSessionTargetProps): React.ReactElement | null {
   const state = useAtomValue(sessionTargetStateAtomFamily(sessionId))
   const operate = useSetAtom(operateSessionTargetAtomFamily(sessionId))
   const setWorktreeManager = useSetAtom(worktreeManagerAtom)
   const setSessionCommand = useSetAtom(sessionHeaderCommandAtom)
+  const selectDetail = useSetAtom(worktreeDetailSelectionAtomFamily(sessionId))
   const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = React.useState(false)
   useInspectAgentSessionTarget(sessionId)
   if (!state.snapshot) return null
@@ -87,6 +93,11 @@ export function AgentSessionTargetBadge({
   const target = displayTarget(state.snapshot, state.pendingAction)
   const delivery = target.delivery
   const isOwnerWorktree = target.checkout.kind === 'isolated' && target.ownership === 'owner'
+  const headerReview = resolveWorktreeHeaderReviewAction(sessionId, state.snapshot, currentIterationRequest)
+  const openHeaderReview = (): void => {
+    if (!headerReview) return
+    selectDetail({ message: headerReview.message })
+  }
   const previewActive = delivery?.state === 'preview_active'
   const canDiscardWorktree = isOwnerWorktree
     && (target.checkout.phase === 'ready' || target.checkout.phase === 'recovery_required')
@@ -128,6 +139,12 @@ export function AgentSessionTargetBadge({
         className="titlebar-no-drag max-w-[min(30vw,16rem)]"
         onChooseTarget={() => undefined}
         worktreeLifecycleAction={lifecycleAction}
+        worktreeReviewAction={headerReview ? {
+          label: headerReview.label,
+          disabled: state.loading || state.pendingAction !== null,
+          pending: false,
+          onClick: openHeaderReview,
+        } : undefined}
         sessionHandoffAction={{
           disabled: state.loading || state.pendingAction !== null,
           pending: false,

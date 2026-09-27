@@ -9,6 +9,7 @@ import * as React from 'react'
 import { createPortal } from 'react-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Images, Share2 } from 'lucide-react'
+import type { SDKSystemMessage } from '@domi/shared'
 import { toast } from 'sonner'
 import {
   agentSessionIndicatorMapAtom,
@@ -33,6 +34,7 @@ interface AgentHeaderProps {
   branchCount?: number
   onToggleSessionTree?: () => void
   sessionTreeOpen?: boolean
+  currentIterationRequest?: SDKSystemMessage | null
 }
 
 export function AgentHeader({
@@ -40,6 +42,7 @@ export function AgentHeader({
   branchCount = 0,
   onToggleSessionTree,
   sessionTreeOpen = false,
+  currentIterationRequest = null,
 }: AgentHeaderProps): React.ReactElement | null {
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const isModern = useAtomValue(interfaceVariantAtom) !== 'classic'
@@ -172,6 +175,7 @@ export function AgentHeader({
         sessionId={session.id}
         projectName={workspace?.name ?? '当前项目'}
         hideProjectName={isModern}
+        currentIterationRequest={currentIterationRequest}
       />
       <SessionHeaderMenu entries={menuEntries} onAction={handleMenuAction} />
     </div>

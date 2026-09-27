@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { SessionTargetDisplayInput } from '@/lib/session-target-view-model.ts'
@@ -89,6 +90,16 @@ describe('SessionTargetControl compact header', () => {
     expect(modernCopy.description).toContain('直接写入本地项目文件夹')
     expect(getCompactLocalCopy(false).description).toBe('当前会话直接使用 Local Checkout。')
     expect(renderCompact('local')).toContain('Local')
+  })
+
+  test('当前 Worktree 弹层提供验收详情入口，关闭弹层后打开对话框', async () => {
+    // Radix 的 Portal 不在 SSR 中渲染；结构断言核对真正的 compact Popover 内容。
+    const source = await Bun.file(new URL('./SessionTargetControl.tsx', import.meta.url)).text()
+    expect(source).toContain('{isWorktree && worktreeReviewAction ? (')
+    expect(source).toContain('worktreeReviewAction.label')
+    expect(source).toContain('setCompactOpen(false)')
+    expect(source).toContain('openDialogAfterDropdownMenu(worktreeReviewAction.onClick)')
+    expect(source.indexOf('{isWorktree && worktreeReviewAction ? (')).toBeLessThan(source.indexOf('{isWorktree && onOpenWorktreeManager ? ('))
   })
 
   test('Given a Worktree target When rendered Then its isolated location is visually distinguishable', () => {

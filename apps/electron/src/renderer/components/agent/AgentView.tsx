@@ -4639,6 +4639,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         {/* Agent Header */}
         <AgentHeader
           sessionId={sessionId}
+          currentIterationRequest={currentIterationRequest}
           branchCount={sessionTree?.branchCount ?? 0}
           onToggleSessionTree={toggleSessionTree}
           sessionTreeOpen={sessionTreeOpen}

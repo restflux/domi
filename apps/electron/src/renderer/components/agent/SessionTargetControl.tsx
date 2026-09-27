@@ -1,7 +1,8 @@
-import type * as React from 'react'
-import { Boxes, ChevronDown, FolderGit2, FolderOpen, GitBranch, GitBranchPlus, HardDrive, Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import * as React from 'react'
+import { Boxes, CheckCircle2, ChevronDown, FolderGit2, FolderOpen, GitBranch, GitBranchPlus, HardDrive, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils.ts'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
+import { openDialogAfterDropdownMenu } from '@/lib/open-dialog-after-dropdown-menu.ts'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.tsx'
 import {
   buildSessionTargetViewModel,
@@ -31,6 +32,13 @@ export interface SessionTargetControlProps {
   worktreeLifecycleAction?: {
     label: string
     icon: 'cleanup' | 'retry'
+    disabled?: boolean
+    pending?: boolean
+    onClick: () => void
+  }
+  /** 当前有效验收/任务的顶栏兜底入口；资格仍由 Session Target 与宿主操作校验决定。 */
+  worktreeReviewAction?: {
+    label: string
     disabled?: boolean
     pending?: boolean
     onClick: () => void
@@ -93,8 +101,10 @@ export function SessionTargetControl({
   onRevealTarget,
   onOpenWorktreeManager,
   worktreeLifecycleAction,
+  worktreeReviewAction,
   sessionHandoffAction,
 }: SessionTargetControlProps): React.ReactElement {
+  const [compactOpen, setCompactOpen] = React.useState(false)
   const model = buildSessionTargetViewModel(target)
   const isWorktree = target.checkout.kind === 'isolated'
   const compactTargetLabel = isWorktree ? 'Worktree' : 'Local'
@@ -207,7 +217,7 @@ export function SessionTargetControl({
     return (
       <section className={cn('flex min-w-0 items-center gap-2 text-foreground', className)} aria-label="当前修改环境">
         {!hideProjectName && <span className="min-w-0 truncate text-xs font-semibold">{model.identity.projectName}</span>}
-        <Popover>
+        <Popover open={compactOpen} onOpenChange={setCompactOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
@@ -256,6 +266,20 @@ export function SessionTargetControl({
                 >
                   {sessionHandoffAction.pending ? <Loader2 className="size-3.5 animate-spin" /> : <GitBranchPlus className="size-3.5" />}
                   {sessionHandoffAction.pending ? '正在交接' : '交接到新会话'}
+                </button>
+              ) : null}
+              {isWorktree && worktreeReviewAction ? (
+                <button
+                  type="button"
+                  disabled={worktreeReviewAction.disabled || worktreeReviewAction.pending}
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-sky-700 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50 dark:text-sky-300"
+                  onClick={() => {
+                    setCompactOpen(false)
+                    openDialogAfterDropdownMenu(worktreeReviewAction.onClick)
+                  }}
+                >
+                  {worktreeReviewAction.pending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                  {worktreeReviewAction.pending ? '正在打开' : worktreeReviewAction.label}
                 </button>
               ) : null}
               {isWorktree && onOpenWorktreeManager ? (
