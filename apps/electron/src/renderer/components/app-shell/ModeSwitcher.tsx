@@ -17,8 +17,9 @@ import { conversationsAtom, currentConversationIdAtom } from '@/atoms/chat-atoms
 import { agentSessionsAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import { tabsAtom } from '@/atoms/tab-atoms'
 import { useOpenSession } from '@/hooks/useOpenSession'
-import { ChevronDown, MessageSquare, Workflow } from 'lucide-react'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Check, ChevronDown, MessageSquare, Workflow } from 'lucide-react'
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { DomiBrandLockup } from './DomiBrand'
 import { APP_MODE_DISPLAY } from '@/lib/app-mode-display'
 import { cn } from '@/lib/utils'
@@ -90,12 +91,20 @@ export function ModeSwitcher({ compact = false }: { compact?: boolean } = {}): R
             <ChevronDown size={13} className="shrink-0 text-muted-foreground" aria-hidden="true" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" sideOffset={4} className="z-[9999] min-w-40">
+        <DropdownMenuContent align="start" sideOffset={4} className="z-[9999] min-w-36">
           <DropdownMenuRadioGroup value={mode} onValueChange={(value) => { if (value === 'agent' || value === 'chat') handleModeSwitch(value) }}>
             {modes.map(({ value, icon }) => (
-              <DropdownMenuRadioItem key={value} value={value} className="gap-2 text-xs">
-                {icon}<span>{APP_MODE_DISPLAY[value].label}</span>
-              </DropdownMenuRadioItem>
+              <DropdownMenuPrimitive.RadioItem
+                key={value}
+                value={value}
+                className="relative flex h-9 cursor-default select-none items-center gap-2.5 rounded-md px-2.5 pr-8 text-sm outline-none transition-colors focus:bg-accent/70 data-[state=checked]:bg-accent/60 data-[state=checked]:font-medium"
+              >
+                <span className="text-muted-foreground" aria-hidden="true">{icon}</span>
+                <span>{APP_MODE_DISPLAY[value].label}</span>
+                <DropdownMenuPrimitive.ItemIndicator className="absolute right-2.5 text-foreground" aria-hidden="true">
+                  <Check className="size-3.5" />
+                </DropdownMenuPrimitive.ItemIndicator>
+              </DropdownMenuPrimitive.RadioItem>
             ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
