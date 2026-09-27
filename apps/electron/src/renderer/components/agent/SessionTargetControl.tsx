@@ -156,8 +156,11 @@ export function SessionTargetControl({
     )
     const quietLocalStatus = hideProjectName && !isWorktree && (model.status.tone === 'ready' || model.status.tone === 'muted')
     const quietTargetStatus = quietWorktreeStatus || quietLocalStatus
-    const highlightWorktreeIcon = hideProjectName && isWorktree && model.status.tone === 'ready'
-      && (!target.delivery || target.delivery.state === 'working')
+    const highlightWorktreeIcon = quietWorktreeStatus && target.checkout.phase !== 'discarded' && (
+      (model.status.tone === 'ready' && (!target.delivery || target.delivery.state === 'working'))
+      || target.delivery?.state === 'ready_for_review'
+      || target.delivery?.state === 'preview_active'
+    )
     const iteration = target.delivery?.state === 'working' || target.delivery?.state === 'delivered'
       ? target.delivery.iteration
       : target.delivery?.review.iteration

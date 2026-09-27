@@ -126,7 +126,7 @@ describe('SessionTargetControl compact header', () => {
     expect(renderCompact('isolated')).toContain('bg-sky-500/10')
   })
 
-  test('现代 Work 的待验收与 Local 验收中也保持透明，但明确写出当前状态', () => {
+  test('现代 Work 的待验收与 Local 验收中保持透明并沿用轻量 Worktree 图标', () => {
     const review = {
       reviewId: 'review-1', iteration: 1, preparedAt: 1, summary: '顶部优化',
       validationStatus: 'passed' as const, tests: [], changedFiles: ['src/a.ts'],
@@ -143,7 +143,7 @@ describe('SessionTargetControl compact header', () => {
       )
       expect(html).toContain(`Worktree · ${delivery.state === 'ready_for_review' ? '待验收' : 'Local 验收中'}`)
       expect(html).toContain('border-transparent bg-transparent text-muted-foreground')
-      expect(html).not.toContain('text-sky-600')
+      expect(html).toContain('size-3 text-sky-600 dark:text-sky-400')
       expect(html).not.toContain('bg-sky-500/10')
       expect(html).not.toContain('bg-amber-500/10')
       expect(html).toContain('aria-haspopup="dialog"')
@@ -159,6 +159,7 @@ describe('SessionTargetControl compact header', () => {
     )
     expect(html).toContain('Worktree · 正在准备 Worktree')
     expect(html).toContain('bg-sky-500/10')
+    expect(html).not.toContain('size-3 text-sky-600 dark:text-sky-400')
   })
 
   test('需要恢复的 Worktree 仍保持醒目的警告色', () => {
@@ -169,6 +170,7 @@ describe('SessionTargetControl compact header', () => {
       </TooltipProvider>,
     )
     expect(html).toContain('Worktree · 需要恢复')
+    expect(html).not.toContain('size-3 text-sky-600 dark:text-sky-400')
     expect(html).toContain('bg-amber-500/10')
     expect(html).toContain('text-amber-700')
   })
