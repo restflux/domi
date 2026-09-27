@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Channel, ImageGenerationSelection } from '@domi/shared'
-import { getImageChannels, parseImageCommand, resolveImageSelection } from './image-generation-selection'
+import { getImageChannels, parseImageCommand, resolveDisplayedImageSelection, resolveImageSelection } from './image-generation-selection'
 import { createAgentQueuedMessage, restoreQueuedMessageToFront } from './agent-message-queue'
 
 function channel(id: string, provider: Channel['provider'] = 'openai'): Channel {
@@ -16,6 +16,15 @@ describe('原生生图选择', () => {
     const resolved = resolveImageSelection([channel('a')], selected)
     expect(resolved).toEqual(selected)
     expect(resolved).not.toBe(selected)
+  })
+  test('Given 全局默认模型 When 打开不同会话的配置 Then 直接显示默认值且不覆盖显式退出', () => {
+    const channels = [channel('default'), channel('other')]
+    const defaults: ImageGenerationSelection = { channelId: 'default', modelId: 'gpt-image-2' }
+    expect(resolveDisplayedImageSelection(channels, undefined, defaults)).toEqual(defaults)
+    expect(resolveDisplayedImageSelection(channels, undefined, defaults)).not.toBe(defaults)
+    expect(resolveDisplayedImageSelection(channels, null, defaults)).toBeNull()
+    expect(resolveDisplayedImageSelection(channels, { channelId: 'other', modelId: 'gpt-image-2' }, defaults)?.channelId).toBe('other')
+    expect(resolveDisplayedImageSelection(channels, undefined, { channelId: 'deleted', modelId: 'old' })).toBeNull()
   })
   test('Given 已选渠道已删除 When 开启生图 Then 不静默改用另一供应商', () => {
     expect(resolveImageSelection([channel('b')], { channelId: 'a', modelId: 'old' })).toBeNull()

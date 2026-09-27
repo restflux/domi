@@ -17,6 +17,12 @@ export function resolveImageSelection(channels: Channel[], preferred?: ImageGene
   return first ? { channelId: first.id, modelId: first.imageGeneration!.models[0]! } : null
 }
 
+/** 未覆盖的会话展示已设置的全局默认值；显式退出的 null 不被默认值覆盖。 */
+export function resolveDisplayedImageSelection(channels: Channel[], scoped: ImageGenerationSelection | null | undefined, defaults: ImageGenerationSelection | null): ImageGenerationSelection | null {
+  if (scoped !== undefined) return scoped
+  return defaults ? resolveImageSelection(channels, defaults) : null
+}
+
 /** /image 仅作为输入命令，不送入模型 prompt。 */
 export function parseImageCommand(text: string): { requested: boolean; text: string } {
   const requested = /^\/image(?:\s|$)/i.test(text.trimStart())

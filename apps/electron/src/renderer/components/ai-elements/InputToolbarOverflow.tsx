@@ -33,6 +33,8 @@ export interface ToolbarItem {
   node: React.ReactNode
   /** 低频工具始终收入更多菜单。 */
   menuOnly?: boolean
+  /** 菜单动作在外层 Popover 关闭后再执行，供另一个独立弹层使用。 */
+  onMenuSelect?: () => void
 }
 
 interface InputToolbarOverflowProps {
@@ -65,6 +67,7 @@ export function InputToolbarOverflow({
   const [containerWidth, setContainerWidth] = React.useState(0)
   const [itemWidths, setItemWidths] = React.useState<Record<string, number>>({})
   const [popoverOpen, setPopoverOpen] = React.useState(false)
+  const pendingMenuActionRef = React.useRef<(() => void) | null>(null)
 
   // 容器宽度监听
   React.useLayoutEffect(() => {
@@ -200,15 +203,22 @@ export function InputToolbarOverflow({
               </TooltipContent>
             </Tooltip>
             <PopoverContent
-              forceMount
               side="top"
               align="end"
-              className="w-auto p-1.5 data-[state=closed]:hidden"
+              className="w-auto p-1.5"
               onOpenAutoFocus={(e) => e.preventDefault()}
+              onCloseAutoFocus={(event) => {
+                const action = pendingMenuActionRef.current
+                pendingMenuActionRef.current = null
+                if (action) { event.preventDefault(); action() }
+              }}
             >
               <div className="flex items-center gap-1.5">
                 {overflowItems.map((it) => (
-                  <div key={it.key} className="shrink-0 flex items-center">
+                  <div key={it.key} className="shrink-0 flex items-center" onClick={it.onMenuSelect ? () => {
+                    pendingMenuActionRef.current = it.onMenuSelect ?? null
+                    setPopoverOpen(false)
+                  } : undefined}>
                     {it.node}
                   </div>
                 ))}

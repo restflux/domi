@@ -1,4 +1,4 @@
-import { ImageGenerationSelector } from '@/components/ai-elements/ImageGenerationSelector'
+import { ImageGenerationButton, ImageGenerationSelector, openImageScopeAtom } from '@/components/ai-elements/ImageGenerationSelector'
 import type { ImageGenerationSelection } from '@domi/shared'
 import { persistImageSelection } from '@/lib/image-generation-settings'
 import { imageGenerationSelectionsAtom, imageGenerationChannelsAtom, imageGenerationDefaultAtom, parseImageCommand, resolveImageSelection } from '@/atoms/image-generation-atoms'
@@ -22,7 +22,7 @@ import * as React from 'react'
 import { unstable_batchedUpdates } from 'react-dom'
 import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai'
 import { toast } from 'sonner'
-import { AlertTriangle, CheckCircle2, ArrowUp, Square, Settings, X, Copy, Check, RotateCw, Sparkles, ChevronDown, ChevronRight, ListTodo, MessageSquarePlus, Paperclip, FileText, FolderOpen, GitFork, GitBranch, Zap, Telescope, ClipboardList, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ArrowUp, Square, Settings, X, Copy, Check, RotateCw, Sparkles, ChevronDown, ChevronRight, ListTodo, MessageSquarePlus, Paperclip, FileText, FolderOpen, GitFork, GitBranch, Zap, Telescope, ClipboardList, ImagePlus, type LucideIcon } from 'lucide-react'
 import { AgentMessages } from './AgentMessages'
 import { AgentHeader } from './AgentHeader'
 import { SessionFilesConversationLayout } from './SessionFilesConversationLayout'
@@ -2560,11 +2560,11 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       : store.get(imageGenerationSelectionsAtom)[scope]
     const imageGeneration = selectedImage ? { ...selectedImage } : undefined
     if (command.requested && !cleanInput) {
-      if (!selectedImage && preferredImage) { toast.error('所选生图渠道或模型已不可用，请重新选择'); return }
+      if (!selectedImage) { toast.error(preferredImage ? '所选生图渠道或模型已不可用，请重新选择' : '请先在渠道设置中启用图片生成'); return }
 
       store.set(imageGenerationSelectionsAtom, (current) => ({ ...current, [scope]: selectedImage ?? null }))
       void persistImageSelection(scope, selectedImage ?? null).catch(console.error)
-      if (!command.text.trim()) { setInputContent(''); setInputHtmlContent(''); return }
+      if (!command.text.trim()) { toast.info('请在 /image 后输入图片描述'); return }
     }
     const text = cleanInput || (command.requested && !selectedImage) ? (overrideText ?? inputContent).trim() : command.text
     // 一次性 Worktree continuation 必须逐字使用宿主返回的 canonical message，
@@ -4310,6 +4310,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     {
       key: 'composer-plus',
       node: (
+        <>
         <ComposerPlusMenu
           onSideChat={openSideChat}
           onInsertTrigger={(char) => richTextInputRef.current?.insertMentionTrigger(char)}
@@ -4317,6 +4318,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           tools={modernLayout ? {
             onAttachFile: () => { void handleAttachContent('file') },
             onAttachDirectory: () => { void handleAttachContent('directory') },
+            onOpenImageGeneration: imageSelections[`work:${sessionId}`] ? undefined : () => store.set(openImageScopeAtom, `work:${sessionId}`),
             onOpenStatus: () => {
               statusTriggerRef.current = null
               setSlashStatusOpen(true)
@@ -4325,9 +4327,10 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
             minimalPresetEnabled,
             presetDisabled: streaming || backgroundWaiting,
             onSetPreset: (preset) => { void setModelPresentationPreset(preset) },
-            imageGeneration: imageSelections[`work:${sessionId}`] ? undefined : <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} menuRow />,
           } : undefined}
         />
+        <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} hideTrigger />
+        </>
       ),
     },
     {
@@ -4979,9 +4982,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
             <InputToolbarOverflow
               items={[
                 ...inputToolbarItems,
-                ...(!modernLayout || imageSelections[`work:${sessionId}`]
-                  ? [{ key: 'image-generation', menuOnly: !modernLayout && !imageSelections[`work:${sessionId}`], node: <ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} /> }]
-                  : []),
+                ...(imageSelections[`work:${sessionId}`]
+                  ? [{ key: 'image-generation', node: <ImageGenerationButton scope={`work:${sessionId}`} /> }]
+                  : !modernLayout ? [{ key: 'image-generation-menu', menuOnly: true, node: <Button type="button" variant="ghost" size="icon" aria-label="图片生成" className={inputToolbarButtonClass}><ImagePlus className="size-4" /></Button>, onMenuSelect: () => store.set(openImageScopeAtom, `work:${sessionId}`) }] : []),
               ]}
               trailing={inputTrailingNode}
             />

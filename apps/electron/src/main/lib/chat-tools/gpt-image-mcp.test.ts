@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { buildPiGptImageTool } from './gpt-image-agent-tool'
 import { ImageGenerationRun } from '../image-generation/run'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Channel, ImageGenerationSelection } from '@domi/shared'
 let selectedChannel: Channel | undefined
@@ -65,6 +68,52 @@ test('Work的GPT与Nano共享运行锁，换tool_call_id和提示词不能绕过
     await expect(nano.execute('two', { prompt: 'cat with changes' }, undefined, undefined, {} as never)).rejects.toThrow('上一次生图结果尚未确认')
     expect(requests).toBe(1)
   } finally { globalThis.fetch = original; run.dispose() }
+})
+
+test('Given one missing reference alongside a valid image When editing Then no paid API request is sent', async () => {
+  const { generateAgentImages } = await import('../image-generation/agent-result')
+  const cwd = mkdtempSync(join(tmpdir(), 'domi-image-reference-'))
+  const valid = join(cwd, 'valid.png')
+  writeFileSync(valid, 'valid image bytes')
+  const original = globalThis.fetch
+  let requests = 0
+  globalThis.fetch = (async () => { requests++; return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] }) }) as unknown as typeof fetch
+  try {
+    await expect(generateAgentImages('gpt-image', undefined, 'modify', 'session-1', {
+      cwd, referenceImagePaths: [join(cwd, 'missing.png'), valid],
+    }, { apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'gpt-image-2', protocol: 'openai-images' }))
+      .rejects.toThrow('未能读取参考图')
+    expect(requests).toBe(0)
+  } finally { globalThis.fetch = original; rmSync(cwd, { recursive: true, force: true }) }
+})
+
+test('Given another session image reference When editing Then it is rejected before any request', async () => {
+  const { generateAgentImages } = await import('../image-generation/agent-result')
+  const original = globalThis.fetch
+  let requests = 0
+  globalThis.fetch = (async () => { requests++; return Response.json({ data: [] }) }) as unknown as typeof fetch
+  try {
+    await expect(generateAgentImages('gpt-image', undefined, 'edit', 'd34a9595-e2f0-4bc1-bf84-47b8dff8fe31', {
+      referenceImagePaths: ['domi-session-image://b34a9595-e2f0-4bc1-bf84-47b8dff8fe31/858ecfe6-0c71-4d92-bdf7-9d07d364471a.png'],
+    }, { apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'gpt-image-2', protocol: 'openai-images' }))
+      .rejects.toThrow('当前会话')
+    expect(requests).toBe(0)
+  } finally { globalThis.fetch = original }
+})
+
+test('Given session-only output When image generation succeeds Then result offers an editable same-session reference', async () => {
+  const { generateAgentImages } = await import('../image-generation/agent-result')
+  const original = globalThis.fetch
+  globalThis.fetch = (async () => Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] })) as unknown as typeof fetch
+  try {
+    const result = await generateAgentImages('gpt-image', undefined, 'draw', 'session-1', {}, {
+      apiKey: 'test-key', baseUrl: 'https://example.com/v1', model: 'gpt-image-2', protocol: 'openai-images',
+    })
+    const text = result.content.find((block) => block.type === 'text')?.text
+    expect(text).toContain('referenceImagePaths')
+    expect(text).toContain('domi-session-image://session-1/att-1.png')
+    expect(text).toContain('DOMI_IMAGE_ATTACHMENT:')
+  } finally { globalThis.fetch = original }
 })
 
 describe('GPT Image Pi custom tool', () => {

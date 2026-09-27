@@ -250,12 +250,12 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       ? resolveImageSelection(store.get(imageGenerationChannelsAtom), store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom))
       : store.get(imageGenerationSelectionsAtom)[scope]
     if (command.requested) {
-      if (!selection && preferredImage) { toast.error('所选生图渠道或模型已不可用，请重新选择'); return }
+      if (!selection) { toast.error(preferredImage ? '所选生图渠道或模型已不可用，请重新选择' : '请先在渠道设置中启用图片生成'); return }
 
       store.set(imageGenerationSelectionsAtom, (current) => ({ ...current, [scope]: selection ?? null }))
       void persistImageSelection(scope, selection ?? null).catch(console.error)
-      if (!command.text.trim()) return
-      content = selection ? command.text : content
+      if (!command.text.trim()) { toast.info('请在 /image 后输入图片描述'); return }
+      content = command.text
     }
     const imageGeneration = selection ? { ...selection } : undefined
 

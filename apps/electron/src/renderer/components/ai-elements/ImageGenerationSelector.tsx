@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { atom, useAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ImagePlus, X } from 'lucide-react'
 import { ImageOptionSelect } from './ImageOptionSelect'
 import { inputToolbarButtonClass } from './input-toolbar-styles'
@@ -7,23 +7,36 @@ import { toast } from 'sonner'
 import { getImageGenerationQualities, type ImageGenerationSelection } from '@domi/shared'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
-import { imageGenerationChannelsAtom, imageGenerationDefaultAtom, imageGenerationSelectionsAtom, getImageChannels, resolveImageSelection, parseImageCommand } from '@/atoms/image-generation-atoms'
+import { imageGenerationChannelsAtom, imageGenerationDefaultAtom, imageGenerationSelectionsAtom, getImageChannels, resolveImageSelection, resolveDisplayedImageSelection, parseImageCommand } from '@/atoms/image-generation-atoms'
 
 import { persistImageSelection, type ImageGenerationSessionSettings } from '@/lib/image-generation-settings'
 
-const openImageScopeAtom = atom<string | null>(null)
+export const openImageScopeAtom = atom<string | null>(null)
 const imageCommandSeenAtom = atom<Record<string, boolean>>({})
 const labels: Record<string, string> = { auto: '自动', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高', '1024x1024': '方形 · 1:1', '1536x1024': '横向 · 3:2', '1024x1536': '纵向 · 2:3' }
 const optionsFor = (values: readonly string[]) => values.map((value) => ({ value, label: labels[value] ?? value }))
 
-export function ImageGenerationSelector({ scope, defaultSettings = false, inputText, menuRow = false }: { scope: string; defaultSettings?: boolean; inputText?: string; menuRow?: boolean }): React.ReactElement {
+/** 已在当前会话显式选择后才显示的快捷入口；配置弹层始终锚定在加号旁。 */
+export function ImageGenerationButton({ scope }: { scope: string }): React.ReactElement {
+  const selection = useAtomValue(imageGenerationSelectionsAtom)[scope]
+  const channels = useAtomValue(imageGenerationChannelsAtom)
+  const setOpenScope = useSetAtom(openImageScopeAtom)
+  const channel = channels.find((item) => item.id === selection?.channelId)
+  return <Button type="button" variant="ghost" size="icon" aria-label="调整生图参数" aria-pressed
+    title={`${selection?.modelId ?? '图片生成'} · ${channel?.name ?? '渠道不可用'}`}
+    className={`${inputToolbarButtonClass} bg-primary/10 text-primary hover:bg-primary/15`}
+    onClick={() => setOpenScope(scope)}><ImagePlus className="size-4" /></Button>
+}
+
+export function ImageGenerationSelector({ scope, defaultSettings = false, inputText, hideTrigger = false }: { scope: string; defaultSettings?: boolean; inputText?: string; hideTrigger?: boolean }): React.ReactElement {
   const [channels, setChannels] = useAtom(imageGenerationChannelsAtom)
   const [defaults, setDefaults] = useAtom(imageGenerationDefaultAtom)
   const [selections, setSelections] = useAtom(imageGenerationSelectionsAtom)
   const [openScope, setOpenScope] = useAtom(openImageScopeAtom)
+  const [loaded, setLoaded] = React.useState(false)
   const open = openScope === scope
   const setOpen = (value: boolean): void => setOpenScope(value ? scope : null)
-  const selection = defaultSettings ? defaults : selections[scope] ?? null
+  const selection = defaultSettings ? defaults : resolveDisplayedImageSelection(channels, selections[scope], defaults)
   React.useEffect(() => {
     let active = true
     void Promise.all([window.electronAPI.listChannels(), window.electronAPI.getSettings()]).then(([list, settings]) => {
@@ -32,6 +45,7 @@ export function ImageGenerationSelector({ scope, defaultSettings = false, inputT
       setDefaults(settings.imageGeneration ?? null)
       const saved = (settings as typeof settings & ImageGenerationSessionSettings).imageGenerationSelections
       if (saved) setSelections((current) => ({ ...saved, ...current }))
+      setLoaded(true)
     }).catch(() => toast.error('无法加载图片生成配置'))
     return () => { active = false }
   }, [setChannels, setDefaults, setSelections, open])
@@ -42,14 +56,16 @@ export function ImageGenerationSelector({ scope, defaultSettings = false, inputT
       if (commandSeen[scope]) setCommandSeen((current) => ({ ...current, [scope]: false }))
       return
     }
-    if (commandSeen[scope] || !channels.length) return
+    if (!loaded || commandSeen[scope]) return
     setCommandSeen((current) => ({ ...current, [scope]: true }))
     const preferred = selections[scope] ?? defaults
-    const next = resolveImageSelection(channels, preferred) ?? preferred
-    setSelections((current) => ({ ...current, [scope]: next }))
-    void persistImageSelection(scope, next).catch(() => toast.error('生图选择保存失败'))
+    const next = resolveImageSelection(channels, preferred)
+    if (next) {
+      setSelections((current) => ({ ...current, [scope]: next }))
+      void persistImageSelection(scope, next).catch(() => toast.error('生图选择保存失败'))
+    }
     setOpenScope(scope)
-  }, [commandActive, scope, channels, defaults, selections, setSelections, commandSeen, setCommandSeen, setOpenScope])
+  }, [commandActive, loaded, scope, channels, defaults, selections, setSelections, commandSeen, setCommandSeen, setOpenScope])
   const eligible = getImageChannels(channels)
   const channel = eligible.find((item) => item.id === selection?.channelId)
   const update = (next: ImageGenerationSelection | null): void => {
@@ -97,15 +113,15 @@ export function ImageGenerationSelector({ scope, defaultSettings = false, inputT
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size={menuRow ? 'sm' : 'icon'}
-          aria-label={selection ? '调整生图参数' : '图片生成'} aria-pressed={Boolean(selection)}
-          title={selection ? `${selection.modelId} · ${channel?.name ?? '渠道不可用'}` : '图片生成'}
-          className={`${menuRow ? 'composer-plus-item' : inputToolbarButtonClass} ${selection ? 'bg-primary/10 text-primary hover:bg-primary/15' : ''}`}>
-          <ImagePlus className="size-4" />
-          {menuRow && <span>图片生成</span>}
+        <Button type="button" variant="ghost" size="icon"
+          aria-label={hideTrigger ? undefined : selection ? '调整生图参数' : '图片生成'}
+          aria-hidden={hideTrigger || undefined} tabIndex={hideTrigger ? -1 : undefined} aria-pressed={hideTrigger ? undefined : Boolean(selection)}
+          title={hideTrigger ? undefined : selection ? `${selection.modelId} · ${channel?.name ?? '渠道不可用'}` : '图片生成'}
+          className={hideTrigger ? 'pointer-events-none size-0 overflow-hidden p-0 opacity-0' : `${inputToolbarButtonClass} ${selection ? 'bg-primary/10 text-primary hover:bg-primary/15' : ''}`}>
+          {!hideTrigger && <ImagePlus className="size-4" />}
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-72 max-w-[calc(100vw-2rem)] rounded-xl p-4 shadow-xl">{fields}</PopoverContent>
+      <PopoverContent side="top" align="start" className="z-[110] w-72 max-w-[calc(100vw-2rem)] rounded-xl p-4 shadow-xl">{fields}</PopoverContent>
     </Popover>
   )
 }

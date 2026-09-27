@@ -5,6 +5,17 @@ const originalFetch = globalThis.fetch
 const config: ImageGenerationConfig = { apiKey: 'secret-key', baseUrl: 'https://example.com/v1', model: 'gpt-image-2.5-flare', protocol: 'openai-images', channelId: 'channel-1', quality: 'max', size: '1024x1024', numberOfImages: 2 }
 afterEach(() => { globalThis.fetch = originalFetch; clearImageGenerationHistory('session') })
 describe('共享生图请求', () => {
+  test('Given readable editing references When provider returns 404 Then error names the remote edit route, not a local path', async () => {
+    const urls: string[] = []
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      urls.push(String(url))
+      return new Response('not found', { status: 404 })
+    }) as unknown as typeof fetch
+    await expect(generateImages({ ...config, numberOfImages: 1 }, '细化图片', 'session', [{ data: 'aW1hZ2U=', mimeType: 'image/png' }]))
+      .rejects.toThrow('生图编辑 API 返回 404')
+    expect(urls).toEqual(['https://example.com/v1/images/edits'])
+  })
+
   test('等待网络时取消，即使服务器随后返回图片也不报告完成', async () => {
     const controller = new AbortController()
     let respond!: (response: Response) => void

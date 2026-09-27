@@ -1,5 +1,5 @@
+import { ImageGenerationButton, ImageGenerationSelector, openImageScopeAtom } from '@/components/ai-elements/ImageGenerationSelector'
 import { imageGenerationSelectionsAtom } from '@/atoms/image-generation-atoms'
-import { ImageGenerationSelector } from '@/components/ai-elements/ImageGenerationSelector'
 /**
  * ChatInput - 输入区域
  *
@@ -16,7 +16,7 @@ import { ImageGenerationSelector } from '@/components/ai-elements/ImageGeneratio
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { ArrowUp, Square, Brain, Paperclip } from 'lucide-react'
+import { ArrowUp, Square, Brain, Paperclip, ImagePlus } from 'lucide-react'
 import { ModelSelector } from './ModelSelector'
 import { ClearContextButton } from './ClearContextButton'
 import { ContextSettingsPopover } from './ContextSettingsPopover'
@@ -75,6 +75,7 @@ interface ChatInputProps {
 
 export function ChatInput({ conversationId, streaming, pendingAttachments, onSetPendingAttachments, onSend, onStop, onClearContext }: ChatInputProps): React.ReactElement {
   const imageSelections = useAtomValue(imageGenerationSelectionsAtom)
+  const setOpenImageScope = useSetAtom(openImageScopeAtom)
   const sendWithCmdEnter = useAtomValue(sendWithCmdEnterAtom)
   // 从 Map atom 读写草稿
   const draftsMap = useAtomValue(conversationDraftsAtom)
@@ -325,7 +326,8 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
   const toolbarItems = React.useMemo<ToolbarItem[]>(() => [
     {
       key: 'composer-plus',
-      node: <ComposerPlusMenu onInsertTrigger={(char) => richTextInputRef.current?.insertMentionTrigger(char)} />,
+      node: <><ComposerPlusMenu onInsertTrigger={(char) => richTextInputRef.current?.insertMentionTrigger(char)} />
+        <ImageGenerationSelector scope={`chat:${conversationId}`} inputText={content} hideTrigger /></>,
     },
     { key: 'model', node: <ModelSelector excludedProviders={['openai-codex']} useSharedOpenState /> },
     {
@@ -374,11 +376,13 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
       ),
     },
     { key: 'speech', node: <SpeechButton className={inputToolbarButtonClass} /> },
-    { key: 'image-generation', menuOnly: !imageSelections[`chat:${conversationId}`], node: <ImageGenerationSelector scope={`chat:${conversationId}`} inputText={content} /> },
+    ...(imageSelections[`chat:${conversationId}`]
+      ? [{ key: 'image-generation', node: <ImageGenerationButton scope={`chat:${conversationId}`} /> }]
+      : [{ key: 'image-generation-menu', menuOnly: true, node: <Button type="button" variant="ghost" size="icon" aria-label="图片生成" className={inputToolbarButtonClass}><ImagePlus className="size-4" /></Button>, onMenuSelect: () => setOpenImageScope(`chat:${conversationId}`) }]),
     { key: 'tools', node: <ToolSelectorPopover /> },
     { key: 'context', node: <ContextSettingsPopover /> },
     { key: 'clear', node: <ClearContextButton onClick={onClearContext} /> },
-  ], [handleOpenFileDialog, thinkingEnabled, setThinkingEnabled, onClearContext, conversationId, content, imageSelections])
+  ], [handleOpenFileDialog, thinkingEnabled, setThinkingEnabled, onClearContext, conversationId, content, imageSelections, setOpenImageScope])
 
   const trailingNode = streaming ? (
     <Tooltip>

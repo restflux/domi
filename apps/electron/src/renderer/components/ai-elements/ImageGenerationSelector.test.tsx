@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Provider, createStore } from 'jotai'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { ImageGenerationSelector } from './ImageGenerationSelector'
+import { ImageGenerationButton, ImageGenerationSelector } from './ImageGenerationSelector'
 import { InputToolbarOverflow } from './InputToolbarOverflow'
 import { TooltipProvider } from '../ui/tooltip'
 import { ChannelImageGenerationConfig } from '../settings/ChannelImageGenerationConfig'
@@ -10,18 +12,58 @@ import { imageGenerationSelectionsAtom } from '../../atoms/image-generation-atom
 test('活动生图按钮只保留图标，模型与渠道放在悬停信息', () => {
   const store = createStore()
   store.set(imageGenerationSelectionsAtom, { 'work:test': { channelId: 'channel', modelId: 'gpt-image-2.5-flare' } })
-  const html = renderToStaticMarkup(<Provider store={store}><ImageGenerationSelector scope="work:test" /></Provider>)
+  const html = renderToStaticMarkup(<Provider store={store}><ImageGenerationButton scope="work:test" /></Provider>)
   expect(html).toContain('aria-label="调整生图参数"')
   expect(html).toContain('title="gpt-image-2.5-flare')
   expect(html).not.toContain('>gpt-image-2.5-flare<')
   expect(html).not.toContain('max-w-40')
 })
 
-test('加号菜单内的生图入口和其他操作使用同一行宽与文字列', () => {
-  const html = renderToStaticMarkup(<Provider store={createStore()}><ImageGenerationSelector scope="work:test" menuRow /></Provider>)
-  expect(html).toContain('composer-plus-item')
-  expect(html).toContain('>图片生成</span>')
-  expect(html).toContain('aria-label="图片生成"')
+test('未选生图时不常驻工具栏，弹层锚点仍挂载在菜单外以响应 /image', () => {
+  const html = renderToStaticMarkup(<Provider store={createStore()}><ImageGenerationSelector scope="work:test" hideTrigger /></Provider>)
+  expect(html).toContain('aria-hidden="true"')
+  expect(html).toContain('tabindex="-1"')
+  expect(html).not.toContain('aria-label="图片生成"')
+  const work = readFileSync(resolve(import.meta.dir, '../agent/AgentView.tsx'), 'utf8')
+  const chat = readFileSync(resolve(import.meta.dir, '../chat/ChatInput.tsx'), 'utf8')
+  expect(work).toContain('<ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} hideTrigger />')
+  expect(work.indexOf('<ImageGenerationSelector scope={`work:${sessionId}`}')).toBeLessThan(work.indexOf("key: 'model-presentation-preset'"))
+  expect(work).toContain('onOpenImageGeneration: imageSelections[`work:${sessionId}`] ? undefined')
+  expect(work).toContain("...(imageSelections[`work:${sessionId}`]\n                  ? [{ key: 'image-generation', node: <ImageGenerationButton")
+  expect(chat).toContain('<ImageGenerationSelector scope={`chat:${conversationId}`} inputText={content} hideTrigger />')
+  expect(chat.indexOf('<ImageGenerationSelector scope={`chat:${conversationId}`}')).toBeLessThan(chat.indexOf("key: 'model'"))
+  expect(chat).toContain("...(imageSelections[`chat:${conversationId}`]\n      ? [{ key: 'image-generation', node: <ImageGenerationButton")
+  expect(chat).toContain("key: 'image-generation-menu', menuOnly: true")
+})
+
+test('菜单动作先关闭外层弹层再打开独立生图面板', () => {
+  const plus = readFileSync(resolve(import.meta.dir, 'composer-plus-menu.tsx'), 'utf8')
+  const overflow = readFileSync(resolve(import.meta.dir, 'InputToolbarOverflow.tsx'), 'utf8')
+  const chat = readFileSync(resolve(import.meta.dir, '../chat/ChatInput.tsx'), 'utf8')
+  expect(plus).toContain('closeThen(openImageGeneration)')
+  expect(plus).toContain('onCloseAutoFocus={handleCloseAutoFocus}')
+  expect(plus).not.toContain('tools.imageGeneration}')
+  expect(overflow).toContain('pendingMenuActionRef.current = it.onMenuSelect')
+  expect(overflow).toContain('setPopoverOpen(false)')
+  expect(overflow).toContain('onCloseAutoFocus={(event) => {')
+  expect(overflow).toContain('event.preventDefault(); action()')
+  expect(overflow).not.toContain('forceMount')
+  expect(chat).toContain('onMenuSelect: () => setOpenImageScope(`chat:${conversationId}`)')
+  const option = readFileSync(resolve(import.meta.dir, 'ImageOptionSelect.tsx'), 'utf8')
+  expect(option).toContain('SelectContent className="z-[120]')
+  expect(readFileSync(resolve(import.meta.dir, 'ImageGenerationSelector.tsx'), 'utf8')).toContain('PopoverContent side="top" align="start" className="z-[110]')
+})
+
+test('/image 空命令和无可用渠道时都有可见反馈，不丢弃输入或把命令送到普通模型', () => {
+  const work = readFileSync(resolve(import.meta.dir, '../agent/AgentView.tsx'), 'utf8')
+  const chat = readFileSync(resolve(import.meta.dir, '../chat/ChatView.tsx'), 'utf8')
+  const selector = readFileSync(resolve(import.meta.dir, 'ImageGenerationSelector.tsx'), 'utf8')
+  for (const source of [work, chat]) {
+    expect(source).toContain("toast.info('请在 /image 后输入图片描述')")
+    expect(source).toContain("toast.error(preferredImage ? '所选生图渠道或模型已不可用，请重新选择' : '请先在渠道设置中启用图片生成')")
+  }
+  expect(selector).toContain('if (!loaded || commandSeen[scope]) return')
+  expect(selector).not.toContain('!channels.length) return')
 })
 
 test('常驻更多项不会在工具栏初次测量时露出', () => {

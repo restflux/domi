@@ -17,7 +17,7 @@ export function ImageOptionSelect({ label, value, options, onChange, placeholder
         <SelectTrigger aria-label={label} className="h-9 w-full min-w-0 bg-background/60 text-xs [&>span]:truncate">
           <SelectValue placeholder={placeholder ?? '请选择'}>{options.find((option) => option.value === value)?.label}</SelectValue>
         </SelectTrigger>
-        <SelectContent className="max-w-[min(24rem,calc(100vw-2rem))]">
+        <SelectContent className="z-[120] max-w-[min(24rem,calc(100vw-2rem))]">
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value} textValue={option.label}>
               <div className="min-w-0 text-xs">

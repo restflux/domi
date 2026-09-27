@@ -87,7 +87,15 @@ export async function generateImages(config: ImageGenerationConfig, prompt: stri
       metadata.size = size
       metadata.quality = config.quality ?? 'auto'
       const request = buildImagesRequest(prompt, references.map((image) => ({ image_url: `data:${image.mimeType};base64,${image.data}` })), config.model, { size, quality: metadata.quality, numberOfImages })
-      const data = await requestJson<ImagesResponse>(`${config.baseUrl.replace(/\/+$/, '')}/${request.path}`, request.body, { Authorization: `Bearer ${config.apiKey}` }, signal, markSubmitted)
+      let data: ImagesResponse
+      try {
+        data = await requestJson<ImagesResponse>(`${config.baseUrl.replace(/\/+$/, '')}/${request.path}`, request.body, { Authorization: `Bearer ${config.apiKey}` }, signal, markSubmitted)
+      } catch (error) {
+        if (references.length && error instanceof ImageResponseError && error.message === '生图 API 请求失败 (404)') {
+          throw new ImageResponseError('生图编辑 API 返回 404（参考图已读取；请检查渠道是否支持 images/edits 与所选模型）')
+        }
+        throw error
+      }
       if (data.error) throw new ImageResponseError('Images API 返回错误')
       for (const item of data.data ?? []) {
         if (item.b64_json) images.push({ data: item.b64_json, mimeType: 'image/png' })

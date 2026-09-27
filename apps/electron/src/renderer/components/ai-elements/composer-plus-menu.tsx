@@ -5,7 +5,7 @@
  */
 
 import * as React from 'react'
-import { Activity, AtSign, Check, ChevronDown, Command, FileText, FolderOpen, Hash, MessagesSquare, MicIcon, Plus, SlidersHorizontal } from 'lucide-react'
+import { Activity, AtSign, Check, ChevronDown, Command, FileText, FolderOpen, Hash, ImagePlus, MessagesSquare, MicIcon, Plus, SlidersHorizontal } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,12 +27,12 @@ const MENU_ITEMS = [
 interface ComposerPlusTools {
   onAttachFile: () => void
   onAttachDirectory: () => void
+  onOpenImageGeneration?: () => void
   onOpenStatus: () => void
   statusNeedsAttention?: boolean
   minimalPresetEnabled: boolean
   presetDisabled: boolean
   onSetPreset: (preset: 'standard' | 'minimal') => void
-  imageGeneration?: React.ReactNode
 }
 
 export interface ComposerPlusMenuProps {
@@ -69,6 +69,7 @@ export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false
   }
 
   if (tools) {
+    const openImageGeneration = tools.onOpenImageGeneration
     return (
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
@@ -89,7 +90,7 @@ export function ComposerPlusMenu({ onInsertTrigger, onSideChat, disabled = false
           <div className="composer-plus-group-label">添加内容</div>
           <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(tools.onAttachFile)}><FileText /><span>添加文件</span></button>
           <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(tools.onAttachDirectory)}><FolderOpen /><span>添加文件夹</span></button>
-          {!disabled && tools.imageGeneration}
+          {openImageGeneration && <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(openImageGeneration)}><ImagePlus /><span>图片生成</span></button>}
           <button type="button" className="composer-plus-item" disabled={disabled} onClick={() => closeThen(() => { void toggleVoiceDictation() })}>
             <MicIcon /><span>{voiceActive ? '停止语音输入' : '语音输入'}</span>
           </button>
