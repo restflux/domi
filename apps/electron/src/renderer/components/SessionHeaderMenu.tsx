@@ -68,6 +68,15 @@ function menuIcon(action: SessionHeaderMenuAction, label: string): React.ReactNo
 }
 
 export function SessionHeaderMenu({ entries, onAction }: SessionHeaderMenuProps): React.ReactElement {
+  const pendingTreeOpenRef = React.useRef(false)
+  const handleCloseAutoFocus = (event: Event): void => {
+    if (!pendingTreeOpenRef.current) return
+    pendingTreeOpenRef.current = false
+    // 先结束 DropdownMenu 的焦点恢复，再打开非模态会话树；否则还焦会被视为树外点击。
+    event.preventDefault()
+    onAction('sessionTree')
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -82,7 +91,7 @@ export function SessionHeaderMenu({ entries, onAction }: SessionHeaderMenuProps)
           <MoreHorizontal className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="z-[9999] min-w-48 p-0.5">
+      <DropdownMenuContent align="end" className="z-[9999] min-w-48 p-0.5" onCloseAutoFocus={handleCloseAutoFocus}>
         {entries.map((entry, index) => entry.type === 'separator' ? (
           <DropdownMenuSeparator key={`separator-${index}`} className="my-0.5" />
         ) : (
@@ -90,7 +99,13 @@ export function SessionHeaderMenu({ entries, onAction }: SessionHeaderMenuProps)
             key={entry.action}
             disabled={entry.disabled}
             className={entry.destructive ? 'text-destructive focus:text-destructive' : undefined}
-            onSelect={() => onAction(entry.action)}
+            onSelect={() => {
+              if (entry.action === 'sessionTree') {
+                pendingTreeOpenRef.current = true
+                return
+              }
+              onAction(entry.action)
+            }}
           >
             {menuIcon(entry.action, entry.label)}
             {entry.label}

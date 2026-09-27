@@ -1628,7 +1628,7 @@
 }
 
 :root.ui-modern:not(.theme-terminal-dark) .main-tabbar .chrome-tab.app-tab-active {
-  background: hsl(var(--foreground) / 0.055);
+  background: transparent;
 }
 
 /* CRT 主题继续使用原有的直线信号，不引入 Chrome 肩部曲线。 */
