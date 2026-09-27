@@ -1,4 +1,5 @@
 import * as React from 'react'
+import type { SDKSystemMessage } from '@domi/shared'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
   AlertTriangle,
@@ -45,24 +46,27 @@ import {
   isStaleIsolatedPreflight,
 } from '@/lib/worktree-review-regeneration.ts'
 import {
-  WORKTREE_REVIEW_ACTION_EVENT,
   directFinishActionLabel,
   directFinishBlockReason,
   partitionCollaboratorsForBulkRelease,
-  type WorktreeReviewActionDetail,
 } from './WorktreeReviewCard.tsx'
 import { worktreeOperationBusyLabel } from './worktree-review-busy-state.ts'
+import { worktreeDetailSelectionAtomFamily, type WorktreeDetailAction } from './WorktreeDetailDialog.tsx'
+import { currentReviewMessage } from './worktree-detail-model.ts'
 
 export function WorktreeReviewStatus({
   sessionId,
   railKind = 'worktree_active',
   legacySurface = false,
+  pendingRequest,
 }: {
   sessionId: string
   railKind?: 'worktree_active' | 'worktree_settled'
   legacySurface?: boolean
+  pendingRequest?: SDKSystemMessage | null
 }): React.ReactElement | null {
   const state = useAtomValue(sessionTargetStateAtomFamily(sessionId))
+  const selectDetail = useSetAtom(worktreeDetailSelectionAtomFamily(sessionId))
   const beginIteration = useSetAtom(bindSessionTargetAtomFamily(sessionId))
   const operate = useSetAtom(operateSessionTargetAtomFamily(sessionId))
   const agentSessions = useAtomValue(agentSessionsAtom)
@@ -71,6 +75,11 @@ export function WorktreeReviewStatus({
   const [discardOpen, setDiscardOpen] = React.useState(false)
   const [retainedCleanupOpen, setRetainedCleanupOpen] = React.useState(false)
   const delivery = state.snapshot?.delivery
+  if (pendingRequest) return (
+    <ComposerActionRail dataKind={railKind} dataTestId="worktree-pending-request-status" icon={<Clock3 className="size-3.5 text-amber-500" />} actions={<Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" disabled={state.loading || state.pendingAction !== null} onClick={() => selectDetail({ message: pendingRequest })}>查看任务并确认</Button>}>
+      {pendingRequest.subtype === 'worktree_preview_revision_requested' ? '待确认继续修改当前验收' : '待确认创建下一轮修改'}
+    </ComposerActionRail>
+  )
   if (
     !delivery
     || delivery.state === 'working'
@@ -173,34 +182,15 @@ export function WorktreeReviewStatus({
       ? 'text-emerald-500'
       : 'text-blue-500'
 
-  const focusCard = (): void => {
-    if (!reviewId) return
-    document.querySelector<HTMLElement>(`[data-worktree-review-id="${CSS.escape(reviewId)}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  const openDetails = (action?: WorktreeDetailAction): void => {
+    const message = currentReviewMessage(sessionId, state.snapshot)
+    if (message) selectDetail({ message, action })
   }
-
-  const openCheckpointDialogOnCard = (): void => {
-    if (!reviewId) return
-    window.dispatchEvent(new CustomEvent<WorktreeReviewActionDetail>(WORKTREE_REVIEW_ACTION_EVENT, {
-      detail: { reviewId, action: 'checkpoint' },
-    }))
-    focusCard()
-  }
-
-  const openHandoffDialogOnCard = (): void => {
-    if (!reviewId) return
-    window.dispatchEvent(new CustomEvent<WorktreeReviewActionDetail>(WORKTREE_REVIEW_ACTION_EVENT, {
-      detail: { reviewId, action: 'handoff' },
-    }))
-    focusCard()
-  }
-
+  const focusCard = (): void => openDetails()
+  const openCheckpointDialogOnCard = (): void => openDetails('checkpoint')
+  const openHandoffDialogOnCard = (): void => openDetails('handoff')
   const openCommitDialogOnCard = (): void => {
-    if (!reviewId || directFinishBlock) return
-    window.dispatchEvent(new CustomEvent<WorktreeReviewActionDetail>(WORKTREE_REVIEW_ACTION_EVENT, {
-      detail: { reviewId, action: 'commit' },
-    }))
-    focusCard()
+    if (!directFinishBlock) openDetails('commit')
   }
 
   const revealWorktree = (): void => {
@@ -309,7 +299,7 @@ export function WorktreeReviewStatus({
               disabled={compactActiveSurface ? pending : primaryDisabled}
               onClick={compactActiveSurface ? focusCard : primaryAction}
             >
-              {compactActiveSurface ? <><ClipboardCheck className="size-3.5" />查看验收卡</> : primaryLabel}
+              {compactActiveSurface ? <><ClipboardCheck className="size-3.5" />查看详情</> : primaryLabel}
             </Button>
             {hasMenuActions ? (
               <DropdownMenu>
@@ -321,7 +311,7 @@ export function WorktreeReviewStatus({
                 <DropdownMenuContent align="end" className="z-[9999] min-w-56">
                   {reviewId ? (
                     <DropdownMenuItem onSelect={focusCard}>
-                      <ClipboardCheck />查看验收卡
+                      <ClipboardCheck />查看详情
                     </DropdownMenuItem>
                   ) : null}
                   {canReveal ? (

@@ -35,8 +35,7 @@ import { ProcessBlockGroup, buildAssistantTurnRenderItems } from './ProcessBlock
 import { ToolRunGroup } from './ToolRunGroup'
 import { buildProcessDetailUnits } from './tool-run-group'
 import { buildToolPresentationIndex, type ToolPresentationIndex } from './tool-presentation-index'
-import { WorktreeReviewCard } from './worktree-review/WorktreeReviewCard.tsx'
-import { WorktreeIterationRequestCard } from './worktree-review/WorktreeIterationRequestCard.tsx'
+import { WorktreeHistoryEvent } from './worktree-review/WorktreeDetailDialog.tsx'
 import { extractToolResultText, TASK_TOOL_NAMES } from './task-progress'
 import { normalizeThinkTagsInContentBlocks } from './thinking-tag-parser'
 // 会话转录的纯逻辑(Turn 分组 / 快照去重 / 预览)已下沉到 @domi/session-core 作为唯一真源。
@@ -867,8 +866,7 @@ export function SDKMessageRenderer({
 
     if (compactStatus) return <CompactStatusNotice message={sysMsg} />
     if (subtype === 'worktree_handoff_created') return <WorktreeHandoffNotice message={sysMsg} />
-    if (subtype === 'worktree_ready_for_review') return <WorktreeReviewCard message={sysMsg} currentSessionId={sessionId} />
-    if (subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return <WorktreeIterationRequestCard message={sysMsg} currentSessionId={sessionId} />
+    if (subtype === 'worktree_ready_for_review' || subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return <WorktreeHistoryEvent message={sysMsg} sessionId={sessionId} />
     if (subtype === 'permission_denied') {
       return <PermissionDeniedNotice message={sysMsg} />
     }
@@ -1517,8 +1515,7 @@ export function MessageGroupRenderer({ group, allMessages, basePath, basePaths, 
     const subtype = group.message.subtype
     if (getSDKCompactStatus(group.message)) return <div data-message-id={groupId}><CompactStatusNotice message={group.message} /></div>
     if (subtype === 'worktree_handoff_created') return <div data-message-id={groupId}><WorktreeHandoffNotice message={group.message} /></div>
-    if (subtype === 'worktree_ready_for_review') return <div data-message-id={groupId}><WorktreeReviewCard message={group.message} currentSessionId={sessionId} /></div>
-    if (subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return <div data-message-id={groupId}><WorktreeIterationRequestCard message={group.message} currentSessionId={sessionId} /></div>
+    if (subtype === 'worktree_ready_for_review' || subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return <div data-message-id={groupId}><WorktreeHistoryEvent message={group.message} sessionId={sessionId} /></div>
     if (subtype === 'permission_denied') return <div data-message-id={groupId}><PermissionDeniedNotice message={group.message} /></div>
     return null
   }

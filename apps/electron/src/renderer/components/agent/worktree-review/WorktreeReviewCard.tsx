@@ -48,13 +48,6 @@ export interface ParsedReviewNotice {
   review: WorktreeReviewView
 }
 
-export const WORKTREE_REVIEW_ACTION_EVENT = 'domi:worktree-review-action'
-export type WorktreeReviewAction = 'commit' | 'checkpoint' | 'discard' | 'handoff'
-export interface WorktreeReviewActionDetail {
-  reviewId: string
-  action: WorktreeReviewAction
-}
-
 export function directFinishBlockReason({
   waitingForSlot,
   blockedByCollaborator,
@@ -318,9 +311,11 @@ function PreflightDetails({
 export function WorktreeReviewCard({
   message,
   currentSessionId,
+  initialAction,
 }: {
   message: SDKSystemMessage
   currentSessionId?: string
+  initialAction?: 'commit' | 'checkpoint' | 'discard' | 'handoff'
 }): React.ReactElement | null {
   const notice = parseWorktreeReviewNotice(message)
   const operationSessionId = currentSessionId ?? 'invalid-review'
@@ -349,6 +344,27 @@ export function WorktreeReviewCard({
   const previousSlot = React.useRef<'available' | 'waiting' | undefined>(undefined)
   const automaticPreflightAttempt = React.useRef<string | null>(null)
   const regenerationObservedRunning = React.useRef(false)
+  const openedInitialAction = React.useRef(false)
+
+  React.useEffect(() => {
+    if (!initialAction || openedInitialAction.current || !notice || currentSessionId !== notice.sessionId) return
+    const delivery = state.snapshot?.delivery
+    if (state.snapshot?.checkout.id !== notice.checkoutId || !delivery || !('review' in delivery) || delivery.review.reviewId !== notice.reviewId) return
+    openedInitialAction.current = true
+    if (initialAction === 'commit') {
+      const collaborators = state.snapshot?.collaborators ?? []
+      const action = directFinishAction({
+        waitingForSlot: delivery.state === 'ready_for_review' && state.snapshot?.reviewSlot === 'waiting',
+        blockedByCollaborator: collaborators.length > 0,
+        canReleaseAll: collaborators.length > 0 && collaborators.every((collaborator) => collaborator.canRelease),
+      })
+      if (action === 'release_collaborators') setReleaseAllOpen(true)
+      if (action === 'open_commit') setCommitOpen(true)
+    }
+    if (initialAction === 'checkpoint') setCheckpointOpen(true)
+    if (initialAction === 'discard') setDiscardOpen(true)
+    if (initialAction === 'handoff') setHandoffOpen(true)
+  }, [initialAction, notice?.reviewId, currentSessionId, state.snapshot])
 
   React.useEffect(() => {
     // 验收卡挂载时已有持久化卡片和 Session Target 元数据，刷新属于后台校准。
@@ -372,29 +388,6 @@ export function WorktreeReviewCard({
     const timer = window.setInterval(() => { void inspect({ silent: true }) }, 2_000)
     return () => window.clearInterval(timer)
   }, [inspect, state.snapshot?.collaborators, state.snapshot?.reviewSlot])
-
-  React.useEffect(() => {
-    const handleAction = (event: Event): void => {
-      const detail = (event as CustomEvent<WorktreeReviewActionDetail>).detail
-      if (!notice || !detail || detail.reviewId !== notice.reviewId || currentSessionId !== notice.sessionId) return
-      if (detail.action === 'commit') {
-        const readyForReview = state.snapshot?.delivery?.state === 'ready_for_review'
-        const currentCollaborators = state.snapshot?.collaborators ?? []
-        const action = directFinishAction({
-          waitingForSlot: readyForReview && state.snapshot?.reviewSlot === 'waiting',
-          blockedByCollaborator: currentCollaborators.length > 0,
-          canReleaseAll: currentCollaborators.length > 0 && currentCollaborators.every((collaborator) => collaborator.canRelease),
-        })
-        if (action === 'release_collaborators') setReleaseAllOpen(true)
-        if (action === 'open_commit') setCommitOpen(true)
-      }
-      if (detail.action === 'checkpoint') setCheckpointOpen(true)
-      if (detail.action === 'discard') setDiscardOpen(true)
-      if (detail.action === 'handoff') setHandoffOpen(true)
-    }
-    window.addEventListener(WORKTREE_REVIEW_ACTION_EVENT, handleAction)
-    return () => window.removeEventListener(WORKTREE_REVIEW_ACTION_EVENT, handleAction)
-  }, [currentSessionId, notice?.reviewId, notice?.sessionId, state.snapshot?.collaborators, state.snapshot?.delivery?.state, state.snapshot?.reviewSlot])
 
   const staleIsolatedPreflight = isStaleIsolatedPreflight(state.preflight) ? state.preflight : null
   React.useEffect(() => {

@@ -38,6 +38,8 @@ import { PlanModeDashedBorder } from './PlanModeDashedBorder'
 import { AgentSessionTargetChooser } from './AgentSessionTarget.tsx'
 import { selectLocalDraftProject } from './new-session-project.ts'
 import { WorktreeReviewStatus } from './worktree-review/WorktreeReviewStatus.tsx'
+import { WorktreeDetailDialog } from './worktree-review/WorktreeDetailDialog.tsx'
+import { findCurrentIterationRequest } from './worktree-review/worktree-detail-model.ts'
 import {
   ComposerActionRail,
   composerRailOwnsRunningIndicator,
@@ -1051,6 +1053,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       : deliveryState === 'delivered' || deliveryState === 'finalized'
         ? 'delivered' as const
         : undefined
+  const currentIterationRequest = React.useMemo(() => findCurrentIterationRequest(
+    [...persistedSDKMessages, ...liveMessages], sessionId, sessionTargetState.snapshot,
+  ), [persistedSDKMessages, liveMessages, sessionId, sessionTargetState.snapshot])
   const worktreeRailPriority = resolveWorktreeRailPriority(sessionTargetState.snapshot?.delivery, {
     preflightStatus: sessionTargetState.preflight?.status,
     preflightBlockedReason: sessionTargetState.preflight?.status === 'blocked'
@@ -1062,7 +1067,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const runtimeSummary = runtimeRailState.summary
   const composerActionRailKind = resolveComposerActionRailKind({
     modern: useModernComposerRail,
-    hasUrgentWorktreeAction: worktreeRailPriority === 'urgent',
+    hasUrgentWorktreeAction: worktreeRailPriority === 'urgent' || currentIterationRequest !== null,
     hasActiveWorktreeAction: worktreeRailPriority === 'active',
     hasAgentIssue,
     hasAgentRuntime: streaming,
@@ -4669,6 +4674,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           />
         )}
 
+        <WorktreeDetailDialog sessionId={sessionId} currentRequest={currentIterationRequest} />
+
         {/* 权限请求横幅 */}
         <div className="conversation-narrow">
           <PermissionBanner sessionId={sessionId} />
@@ -4764,7 +4771,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
               />
             )}
             {composerActionRailKind === 'worktree_active' && (
-              <WorktreeReviewStatus sessionId={sessionId} railKind="worktree_active" />
+              <WorktreeReviewStatus sessionId={sessionId} railKind="worktree_active" pendingRequest={currentIterationRequest} />
             )}
             {composerActionRailKind === 'agent_summary' && runtimeSummary && (
               <ComposerActionRail
@@ -4833,7 +4840,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
               </ComposerActionRail>
             )}
             {composerActionRailKind === 'worktree_settled' && (
-              <WorktreeReviewStatus sessionId={sessionId} railKind="worktree_settled" />
+              <WorktreeReviewStatus sessionId={sessionId} railKind="worktree_settled" pendingRequest={currentIterationRequest} />
             )}
             <div
             data-agent-composer-surface="true"
@@ -4853,7 +4860,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
               inProgress={rewindUndoInProgress}
               onUndo={() => { void handleUndoRewind() }}
             />
-            {!useModernComposerRail && <WorktreeReviewStatus sessionId={sessionId} legacySurface />}
+            {!useModernComposerRail && <WorktreeReviewStatus sessionId={sessionId} legacySurface pendingRequest={currentIterationRequest} />}
             {/* classic 与 terminal/CRT 保留原有渠道配置提示。 */}
             {!useModernComposerRail && (!agentChannelId || !hasAvailableModel) && (
               <div className="flex items-center gap-2 px-4 py-2 text-sm text-amber-600 dark:text-amber-400">

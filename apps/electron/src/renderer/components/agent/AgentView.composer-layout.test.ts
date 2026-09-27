@@ -68,7 +68,9 @@ describe('Agent Composer controls', () => {
     expect(settledWorktreeRailIndex).toBeGreaterThan(channelRailIndex)
     expect(surfaceIndex).toBeGreaterThan(settledWorktreeRailIndex)
     expect(source).toContain('resolveComposerActionRailKind({')
-    expect(source).toContain('hasUrgentWorktreeAction: worktreeRailPriority === \'urgent\',')
+    expect(source).toContain("hasUrgentWorktreeAction: worktreeRailPriority === 'urgent' || currentIterationRequest !== null,")
+    expect(source).toContain('pendingRequest={currentIterationRequest}')
+    expect(source).toContain('<WorktreeDetailDialog sessionId={sessionId} currentRequest={currentIterationRequest} />')
     expect(source).toContain('hasActiveWorktreeAction: worktreeRailPriority === \'active\',')
     expect(source).toContain('hasSettledWorktreeAction: worktreeRailPriority === \'settled\',')
     expect(source).toContain('preflightStatus: sessionTargetState.preflight?.status,')
@@ -221,7 +223,7 @@ describe('Agent Composer controls', () => {
 
     expect(source).toContain("const useModernComposerRail = interfaceVariant !== 'classic' && themeStyle !== 'terminal-dark'")
     expect(source).toContain('showRunningIndicator={!runtimeRailOwnsRunningIndicator}')
-    expect(source).toContain('{!useModernComposerRail && <WorktreeReviewStatus sessionId={sessionId} legacySurface />}')
+    expect(source).toContain('{!useModernComposerRail && <WorktreeReviewStatus sessionId={sessionId} legacySurface pendingRequest={currentIterationRequest} />}')
     expect(source).toContain('{!useModernComposerRail && (!agentChannelId || !hasAvailableModel) && (')
     expect(source).toContain('sessionUsage={sessionUsage}')
 

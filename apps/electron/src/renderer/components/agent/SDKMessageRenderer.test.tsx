@@ -181,7 +181,7 @@ describe('Task progress output deduplication', () => {
 })
 
 describe('Work 消息 V2 视图', () => {
-  test('预览修订卡先于工具落盘且没有前置 assistant 时，真实组合结构中用时位于卡片正文与操作按钮前', () => {
+  test('预览修订事件先于工具落盘且没有前置 assistant 时，过程位于精简历史入口前', () => {
     const user = {
       type: 'user', parent_tool_use_id: null,
       message: { content: [{ type: 'text', text: '继续修改工作过程位置' }] },
@@ -225,10 +225,12 @@ describe('Work 消息 V2 视图', () => {
         ))}
       </Provider>)
       expect(html.indexOf('data-work-process-trigger="true"')).toBeGreaterThan(-1)
-      expect(html.indexOf('data-work-process-trigger="true"')).toBeLessThan(html.indexOf('先撤回 Preview 再修复消息顺序'))
+      expect(html.indexOf('data-work-process-trigger="true"')).toBeLessThan(html.indexOf('data-worktree-history-event="iteration"'))
       if (!flags.isStreaming) expect(html).toContain('用时 40 秒')
-      expect(html.indexOf('先撤回 Preview 再修复消息顺序')).toBeLessThan(html.indexOf('撤回当前验收并继续修改'))
-      expect(html.slice(html.indexOf('先撤回 Preview 再修复消息顺序'))).toContain('<button')
+      expect(html).toContain('修复顺序')
+      expect(html).toContain('查看详情</button>')
+      expect(html).not.toContain('先撤回 Preview 再修复消息顺序')
+      expect(html).not.toContain('撤回当前验收并继续修改')
     }
   })
 
