@@ -1,160 +1,53 @@
 import { describe, expect, test } from 'bun:test'
-import type { MinimapItem } from './scroll-minimap'
 import {
-  resolveMinimapDragRatio,
-  resolveMinimapLogicalProgress,
+  buildTurnNavigationItems,
   resolveMinimapLogicalTarget,
   resolveMinimapNavigationViewportPosition,
-  resolveMinimapScrollbarMetrics,
-  resolveMinimapThumbRatio,
   resolveMinimapWheelScrollTop,
+  resolveTurnBarVisualState,
   SCROLL_MINIMAP_LAYOUT_CLASSES,
-  shouldPreserveMinimapSearchPanel,
 } from './scroll-minimap'
 
-const items: MinimapItem[] = Array.from({ length: 100 }, (_, index) => ({
-  id: `group-${index}`,
-  role: index % 2 === 0 ? 'user' : 'assistant',
-  preview: `消息 ${index}`,
-}))
-
-describe('ScrollMinimap placement', () => {
-  test('Given 消息容器因最大宽度居中而产生左侧留白 When 定位导航 Then 导航贴住 MainArea 左边缘并保持消息视口垂直居中', () => {
-    expect(resolveMinimapNavigationViewportPosition(
-      { left: 240, top: 80, height: 800 },
-      { left: 184 },
-    )).toEqual({ left: 188, top: 480 })
+describe('ZCode turn navigator in Domi', () => {
+  test('Given 多组用户与助手消息 When 生成导航 Then 每个提问只对应一条横杠及问答预览', () => {
+    expect(buildTurnNavigationItems([
+      { id: 'u1', role: 'user', preview: '第一个问题' },
+      { id: 'a1', role: 'assistant', preview: '第一次回复' },
+      { id: 's1', role: 'status', preview: '状态更新' },
+      { id: 'u2', role: 'user', preview: '第二个问题' },
+      { id: 'a2', role: 'assistant', preview: '第二次回复' },
+    ])).toEqual([
+      { id: 'u1', userPreview: '第一个问题', assistantPreview: '第一次回复\n状态更新' },
+      { id: 'u2', userPreview: '第二个问题', assistantPreview: '第二次回复' },
+    ])
   })
 
-  test('Given 未提供 MainArea 边界 When 定位导航 Then 回退到消息容器左边缘', () => {
-    expect(resolveMinimapNavigationViewportPosition({ left: 240, top: 80, height: 800 }))
-      .toEqual({ left: 244, top: 480 })
+  test('Given 会话从助手消息开始 When 生成导航 Then 仍可以跳到首条消息', () => {
+    expect(buildTurnNavigationItems([{ id: 'a1', role: 'assistant', preview: '欢迎' }]))
+      .toEqual([{ id: 'a1', userPreview: '助手消息', assistantPreview: '欢迎' }])
   })
 
-  test('Given 消息区同时显示导航与滚动进度 When 渲染布局 Then 面板向右展开且进度条仍在右侧', () => {
+  test('Given 指针掠过横杠 When 渲染山峰 Then 使用 ZCode 的焦点与邻近缩放梯度', () => {
+    expect(resolveTurnBarVisualState(4, 4)).toEqual({ opacity: 1, scaleX: 2.6, tone: 'focus' })
+    expect(resolveTurnBarVisualState(5, 4)).toEqual({ opacity: 0.86, scaleX: 1.7, tone: 'muted' })
+    expect(resolveTurnBarVisualState(6, 4)).toEqual({ opacity: 0.72, scaleX: 1.25, tone: 'muted' })
+    expect(resolveTurnBarVisualState(8)).toEqual({ opacity: 0.58, scaleX: 1, tone: 'muted' })
+  })
+
+  test('Given 消息区域居中 When 定位导航 Then 固定在左侧边界、消息视口垂直中心', () => {
+    expect(resolveMinimapNavigationViewportPosition({ left: 240, top: 80, height: 800 }, { left: 184 }))
+      .toEqual({ left: 188, top: 480 })
     expect(SCROLL_MINIMAP_LAYOUT_CLASSES.navigation).toContain('fixed')
-    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.navigation).toContain('-translate-y-1/2')
-    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.panel).toContain('order-2')
-    expect(SCROLL_MINIMAP_LAYOUT_CLASSES.panel).toContain('origin-left')
     expect(SCROLL_MINIMAP_LAYOUT_CLASSES.progress).toContain('right-1')
   })
-})
 
-describe('ScrollMinimap search interaction', () => {
-  test('Given 中文 IME 正在组合输入 When 原生候选窗触发 mouseleave Then 搜索面板保持打开', () => {
-    expect(shouldPreserveMinimapSearchPanel({
-      isFocused: false,
-      isComposing: true,
-    })).toBe(true)
+  test('Given 长会话只挂载局部历史 When 拖动进度条 Then 可以跳到末尾消息', () => {
+    expect(resolveMinimapLogicalTarget(100, 0.955)).toEqual({ index: 95, offsetRatio: 0.5 })
+    expect(resolveMinimapLogicalTarget(100, 1)).toEqual({ index: 99, offsetRatio: 1 })
   })
 
-  test('Given 搜索框仍有焦点 When 指针暂时离开面板 Then 搜索面板保持打开', () => {
-    expect(shouldPreserveMinimapSearchPanel({
-      isFocused: true,
-      isComposing: false,
-    })).toBe(true)
-  })
-
-  test('Given 搜索框已失焦且未组合输入 When 指针离开面板 Then 允许关闭搜索面板', () => {
-    expect(shouldPreserveMinimapSearchPanel({
-      isFocused: false,
-      isComposing: false,
-    })).toBe(false)
-  })
-})
-
-describe('ScrollMinimap complete-history navigation', () => {
-  test('Given 同一长会话滚动经过消息疏密不同的区域 When 可见消息数量变化 Then 滑块长度保持稳定', () => {
-    const sparseProgress = resolveMinimapLogicalProgress(
-      items,
-      new Set(['group-95']),
-      'group-95',
-      0.5,
-    )
-    const denseProgress = resolveMinimapLogicalProgress(
-      items,
-      new Set(['group-94', 'group-95', 'group-96']),
-      'group-95',
-      0.5,
-    )
-    const initialThumbRatio = resolveMinimapThumbRatio({
-      itemCount: items.length,
-      mountedItemCount: 40,
-      clientHeight: 800,
-      scrollHeight: 6_400,
-    })
-    const expandedThumbRatio = resolveMinimapThumbRatio({
-      itemCount: items.length,
-      mountedItemCount: 80,
-      clientHeight: 800,
-      scrollHeight: 12_800,
-    })
-
-    expect(sparseProgress.centerRatio).toBeCloseTo(0.955)
-    expect(denseProgress.centerRatio).toBeCloseTo(0.955)
-    expect(initialThumbRatio).toBeCloseTo(0.05)
-    expect(expandedThumbRatio).toBeCloseTo(initialThumbRatio)
-  })
-
-  test('Given 少量超高消息已完整挂载且正文位于底部 When 计算滚动条位置 Then 使用真实像素进度贴住轨道底端', () => {
-    expect(resolveMinimapScrollbarMetrics({
-      hasUnmountedItems: false,
-      scrollTop: 3_200,
-      scrollHeight: 4_000,
-      clientHeight: 800,
-      logicalProgressRatio: 0.7,
-      logicalThumbRatio: 0.1,
-    })).toEqual({
-      progressRatio: 1,
-      thumbRatio: 0.2,
-    })
-
-    expect(resolveMinimapScrollbarMetrics({
-      hasUnmountedItems: true,
-      scrollTop: 3_200,
-      scrollHeight: 4_000,
-      clientHeight: 800,
-      logicalProgressRatio: 0.7,
-      logicalThumbRatio: 0.1,
-    })).toEqual({
-      progressRatio: 0.7,
-      thumbRatio: 0.1,
-    })
-  })
-
-  test('Given 用户拖动长会话滑块 When 指针移动 Then 比例映射覆盖实际可移动轨道并定位到消息内部', () => {
-    expect(resolveMinimapDragRatio({
-      startRatio: 0.5,
-      pointerDelta: 360,
-      trackHeight: 800,
-      thumbRatio: 0.1,
-    })).toBe(1)
-
-    expect(resolveMinimapLogicalTarget(items.length, 0.955)).toEqual({
-      index: 95,
-      offsetRatio: 0.5,
-    })
-    expect(resolveMinimapLogicalTarget(items.length, 1)).toEqual({
-      index: 99,
-      offsetRatio: 1,
-    })
-  })
-
-  test('Given 指针停在右侧滚动进度条且会话位于底部 When 向上滚轮 Then 主消息区离开底部并遵守滚动边界', () => {
-    expect(resolveMinimapWheelScrollTop({
-      scrollTop: 1_200,
-      scrollHeight: 2_000,
-      clientHeight: 800,
-      deltaY: -120,
-      deltaMode: 0,
-    })).toBe(1_080)
-
-    expect(resolveMinimapWheelScrollTop({
-      scrollTop: 20,
-      scrollHeight: 2_000,
-      clientHeight: 800,
-      deltaY: -3,
-      deltaMode: 1,
-    })).toBe(0)
+  test('Given 在右侧滚动条滚轮向上 When 离开底部 Then 保持在内容边界内', () => {
+    expect(resolveMinimapWheelScrollTop({ scrollTop: 1200, scrollHeight: 2000, clientHeight: 800, deltaY: -120, deltaMode: 0 }))
+      .toBe(1080)
   })
 })
