@@ -78,6 +78,26 @@ export function getCompactLocalCopy(modern: boolean): CompactLocalCopy {
       }
 }
 
+/** 顶部展开说明与状态优先级一致，不能在异常时继续给出普通验收指引。 */
+export function getCompactTargetDescription(target: SessionTargetDisplayInput, modern: boolean): string {
+  const delivery = target.delivery
+  if (delivery?.state === 'delivered') return '本轮已经提交并清理；后续可在当前会话创建新的 Worktree。'
+  if (delivery?.state === 'retained') return '本轮已经提交，当前运行环境处于冻结保留状态。'
+  if (target.checkout.phase === 'recovery_required') return delivery?.state === 'preview_active'
+    ? '预览需要恢复，安全记录已保留；请按交付详情中的指引处理。'
+    : '工作位置需要恢复；请按交付详情中的指引处理。'
+  if (delivery?.state === 'preview_detached') return '预览与当前项目状态已变化；请先核对改动，再决定保存或撤回。'
+  if (target.checkout.kind !== 'isolated') return getCompactLocalCopy(modern).description
+  if (modern && delivery?.state === 'preview_active') return '修改已预览到本地项目，可撤回；确认保存后才正式保留。'
+  const checkpointCount = target.checkpoints?.length ?? 0
+  if (checkpointCount > 0) return modern
+    ? `当前独立工作区已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
+    : `当前 Worktree 已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
+  return modern
+    ? '修改先在独立工作区进行，不会直接写入本地项目。'
+    : '当前会话在独立 Worktree 中工作。'
+}
+
 const STATUS_CLASSES: Record<SessionTargetStatusViewModel['tone'], string> = {
   neutral: 'bg-muted text-muted-foreground',
   progress: 'bg-primary/10 text-primary',
@@ -160,7 +180,7 @@ export function SessionTargetControl({
   if (compact) {
     const localCopy = getCompactLocalCopy(hideProjectName)
     // 常态和正常验收只呈现轻量身份；恢复/清理异常仍使用警告色，其他进度状态保留强调。
-    const quietWorktreeStatus = hideProjectName && isWorktree && (
+    const quietWorktreeStatus = hideProjectName && isWorktree && target.checkout.phase !== 'recovery_required' && (
       model.status.tone === 'ready' || model.status.tone === 'muted'
       || target.delivery?.state === 'ready_for_review' || target.delivery?.state === 'preview_active'
     )
@@ -185,24 +205,7 @@ export function SessionTargetControl({
             : `Worktree · ${model.status.label}`
         : localCopy.label
     const canReveal = !!onRevealTarget && target.checkout.phase !== 'discarded'
-    let description: string
-    if (target.delivery?.state === 'delivered') {
-      description = '本轮已经提交并清理；后续可在当前会话创建新的 Worktree。'
-    } else if (target.delivery?.state === 'retained') {
-      description = '本轮已经提交，当前运行环境处于冻结保留状态。'
-    } else if (!isWorktree) {
-      description = localCopy.description
-    } else if (hideProjectName && target.delivery?.state === 'preview_active') {
-      description = '修改已预览到本地项目，可撤回；确认保存后才正式保留。'
-    } else if (checkpointCount > 0) {
-      description = hideProjectName
-        ? `当前独立工作区已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
-        : `当前 Worktree 已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
-    } else {
-      description = hideProjectName
-        ? '修改先在独立工作区进行，不会直接写入本地项目。'
-        : '当前会话在独立 Worktree 中工作。'
-    }
+    const description = getCompactTargetDescription(target, hideProjectName)
     const tooltip = (
       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <span className="text-muted-foreground">修改环境</span><span>{isWorktree ? hideProjectName ? '独立工作区（Worktree）' : '隔离 Worktree' : localCopy.location}</span>

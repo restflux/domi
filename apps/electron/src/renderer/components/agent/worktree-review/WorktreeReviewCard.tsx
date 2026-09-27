@@ -633,6 +633,22 @@ export function WorktreeReviewCard({
               ) : null}
               {previewDetached ? <Button type="button" className="" disabled={cardBusy || directFinishBlock !== null} onClick={() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />保存修改</Button> : null}
               {finalized ? <Button type="button" className="" disabled={cardBusy} onClick={() => void operate({ action: 'retry_cleanup' })}><RotateCcw />重试清理</Button> : null}
+          <div data-worktree-detail-section="more-actions" className="flex flex-wrap items-center gap-2 text-xs">
+            {(delivery?.state === 'ready_for_review' || previewActive) && !savedCheckpoint && !staleIsolatedPreflight && !preflightConflict ? (
+              <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-1.5 text-[10px] text-muted-foreground hover:bg-transparent hover:text-foreground" disabled={cardBusy || blockedByCollaborator} onClick={() => setCheckpointOpen(true)}>保存进度</Button>
+            ) : null}
+            {!finalized ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" disabled={cardBusy} aria-label="更多交付操作"><MoreHorizontal /></Button></DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="z-[9999] min-w-52">
+                  {!previewActive ? <DropdownMenuItem disabled={directFinishBlock !== null} title={directFinishBlock ?? undefined} onSelect={() => openDialogAfterDropdownMenu(() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true))}><GitCommitHorizontal />{directFinishLabel}</DropdownMenuItem> : null}
+                  {previewDetached ? <DropdownMenuItem onSelect={() => { void rollbackPreviewWithFallback() }}><RotateCcw />重新尝试撤回</DropdownMenuItem> : null}
+                  {previewDetached ? <DropdownMenuItem onSelect={() => openDialogAfterDropdownMenu(() => setHandoffOpen(true))}><GitBranchPlus />交接到新会话</DropdownMenuItem> : null}
+                  <DropdownMenuItem className="text-destructive" onSelect={() => openDialogAfterDropdownMenu(() => setDiscardOpen(true))}><Trash2 />放弃任务</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
         </div> : null}
         {busyLabel ? <p role="status" className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{busyLabel}</p> : null}
         {state.error ? <p className="text-xs text-destructive">{state.error.message}</p> : null}
@@ -676,23 +692,6 @@ export function WorktreeReviewCard({
         <summary className="cursor-pointer text-sm font-medium">建议提交信息</summary>
         <pre className="mt-3 whitespace-pre-wrap break-words rounded bg-background p-3 text-xs">{notice.review.suggestedCommitMessage}</pre>
       </details>
-      {activeReview ? <div data-worktree-detail-section="more-actions" className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
-              {activeReview && (delivery?.state === 'ready_for_review' || previewActive) && !savedCheckpoint && !staleIsolatedPreflight && !preflightConflict ? (
-                <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-1.5 text-[10px] text-muted-foreground hover:bg-transparent hover:text-foreground" disabled={cardBusy || blockedByCollaborator} onClick={() => setCheckpointOpen(true)}>保存进度</Button>
-              ) : null}
-              {activeReview && !finalized ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" disabled={cardBusy} aria-label="更多交付操作"><MoreHorizontal /></Button></DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="z-[9999] min-w-52">
-                    {!previewActive ? <DropdownMenuItem disabled={directFinishBlock !== null} title={directFinishBlock ?? undefined} onSelect={() => openDialogAfterDropdownMenu(() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true))}><GitCommitHorizontal />{directFinishLabel}</DropdownMenuItem> : null}
-                    {previewDetached ? <DropdownMenuItem onSelect={() => { void rollbackPreviewWithFallback() }}><RotateCcw />重新尝试撤回</DropdownMenuItem> : null}
-                    {previewDetached ? <DropdownMenuItem onSelect={() => openDialogAfterDropdownMenu(() => setHandoffOpen(true))}><GitBranchPlus />交接到新会话</DropdownMenuItem> : null}
-                    <DropdownMenuItem className="text-destructive" onSelect={() => openDialogAfterDropdownMenu(() => setDiscardOpen(true))}><Trash2 />放弃任务</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
-      </div> : null}
-
       <AlertDialog open={handoffOpen} onOpenChange={setHandoffOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

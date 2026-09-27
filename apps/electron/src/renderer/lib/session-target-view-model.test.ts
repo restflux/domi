@@ -178,6 +178,35 @@ describe('Session Target renderer view model', () => {
     expect(discarding.actions.discard).toEqual({ visible: true, enabled: false, pending: true })
   })
 
+  test('Given a preview needs recovery When header status is built Then recovery outranks ordinary Local preview', () => {
+    const review = {
+      reviewId: 'review-1', iteration: 1, preparedAt: 1, summary: '检查改动',
+      validationStatus: 'passed' as const, tests: [], changedFiles: ['src/a.ts'],
+      suggestedCommitMessage: 'fix: 检查改动',
+    }
+    const model = buildSessionTargetViewModel(target({
+      target: 'isolated', phase: 'recovery_required',
+      delivery: { state: 'preview_active', review, previewedAt: 2 },
+    }))
+    expect(model.status).toEqual({ label: '需要恢复', tone: 'warning' })
+    expect(model.actions.recover.visible).toBeTrue()
+  })
+
+  test('Given a Preview no longer matches the project When checkout stays ready Then status asks to check it instead of saying modifying', () => {
+    const review = {
+      reviewId: 'review-1', iteration: 1, preparedAt: 1, summary: '检查改动',
+      validationStatus: 'passed' as const, tests: [], changedFiles: ['src/a.ts'],
+      suggestedCommitMessage: 'fix: 检查改动',
+    }
+    for (const reason of ['stale_local', 'preview_modified'] as const) {
+      const model = buildSessionTargetViewModel(target({
+        target: 'isolated', phase: 'ready',
+        delivery: { state: 'preview_detached', review, previewedAt: 2, detachedAt: 3, reason, attemptedAction: 'rollback_preview' },
+      }))
+      expect(model.status).toEqual({ label: '预览需核对', tone: 'warning' })
+    }
+  })
+
   test('Given an owner checkout requires recovery When actions are built Then Recover and explicit Discard both remain actionable', () => {
     const model = buildSessionTargetViewModel(target({
       target: 'isolated',

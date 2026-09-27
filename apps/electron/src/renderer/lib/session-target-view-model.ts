@@ -136,8 +136,11 @@ function getStatus(input: SessionTargetDisplayInput): SessionTargetStatusViewMod
   const delivery = input.delivery
   // Checkout 生命周期终态优先于可能来自旧 registry/异步快照的交付状态。
   if (phase === 'discarded') return { label: delivery?.state === 'delivered' ? '已交付' : '已放弃', tone: 'muted' }
+  // 恢复需求高于验收阶段：预览中断时不能继续显示为正常验收中。
+  if (phase === 'recovery_required') return { label: '需要恢复', tone: 'warning' }
   if (delivery?.state === 'ready_for_review') return { label: '待验收', tone: 'warning' }
   if (delivery?.state === 'preview_active') return { label: 'Local 验收中', tone: 'progress' }
+  if (delivery?.state === 'preview_detached') return { label: '预览需核对', tone: 'warning' }
   if (delivery?.state === 'finalized') return delivery.cleanup === 'blocked'
     ? { label: '需要处理', tone: 'warning' }
     : { label: '清理中', tone: 'progress' }
@@ -161,8 +164,6 @@ function getStatus(input: SessionTargetDisplayInput): SessionTargetStatusViewMod
       return { label: '已交付，等待清理', tone: 'warning' }
     case 'retained':
       return { label: '已保留', tone: 'muted' }
-    case 'recovery_required':
-      return { label: '需要恢复', tone: 'warning' }
   }
 }
 

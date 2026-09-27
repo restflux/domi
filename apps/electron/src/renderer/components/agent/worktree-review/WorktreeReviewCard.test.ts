@@ -237,6 +237,11 @@ describe('WorktreeReviewCard sync explainability', () => {
     expect(html).toContain('检查预览效果')
     expect(html).toContain('data-worktree-detail-section="status"')
     expect(html).toContain('确认保存')
+    const actionRowIndex = html.indexOf('data-worktree-detail-section="more-actions"')
+    const changesSectionIndex = html.indexOf('data-worktree-detail-section="changes"')
+    expect(actionRowIndex).toBeGreaterThan(html.indexOf('data-worktree-detail-section="status"'))
+    expect(actionRowIndex).toBeLessThan(changesSectionIndex)
+    expect(html.match(/data-worktree-detail-section="more-actions"/g)).toHaveLength(1)
     const rollbackButton = html.match(/<button[^>]*>.*撤回预览<\/button>/)?.[0]
     expect(rollbackButton).toBeDefined()
     expect(rollbackButton).toBeDefined()

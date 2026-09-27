@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { SessionTargetDisplayInput } from '@/lib/session-target-view-model.ts'
 import { TooltipProvider } from '@/components/ui/tooltip.tsx'
-import { SessionTargetControl, getCompactLocalCopy } from './SessionTargetControl.tsx'
+import { getCompactLocalCopy, getCompactTargetDescription, SessionTargetControl } from './SessionTargetControl.tsx'
 
 function target(kind: 'local' | 'isolated'): SessionTargetDisplayInput {
   return {
@@ -171,6 +171,57 @@ describe('SessionTargetControl compact header', () => {
     expect(html).toContain('Worktree · 正在准备 Worktree')
     expect(html).toContain('bg-sky-500/10')
     expect(html).not.toContain('size-3 text-sky-600 dark:text-sky-400')
+  })
+
+  test('Preview 脱离当前项目时顶部显示需要核对，而不是普通修改中', () => {
+    const review = {
+      reviewId: 'review-1', iteration: 1, preparedAt: 1, summary: '顶部优化',
+      validationStatus: 'passed' as const, tests: [], changedFiles: ['src/a.ts'],
+      suggestedCommitMessage: 'style(ui): 优化顶部',
+    }
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <SessionTargetControl
+          target={{
+            ...target('isolated'),
+            delivery: { state: 'preview_detached', review, previewedAt: 2, detachedAt: 3, reason: 'stale_local', attemptedAction: 'discard' },
+          }}
+          compact hideProjectName disabled onChooseTarget={() => undefined}
+        />
+      </TooltipProvider>,
+    )
+    expect(html).toContain('Worktree · 预览需核对')
+    expect(html).toContain('bg-amber-500/10')
+    expect(getCompactTargetDescription({
+      ...target('isolated'),
+      delivery: { state: 'preview_detached', review, previewedAt: 2, detachedAt: 3, reason: 'stale_local', attemptedAction: 'discard' },
+    }, true)).toContain('预览与当前项目状态已变化')
+    expect(html).not.toContain('Worktree · 修改中')
+  })
+
+  test('Local 预览中断需要恢复时顶部保留警告色，不能沿用轻量验收样式', () => {
+    const review = {
+      reviewId: 'review-1', iteration: 1, preparedAt: 1, summary: '顶部优化',
+      validationStatus: 'passed' as const, tests: [], changedFiles: ['src/a.ts'],
+      suggestedCommitMessage: 'style(ui): 优化顶部',
+    }
+    const worktree = target('isolated')
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <SessionTargetControl
+          target={{ ...worktree, checkout: { ...worktree.checkout, phase: 'recovery_required' }, delivery: { state: 'preview_active', review, previewedAt: 2 } }}
+          compact hideProjectName disabled onChooseTarget={() => undefined}
+        />
+      </TooltipProvider>,
+    )
+    expect(html).toContain('Worktree · 需要恢复')
+    expect(html).toContain('bg-amber-500/10')
+    expect(html).not.toContain('size-3 text-sky-600 dark:text-sky-400')
+    expect(getCompactTargetDescription({
+      ...worktree,
+      checkout: { ...worktree.checkout, phase: 'recovery_required' },
+      delivery: { state: 'preview_active', review, previewedAt: 2 },
+    }, true)).toContain('预览需要恢复')
   })
 
   test('需要恢复的 Worktree 仍保持醒目的警告色', () => {
