@@ -1,7 +1,7 @@
 import { atom } from 'jotai'
 import { atomFamily } from 'jotai/utils'
 import type { SideChatView } from '@domi/shared'
-import { agentSidePanelOpenAtom, agentDiffPanelTabAtom, agentStreamingStatesAtom, liveMessagesMapAtom } from './agent-atoms'
+import { setAgentSessionSidePanelOpenAtom, agentDiffPanelTabAtom, agentStreamingStatesAtom, liveMessagesMapAtom } from './agent-atoms'
 import { mergeAgentMessageTimeline } from '@/lib/agent-message-timeline'
 import type { SetStateAction } from 'react'
 import { activateSessionRightWorkspaceTab, rightWorkspaceSessionStateMapAtom } from './right-workspace-atoms'
@@ -47,7 +47,7 @@ export const openSideChatPanelAtom = atom(null, (get, set, input: { parentSessio
   const id = input.parentSessionId
   set(sideChatVisibleMapAtom, new Map(get(sideChatVisibleMapAtom)).set(id, true))
   set(sideChatDraftAtomFamily(id), (draft) => ({ ...draft, ...(input.quotedText !== undefined ? { quotedText: input.quotedText } : {}), focusRevision: draft.focusRevision + 1 }))
-  set(agentSidePanelOpenAtom, true)
+  set(setAgentSessionSidePanelOpenAtom, { sessionId: id, open: true })
   set(agentDiffPanelTabAtom, new Map(get(agentDiffPanelTabAtom)).set(id, 'chat'))
   set(rightWorkspaceSessionStateMapAtom, activateSessionRightWorkspaceTab(get(rightWorkspaceSessionStateMapAtom), id, 'side-chat'))
 })

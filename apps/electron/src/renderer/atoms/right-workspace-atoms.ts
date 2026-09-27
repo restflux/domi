@@ -23,6 +23,9 @@ export const rightWorkspaceOpenAtom = agentSidePanelOpenAtom
 /** Right Workspace 的宽度沿用原右侧面板偏好。 */
 export const rightWorkspaceWidthAtom = agentSidePanelWidthAtom
 
+/** 当前进程内明确拖拽过宽度的 Work 会话，不再应用轻量工具的紧凑默认宽度。 */
+export const rightWorkspaceManuallyResizedSessionsAtom = atom<Set<string>>(new Set<string>())
+
 /** 浮窗展开且空间足够时，仅为对应 Work 会话的正文与输入区预留右侧宽度。 */
 export const sessionFilesPopoverReservationMapAtom = atom<Map<string, number>>(new Map())
 

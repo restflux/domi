@@ -7,7 +7,6 @@
 
 import { atom } from 'jotai'
 import { atomFamily, atomWithStorage } from 'jotai/utils'
-import { isModernInterfaceAtom } from './theme'
 import type { AgentContextBreakdown, AgentSessionMeta, AgentEvent, AgentEventUsage, AgentWorkspace, AgentPendingFile, ContextWindowSource, RetryAttempt, DomiPermissionMode, PermissionRequest, AskUserRequest, ExitPlanModeRequest, ThinkingConfig, AgentEffort, SDKMessage, UnstagedChangesResult, NormalizedAgentExecutionSettings, SkillTriggerEvent, GitPushSessionTrustView } from '@domi/shared'
 import { CONTEXT_WINDOW_SOURCE_PRIORITY, DOMI_DEFAULT_PERMISSION_MODE } from '@domi/shared'
 import { resolveAgentExecutionControls } from '@/lib/agent-execution-controls.ts'
@@ -506,15 +505,21 @@ export const workspaceFilesVersionAtom = atom(0)
 
 // ===== 侧面板 Atoms =====
 
-/** 未保存偏好时，现代界面默认收起右栏；用户的显式开合偏好不随主题变化。 */
-const sidePanelOpenPreferenceAtom = atomWithStorage<boolean | null>(
-  'domi-agent-sidepanel-open', null, undefined, { getOnInit: true },
-)
+/** 右侧栏开合只属于当前 Work 会话；新会话一律收起，不继承其他会话的偏好。 */
+const sidePanelOpenSessionMapAtom = atom<Map<string, boolean>>(new Map())
+export const setAgentSessionSidePanelOpenAtom = atom(null, (_get, set, input: { sessionId: string; open: boolean }) => {
+  set(sidePanelOpenSessionMapAtom, (current) => new Map(current).set(input.sessionId, input.open))
+})
 export const agentSidePanelOpenAtom = atom(
-  (get) => get(sidePanelOpenPreferenceAtom) ?? !get(isModernInterfaceAtom),
+  (get) => {
+    const sessionId = get(currentAgentSessionIdAtom)
+    return sessionId ? (get(sidePanelOpenSessionMapAtom).get(sessionId) ?? false) : false
+  },
   (get, set, update: boolean | ((current: boolean) => boolean)) => {
+    const sessionId = get(currentAgentSessionIdAtom)
+    if (!sessionId) return
     const next = typeof update === 'function' ? update(get(agentSidePanelOpenAtom)) : update
-    set(sidePanelOpenPreferenceAtom, next)
+    set(setAgentSessionSidePanelOpenAtom, { sessionId, open: next })
   },
 )
 
@@ -529,9 +534,6 @@ export const agentFileSourceFilterMapAtom = atomWithStorage<Record<string, Agent
   undefined,
   { getOnInit: true },
 )
-
-/** @deprecated 保留以兼容旧代码，但实际所有 session 都读全局 atom */
-export const agentSidePanelOpenMapAtom = atom<Map<string, boolean>>(new Map())
 
 export type AgentSidePanelTab = 'files' | 'changes' | 'chat'
 

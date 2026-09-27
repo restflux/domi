@@ -37,6 +37,7 @@ import {
 import {
   ensureRightWorkspaceToolWidthAtom,
   rightWorkspaceFocusAtom,
+  rightWorkspaceManuallyResizedSessionsAtom,
   rightWorkspaceSessionStateMapAtom,
 } from '@/atoms/right-workspace-atoms'
 
@@ -261,6 +262,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
   // 右侧面板可拖拽宽度
   const [rightPanelWidth, setRightPanelWidth] = useAtom(agentSidePanelWidthAtom)
+  const setManuallyResizedSessions = useSetAtom(rightWorkspaceManuallyResizedSessionsAtom)
   const dragging = React.useRef(false)
   const clampedRightPanelWidth = clampRightWorkspaceWidth(rightPanelWidth)
 
@@ -274,7 +276,11 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     e.preventDefault()
     dragging.current = true
     const startX = e.clientX
-    const startWidth = clampedRightPanelWidth
+    const startWidth = clampRightWorkspaceWidth(e.currentTarget.parentElement?.getBoundingClientRect().width ?? clampedRightPanelWidth)
+    setRightPanelWidth(startWidth)
+    if (currentSessionId) {
+      setManuallyResizedSessions((current) => new Set(current).add(currentSessionId))
+    }
     // 记录最新光标位置，rAF 回调读取它而非调度时捕获的旧事件，避免快拖时坐标滞后
     let latestClientX = startX
     let rafId = 0
@@ -308,7 +314,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [clampedRightPanelWidth, setRightPanelWidth])
+  }, [clampedRightPanelWidth, currentSessionId, setManuallyResizedSessions, setRightPanelWidth])
 
   return (
     <AppShellProvider value={contextValue}>

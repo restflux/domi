@@ -7,10 +7,12 @@ import {
   getRightWorkspaceMenuTools,
   getRightWorkspaceToolbarTools,
   openRightWorkspaceV2OptionalTab,
+  resolveAvailableRightWorkspaceTabId,
   resolveClosedTabFallback,
   resolveRightWorkspaceActivation,
   resolveRightWorkspaceAutoWidth,
   resolveRightWorkspaceAutoWidthActivation,
+  resolveRightWorkspaceDisplayWidth,
   resolveRightWorkspaceTool,
   shouldPinRightWorkspaceMenu,
   shouldShowRightWorkspace,
@@ -93,6 +95,24 @@ describe('Right Workspace 状态模型', () => {
       nextKey: null,
       toolToEnsure: null,
     })
+  })
+
+  test('已关闭的宽工具不再占据空白右栏的活动标签身份', () => {
+    const stalePreview = { activeTool: 'preview' as const, activeTabId: 'preview' as const }
+    expect(resolveAvailableRightWorkspaceTabId(stalePreview, [])).toBe('files')
+    expect(resolveAvailableRightWorkspaceTabId(stalePreview, [{ id: 'changes' }])).toBe('changes')
+    expect(resolveAvailableRightWorkspaceTabId(stalePreview, [{ id: 'preview' }])).toBe('preview')
+  })
+
+  test('v2 空白页与轻量工具不沿用自动扩出的 720px，手动拖拽及大空间工具仍保留宽度', () => {
+    expect(resolveRightWorkspaceDisplayWidth(720, 'files', true, false)).toBe(400)
+    expect(resolveRightWorkspaceDisplayWidth(720, 'changes', true, false)).toBe(400)
+    expect(resolveRightWorkspaceDisplayWidth(720, 'files', true, true)).toBe(720)
+    expect(resolveRightWorkspaceDisplayWidth(720, 'browser', true, false)).toBe(720)
+    expect(resolveRightWorkspaceDisplayWidth(720, 'terminal', true, false)).toBe(720)
+    expect(resolveRightWorkspaceDisplayWidth(720, 'preview', true, false)).toBe(720)
+    expect(resolveRightWorkspaceDisplayWidth(720, 'files', false, false)).toBe(720)
+    expect(resolveRightWorkspaceDisplayWidth(360, 'files', true, false)).toBe(360)
   })
 
   test('浏览器、终端和文档预览在空间允许时扩大到建议宽度', () => {

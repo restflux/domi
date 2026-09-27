@@ -28,6 +28,7 @@ import {
   resolveBrowserFocusEscape,
   resolveRightWorkspaceFocus,
   rightWorkspaceFocusAtom,
+  rightWorkspaceManuallyResizedSessionsAtom,
   rightWorkspaceSessionStateMapAtom,
   toggleRightWorkspaceFocus,
 } from '@/atoms/right-workspace-atoms'
@@ -39,7 +40,9 @@ import {
   browserTabId,
   closeRightWorkspaceV2OptionalTab,
   openRightWorkspaceV2OptionalTab,
+  resolveAvailableRightWorkspaceTabId,
   resolveClosedTabFallback,
+  resolveRightWorkspaceDisplayWidth,
   terminalIdFromTab,
   terminalTabId,
   toolFromRightWorkspaceTab,
@@ -78,16 +81,6 @@ function fromLegacyTab(tab: AgentSidePanelTab): RightWorkspaceTool {
   return tab === 'chat' ? 'side-chat' : tab
 }
 
-function resolveAvailableTabId(
-  state: RightWorkspaceSessionState,
-  tabs: RightWorkspaceToolbarTab[],
-): RightWorkspaceTabId {
-  const requested = state.activeTabId ?? state.activeTool
-  if (tabs.some((tab) => tab.id === requested)) return requested
-  if (state.previousTabId && tabs.some((tab) => tab.id === state.previousTabId)) return state.previousTabId
-  return tabs[0]?.id ?? 'files'
-}
-
 export function RightSidePanel({ width }: { width?: number | string }): React.ReactElement | null {
   const appMode = useAtomValue(appModeAtom)
   const currentSessionId = useAtomValue(currentAgentSessionIdAtom)
@@ -103,6 +96,7 @@ function ActiveRightSidePanel({
   width?: number | string
 }): React.ReactElement {
   const isWorkbenchV2 = useAtomValue(interfaceVariantAtom) === 'workbench-v2'
+  const manuallyResizedSessions = useAtomValue(rightWorkspaceManuallyResizedSessionsAtom)
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
   const legacyTabMap = useAtomValue(agentDiffPanelTabAtom)
   const setLegacyTabMap = useSetAtom(agentDiffPanelTabAtom)
@@ -162,8 +156,11 @@ function ActiveRightSidePanel({
   // v2 文件与改动仅由用户按需打开；v1 始终展示原有固定标签。
   const visibleTabs = visibleRightWorkspaceTabs(tabs, isWorkbenchV2, state)
   const showV2Launcher = isWorkbenchV2 && visibleTabs.length === 0
-  const activeTabId = resolveAvailableTabId(state, visibleTabs)
+  const activeTabId = resolveAvailableRightWorkspaceTabId(state, visibleTabs)
   const activeTool = toolFromRightWorkspaceTab(activeTabId)
+  const displayWidth = typeof width === 'number'
+    ? resolveRightWorkspaceDisplayWidth(width, activeTool, isWorkbenchV2, manuallyResizedSessions.has(currentSessionId))
+    : width
   const activeBrowserSessionId = browserSessionIdFromTab(activeTabId)
   const activeTerminalId = terminalIdFromTab(activeTabId)
   const activeTerminal = activeTerminalId ? terminalStates.get(activeTerminalId) : undefined
@@ -333,7 +330,7 @@ function ActiveRightSidePanel({
   const Toolbar = isWorkbenchV2 ? RightWorkspaceToolbarV2 : RightWorkspaceToolbar
 
   return (
-    <div className="relative flex h-full min-w-0 shrink-0 overflow-hidden bg-content-area titlebar-no-drag" style={width ? { width } : undefined}>
+    <div className="relative flex h-full min-w-0 shrink-0 overflow-hidden bg-content-area titlebar-no-drag" style={displayWidth ? { width: displayWidth } : undefined}>
       <RightWorkspaceTitlebarDragRegion isWindows={isWindows} />
       <div className={isWindows ? 'flex h-full min-w-0 flex-1 flex-col pt-[34px]' : 'flex h-full min-w-0 flex-1 flex-col'}>
         <Toolbar

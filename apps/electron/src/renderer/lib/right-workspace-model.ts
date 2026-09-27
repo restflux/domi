@@ -22,6 +22,19 @@ export function clampRightWorkspaceWidth(width: number): number {
   return Math.max(MIN_RIGHT_WORKSPACE_WIDTH, Math.min(MAX_RIGHT_WORKSPACE_WIDTH, width))
 }
 
+/** v2 的空白页与轻量工具使用紧凑宽度；手动拖拽及大空间工具保持原有宽度。 */
+export function resolveRightWorkspaceDisplayWidth(
+  width: number,
+  tool: RightWorkspaceTool,
+  isWorkbenchV2: boolean,
+  manuallyResized: boolean,
+): number {
+  const clamped = clampRightWorkspaceWidth(width)
+  return isWorkbenchV2 && !manuallyResized && !TOOL_RECOMMENDED_WIDTH[tool]
+    ? Math.min(clamped, 400)
+    : clamped
+}
+
 /**
  * 大空间工具激活时只做一次向上扩展；不会缩小现有宽度，也不会持续锁住用户拖拽结果。
  * 小窗口优先为左侧导航与主工作区保留空间，左栏折叠后可使用释放出的宽度。
@@ -127,6 +140,17 @@ export function resolveClosedTabFallback(
 }
 
 export const DEFAULT_RIGHT_WORKSPACE_TOOL: RightWorkspaceTool = 'files'
+
+/** 过期的活动标签（如已关闭的预览）不能让空工作区沿用大工具宽度。 */
+export function resolveAvailableRightWorkspaceTabId(
+  state: RightWorkspaceSessionState,
+  tabs: readonly { id: RightWorkspaceTabId }[],
+): RightWorkspaceTabId {
+  const requested = state.activeTabId ?? state.activeTool
+  if (tabs.some((tab) => tab.id === requested)) return requested
+  if (state.previousTabId && tabs.some((tab) => tab.id === state.previousTabId)) return state.previousTabId
+  return tabs[0]?.id ?? DEFAULT_RIGHT_WORKSPACE_TOOL
+}
 
 export const RIGHT_WORKSPACE_PRIMARY_TOOLS: readonly RightWorkspaceTool[] = [
   'files',
