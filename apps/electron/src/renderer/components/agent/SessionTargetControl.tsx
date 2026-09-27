@@ -121,6 +121,11 @@ export function SessionTargetControl({
   )
 
   if (compact) {
+    // 常态和正常验收只呈现轻量身份；恢复/清理异常仍使用警告色，其他进度状态保留强调。
+    const quietWorktreeStatus = hideProjectName && isWorktree && (
+      model.status.tone === 'ready' || model.status.tone === 'muted'
+      || target.delivery?.state === 'ready_for_review' || target.delivery?.state === 'preview_active'
+    )
     const iteration = target.delivery?.state === 'working' || target.delivery?.state === 'delivered'
       ? target.delivery.iteration
       : target.delivery?.review.iteration
@@ -158,12 +163,15 @@ export function SessionTargetControl({
                   data-session-target-mode={isWorktree ? 'worktree' : 'local'}
                   data-session-handoff-available={sessionHandoffAction ? 'true' : undefined}
                   className={cn(
-                    'inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors hover:bg-muted/70',
-                    model.status.tone === 'warning'
-                      ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                      : isWorktree
-                        ? 'border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300'
-                        : 'border-border/50 bg-background/60 text-muted-foreground',
+                    'inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10px] transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    quietWorktreeStatus ? 'font-medium' : 'font-semibold',
+                    quietWorktreeStatus
+                      ? 'border-transparent bg-transparent text-muted-foreground hover:text-foreground'
+                      : model.status.tone === 'warning'
+                        ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        : isWorktree
+                          ? 'border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                          : 'border-border/50 bg-background/60 text-muted-foreground',
                   )}
                 >
                   <CompactTargetIcon className="size-3" aria-hidden="true" />
