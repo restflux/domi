@@ -1,11 +1,12 @@
 import * as React from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import type { BrowserPageInput, BrowserSessionView, BrowserStateChange } from '@domi/shared'
 import { browserStateMapAtom, applyBrowserStateChange } from '@/atoms/browser-atoms'
 import { quotedSelectionMapAtom } from '@/atoms/preview-atoms'
 import { createBrowserQuotedSelection } from '@/lib/browser-element-reference'
 import { BrowserToolbar, BrowserEmptyState, BrowserLoadErrorState } from './zcode/EmbeddedBrowserPaneParts.tsx'
 import { ResponsiveBrowserViewport } from './zcode/ResponsiveBrowserViewport.tsx'
+import { browserViewportKey, browserViewportPreferencesAtom, getBrowserViewportPreference, updateBrowserViewportPreference } from './zcode/browserViewportState.ts'
 import { Bot, Square, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BrowserSlot } from '../BrowserSlot'
@@ -23,16 +24,38 @@ export function BrowserPanelV2({ ownerSessionId, browserSessionId }: BrowserPane
   const [state, setState] = React.useState<BrowserSessionView | null>(projectedState)
   const [busy, setBusy] = React.useState(true)
   const [selectingElement, setSelectingElement] = React.useState(false)
-  const [responsive, setResponsive] = React.useState(false)
+  const [viewportPreferences, setViewportPreferences] = useAtom(browserViewportPreferencesAtom)
+  const viewportKey = browserViewportKey(ownerSessionId, browserSessionId)
+  const viewportPreference = getBrowserViewportPreference(viewportPreferences, viewportKey)
+  const responsive = viewportPreference.responsive
+  const setResponsive = (next: boolean | ((current: boolean) => boolean)): void => {
+    setViewportPreferences((current) => {
+      const previous = getBrowserViewportPreference(current, viewportKey)
+      return updateBrowserViewportPreference(current, viewportKey, {
+        ...previous, responsive: typeof next === 'function' ? next(previous.responsive) : next,
+      })
+    })
+  }
+  const setViewportSize = (size: { width: number; height: number }): void => {
+    setViewportPreferences((current) => updateBrowserViewportPreference(current, viewportKey, {
+      ...getBrowserViewportPreference(current, viewportKey), size,
+    }))
+  }
   const [error, setError] = React.useState<string | null>(null)
   const selectionAttemptRef = React.useRef(0)
 
   const acceptState = React.useCallback((change: BrowserStateChange) => {
     if (change.ownerSessionId !== ownerSessionId || change.browserSessionId !== browserSessionId) return
     setStateMap((current) => applyBrowserStateChange(current, change))
-    if ('closed' in change) setState(null)
-    else setState(change)
-  }, [browserSessionId, ownerSessionId, setStateMap])
+    if ('closed' in change) {
+      setState(null)
+      setViewportPreferences((current) => {
+        const next = new Map(current)
+        next.delete(browserViewportKey(ownerSessionId, browserSessionId))
+        return next
+      })
+    } else setState(change)
+  }, [browserSessionId, ownerSessionId, setStateMap, setViewportPreferences])
 
   React.useEffect(() => {
     setState(projectedState)
@@ -177,7 +200,7 @@ export function BrowserPanelV2({ ownerSessionId, browserSessionId }: BrowserPane
       {state && page?.loadState === 'failed' ? (
         <BrowserLoadErrorState message={page.error ?? '页面加载失败'} onRetry={() => { const input = pageInput(); if (input) void run(() => window.electronAPI.browser.reload(input)) }} />
       ) : state && page ? (
-        responsive ? <ResponsiveBrowserViewport state={state} onClose={() => setResponsive(false)} /> : <BrowserSlot state={state} />
+        responsive ? <ResponsiveBrowserViewport state={state} size={viewportPreference.size} onSizeChange={setViewportSize} onClose={() => setResponsive(false)} /> : <BrowserSlot state={state} />
       ) : <BrowserEmptyState busy={busy} />}
     </section>
   )

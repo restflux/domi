@@ -7,6 +7,7 @@ import {
   type TerminalRuntimeMessage,
 } from '../main/lib/terminal/terminal-runtime-protocol.ts'
 import { resolveTerminalShell } from './terminal-shell-resolver.ts'
+import { resolveTerminalSpawnEnv } from './terminal-spawn-env.ts'
 
 interface MessagePortLike {
   on(event: 'message', listener: (event: { data: unknown }) => void): void
@@ -101,7 +102,7 @@ function createTerminal(input: TerminalRuntimeCreateInput): void {
       cols: normalizeDimension(input.cols),
       rows: normalizeDimension(input.rows),
       cwd: input.cwd,
-      env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+      env: resolveTerminalSpawnEnv(process.env, process.platform, input.mode),
     })
     const terminal: ManagedTerminal = {
       pty,

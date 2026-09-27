@@ -4,6 +4,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal as XTerm, type ILink } from '@xterm/xterm'
 import { useSetAtom } from 'jotai'
 import { toast } from 'sonner'
+import { Copy, ClipboardPaste } from 'lucide-react'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu.tsx'
 import type { TerminalSessionView } from '@domi/shared'
 import '@xterm/xterm/css/xterm.css'
 import { applyBrowserStateChange, browserStateMapAtom } from '@/atoms/browser-atoms.ts'
@@ -197,5 +199,23 @@ export function TerminalSession({ terminal, visible, resizing = false }: Termina
     }
   }, [terminal.ownerSessionId, terminal.terminalId, terminal.profile, openLink])
 
-  return <div ref={container} className="terminal-xterm-shell h-full min-h-0 w-full px-2 py-1" />
+  const copySelection = (): void => {
+    const selection = xtermRef.current?.getSelection()
+    if (selection) void navigator.clipboard.writeText(selection).catch(() => toast.error('无法复制终端选中内容'))
+  }
+  const pasteClipboard = (): void => {
+    if (terminal.status !== 'running') return
+    void navigator.clipboard.readText()
+      .then((text) => { if (text) xtermRef.current?.paste(text) })
+      .catch(() => toast.error('无法粘贴剪贴板内容'))
+  }
+
+  // 保留 ZCode TerminalSession 的右键复制/粘贴；输入继续由 owner-bound PTY IPC 处理。
+  return <ContextMenu>
+    <ContextMenuTrigger asChild><div ref={container} className="terminal-xterm-shell h-full min-h-0 w-full px-2 py-1" /></ContextMenuTrigger>
+    <ContextMenuContent>
+      <ContextMenuItem onSelect={copySelection} disabled={!visible}><Copy className="mr-2 size-4" />复制</ContextMenuItem>
+      <ContextMenuItem onSelect={pasteClipboard} disabled={!visible || terminal.status !== 'running'}><ClipboardPaste className="mr-2 size-4" />粘贴</ContextMenuItem>
+    </ContextMenuContent>
+  </ContextMenu>
 }
