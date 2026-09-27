@@ -167,6 +167,40 @@ describe('可持久展示的系统消息分组', () => {
     const groups = groupIntoTurns(readSessionMessagesFromString(raw))
     expect(groups.map((group) => group.type)).toEqual(['user', 'assistant-turn', 'system', 'user', 'assistant-turn'])
   })
+  test('Given 无前置 assistant 的预览修订卡先于终止工具落盘 When 分组 Then 工作过程必须在卡片正文之前', () => {
+    const raw = jsonl([
+      { type: 'user', message: { content: [{ type: 'text', text: '继续修改消息区' }] }, parent_tool_use_id: null },
+      { type: 'system', subtype: 'worktree_preview_revision_requested', request_id: 'revision-2', iteration: 5, task: '继续修复', details_markdown: '先撤回 Preview 才能修改' },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'revision-tool', name: 'RequestWorktreePreviewRevision', input: {} }] }, parent_tool_use_id: null },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'revision-tool', content: 'requested' }] }, parent_tool_use_id: null },
+      { type: 'result', subtype: 'success' },
+    ])
+    const groups = groupIntoTurns(readSessionMessagesFromString(raw))
+    expect(groups.map((group) => group.type)).toEqual(['user', 'assistant-turn', 'system'])
+    expect(groups[1]?.type === 'assistant-turn' && groups[1].assistantMessages[0]?.message?.content).toMatchObject([
+      { type: 'tool_use', name: 'RequestWorktreePreviewRevision' },
+    ])
+    expect(groups[2]).toMatchObject({ type: 'system', message: { request_id: 'revision-2' } })
+  })
+
+  test('Given 卡片单独到达或后续并非其终止工具 When 分组 Then 卡立即可见且不会跨过无关回复或新用户', () => {
+    const user = { type: 'user', message: { content: [{ type: 'text', text: '继续调整' }] }, parent_tool_use_id: null }
+    const card = { type: 'system', subtype: 'worktree_next_iteration_requested', request_id: 'next-1', iteration: 6 }
+    const otherAssistant = { type: 'assistant', message: { content: [{ type: 'text', text: '另一段回复' }] }, parent_tool_use_id: null }
+    const groupTypes = (events: object[]) => groupIntoTurns(readSessionMessagesFromString(jsonl(events))).map((group) => group.type)
+    expect(groupTypes([user, card])).toEqual(['user', 'system'])
+    expect(groupTypes([user, card, otherAssistant])).toEqual(['user', 'system', 'assistant-turn'])
+    expect(groupTypes([user, card, {
+      type: 'assistant', parent_tool_use_id: null,
+      message: { content: [{ type: 'tool_use', id: 'next-tool', name: 'RequestNextWorktreeIteration', input: {} }] },
+    }])).toEqual(['user', 'assistant-turn', 'system'])
+    expect(groupTypes([user, card, { type: 'system', subtype: 'task_notification' }, {
+      type: 'assistant', parent_tool_use_id: null,
+      message: { content: [{ type: 'tool_use', id: 'next-tool', name: 'RequestNextWorktreeIteration', input: {} }] },
+    }])).toEqual(['user', 'system', 'assistant-turn'])
+    expect(groupTypes([user, card, user, otherAssistant])).toEqual(['user', 'system', 'user', 'assistant-turn'])
+  })
+
   test('Given Preview 调整确认在工具消息持久化前写入 When 分组 Then 确认卡仍生成独立 system group', () => {
     const raw = jsonl([
       { type: 'user', message: { content: [{ type: 'text', text: '继续调整布局' }] }, parent_tool_use_id: null },
@@ -184,8 +218,8 @@ describe('可持久展示的系统消息分组', () => {
 
     const groups = groupIntoTurns(readSessionMessagesFromString(raw))
 
-    expect(groups.map((group) => group.type)).toEqual(['user', 'system', 'assistant-turn'])
-    expect(groups[1]).toMatchObject({
+    expect(groups.map((group) => group.type)).toEqual(['user', 'assistant-turn', 'system'])
+    expect(groups[2]).toMatchObject({
       type: 'system',
       message: {
         subtype: 'worktree_preview_revision_requested',

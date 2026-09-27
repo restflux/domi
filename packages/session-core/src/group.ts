@@ -138,6 +138,19 @@ export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string):
       // 跳过重放消息
       if (aMsg.isReplay) continue
 
+      if (!currentTurn && pendingWorktreeCards.length > 0) {
+        const card = pendingWorktreeCards.at(-1)
+        const expectedTool = card?.type === 'system' && card.message.subtype === 'worktree_preview_revision_requested'
+          ? 'RequestWorktreePreviewRevision'
+          : 'RequestNextWorktreeIteration'
+        const blocks = aMsg.message?.content
+        const matchesCard = Array.isArray(blocks) && blocks.some((block) => (
+          block.type === 'tool_use' && (block as { name?: string }).name === expectedTool
+        ))
+        // 卡后若不是该卡的终止工具，先显示卡，不借无关的后续回复重排旧回合。
+        if (!matchesCard) flushTurn()
+      }
+
       if (!currentTurn) {
         // 开始新 turn
         const meta = extractMeta(msg)
@@ -161,11 +174,14 @@ export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string):
       // 仅需要独立渲染的 system 消息才中断 turn（压缩状态 / permission_denied）
       // 其他 system 消息（如 init、task_started、task_progress）归入当前 turn，不中断分组
       if (isPersistableSDKSystemMessage(sysMsg)) {
-        if (currentTurn && (
+        if (
           sysMsg.subtype === 'worktree_next_iteration_requested'
           || sysMsg.subtype === 'worktree_preview_revision_requested'
-          || sysMsg.subtype === 'worktree_ready_for_review'
-        )) {
+          || (currentTurn && sysMsg.subtype === 'worktree_ready_for_review')
+        ) {
+          // system 卡可先于 assistant 工具消息落盘；没有前置 assistant 时也要暂存。
+          // 每次 groupIntoTurns 结束仍会 flush，因此卡单独到达时不隐藏。
+          if (!currentTurn && pendingWorktreeCards.length > 0) flushTurn()
           pendingWorktreeCards.push({ type: 'system', message: sysMsg, identityMessage: sysMsg })
           continue
         }
@@ -196,6 +212,7 @@ export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string):
         if (currentTurn) {
           currentTurn.turnMessages.push(msg)
         } else {
+          flushTurn()
           pendingWakeBoundary = true
         }
       } else if (currentTurn) {
@@ -209,6 +226,8 @@ export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string):
       }
       if (currentTurn) {
         currentTurn.turnMessages.push(msg)
+      } else if ((msg as { type: string }).type === 'result') {
+        flushTurn()
       }
     }
   }

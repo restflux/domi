@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { SDKAssistantMessage, SDKMessage, SDKSystemMessage, SDKUserMessage } from '@domi/shared'
+import { Provider, createStore } from 'jotai'
+import type { SDKAssistantMessage, SDKMessage, SDKSystemMessage, SDKUserMessage, SessionTargetView } from '@domi/shared'
+import { sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
 import type { AssistantTurn, MessageGroup } from '@domi/session-core'
-import { AssistantTurnRenderer, MessageGroupRenderer, SDKMessageRenderer } from './SDKMessageRenderer.tsx'
+import { AssistantTurnRenderer, MessageGroupRenderer, SDKMessageRenderer, groupIntoTurns } from './SDKMessageRenderer.tsx'
 
 describe('Worktree handoff notice', () => {
   test('Given 已创建 Worktree 子会话 When 渲染父会话系统提示 Then 显示可点击的目标会话', () => {
@@ -179,6 +181,57 @@ describe('Task progress output deduplication', () => {
 })
 
 describe('Work 消息 V2 视图', () => {
+  test('预览修订卡先于工具落盘且没有前置 assistant 时，真实组合结构中用时位于卡片正文与操作按钮前', () => {
+    const user = {
+      type: 'user', parent_tool_use_id: null,
+      message: { content: [{ type: 'text', text: '继续修改工作过程位置' }] },
+    } as SDKUserMessage
+    const card = {
+      type: 'system', subtype: 'worktree_preview_revision_requested', request_id: 'revision-2',
+      iteration: 5, task: '修复工作过程位置', summary: '修复顺序',
+      details_markdown: '先撤回 Preview 再修复消息顺序',
+    } as SDKSystemMessage
+    const toolCall = {
+      type: 'assistant', uuid: 'revision-tool-call', parent_tool_use_id: null,
+      message: { content: [{ type: 'tool_use', id: 'revision-tool', name: 'RequestWorktreePreviewRevision', input: {} }], model: 'test-model' },
+    } as SDKAssistantMessage
+    const result = {
+      type: 'user', parent_tool_use_id: null,
+      message: { content: [{ type: 'tool_result', tool_use_id: 'revision-tool', content: 'requested' }] },
+    } as SDKUserMessage
+    const allMessages: SDKMessage[] = [user, card, toolCall, result, { type: 'result', subtype: 'success', _durationMs: 40_000 } as unknown as SDKMessage]
+    const groups = groupIntoTurns(allMessages)
+    expect(groups.map((group) => group.type)).toEqual(['user', 'assistant-turn', 'system'])
+    const store = createStore()
+    const snapshot: SessionTargetView = {
+      project: { id: 'project-1', name: 'domi' },
+      checkout: { id: 'checkout-1', kind: 'isolated', label: 'Isolated Checkout', phase: 'ready' },
+      source: { ref: 'main', oid: 'a'.repeat(40) }, current: { branch: 'main', oid: 'b'.repeat(40) },
+      ownership: 'owner', dirty: true, revision: 2,
+      delivery: {
+        state: 'preview_active', previewedAt: 2,
+        review: { reviewId: 'review-1', iteration: 5, preparedAt: 1, summary: '上一轮完成', validationStatus: 'passed',
+          tests: [], changedFiles: ['src/a.ts'], suggestedCommitMessage: 'fix: 调整消息区' },
+      },
+    }
+    store.set(sessionTargetStateAtomFamily('session-1'), {
+      snapshot, selectionRequired: false, loading: false, pendingAction: null, error: null,
+    })
+    const states: Array<{ isStreaming?: boolean; stoppedByUser?: boolean }> = [{}, { isStreaming: true }, { stoppedByUser: true }]
+    for (const flags of states) {
+      const html = renderToStaticMarkup(<Provider store={store}>
+        {groups.map((group, index) => (
+          <MessageGroupRenderer key={index} group={group} allMessages={allMessages} sessionId="session-1" {...flags} />
+        ))}
+      </Provider>)
+      expect(html.indexOf('data-work-process-trigger="true"')).toBeGreaterThan(-1)
+      expect(html.indexOf('data-work-process-trigger="true"')).toBeLessThan(html.indexOf('先撤回 Preview 再修复消息顺序'))
+      if (!flags.isStreaming) expect(html).toContain('用时 40 秒')
+      expect(html.indexOf('先撤回 Preview 再修复消息顺序')).toBeLessThan(html.indexOf('撤回当前验收并继续修改'))
+      expect(html.slice(html.indexOf('先撤回 Preview 再修复消息顺序'))).toContain('<button')
+    }
+  })
+
   test('终止工具晚于最终正文时，过程耗时入口仍在正文上方且操作详情可展开', () => {
     const first: SDKAssistantMessage = {
       type: 'assistant', uuid: 'worktree-answer', parent_tool_use_id: null,
