@@ -26,7 +26,7 @@ import {
 } from '@/components/ai-elements/conversation'
 import { ScrollMinimap } from '@/components/ai-elements/scroll-minimap'
 import type { MinimapItem } from '@/components/ai-elements/scroll-minimap'
-import { buildStickyQuestionPreview, StickyUserMessage } from '@/components/ai-elements/sticky-user-message'
+import { StickyUserMessage } from '@/components/ai-elements/sticky-user-message'
 import { formatMessageTime } from '@/components/chat/ChatMessageItem'
 import { resolveModelDisplayName } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
@@ -36,7 +36,7 @@ import { clearScrollPositionMemory, ScrollPositionManager } from '@/hooks/useScr
 import { cn } from '@/lib/utils'
 import { AGENT_RUNNING_ORB_STATES, RotatingAgentActivityOrb } from '@/components/ui/agent-activity-orb'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { groupIntoTurns, MessageGroupRenderer, getGroupId, getGroupPreview, extractUserText, parseAttachedFiles as sdkParseAttachedFiles, buildTaskProgressDataForTurn, type MessageGroup } from './SDKMessageRenderer'
+import { groupIntoTurns, MessageGroupRenderer, getGroupId, getGroupPreview, extractUserText, buildTaskProgressDataForTurn, type MessageGroup } from './SDKMessageRenderer'
 import { extractMeta } from '@domi/session-core'
 import { buildLiveGroupSet } from './live-group-set'
 import { AgentHistorySelectionLayer } from './AgentHistorySelectionLayer'
@@ -894,13 +894,9 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
       .filter((group) => group.type === 'user')
       .map((group) => {
         const createdAt = extractMeta(group.message).createdAt
-        const rawText = extractUserText(group.message) ?? ''
-        const { files, text } = sdkParseAttachedFiles(rawText)
         return {
           id: getGroupId(group),
           time: createdAt ? formatMessageTime(createdAt) : undefined,
-          preview: buildStickyQuestionPreview(text),
-          attachmentCount: files.length,
         }
       }),
     [mountedGroups],
@@ -1042,11 +1038,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
           contextCompaction={contextCompaction}
         />
         {userMessagesForStickyShortcut.length > 0 && (
-          <StickyUserMessage
-            userMessages={userMessagesForStickyShortcut}
-            userName={userProfile.userName}
-            userAvatar={userProfile.avatar}
-          />
+          <StickyUserMessage userMessages={userMessagesForStickyShortcut} />
         )}
       </Conversation>
       <AgentHistorySelectionLayer sessionId={sessionId} rootRef={historySelectionRootRef} />

@@ -1,28 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import {
-  buildStickyQuestionPreview,
-  StickyReturnToQuestionShortcut,
-} from './sticky-user-message'
-
-describe('buildStickyQuestionPreview', () => {
-  test('Given a long question with fenced code When building the hover preview Then code is summarized and text is bounded', () => {
-    const preview = buildStickyQuestionPreview([
-      '请检查下面的实现：',
-      '',
-      '```ts',
-      'const secretImplementation = true',
-      '```',
-      '',
-      '并说明为什么。'.repeat(80),
-    ].join('\n'))
-
-    expect(preview).toContain('[代码]')
-    expect(preview).not.toContain('secretImplementation')
-    expect(preview.endsWith('…')).toBe(true)
-    expect(preview.length).toBeLessThanOrEqual(241)
-  })
-})
+import { StickyReturnToQuestionShortcut } from './sticky-user-message'
 
 describe('StickyReturnToQuestionShortcut', () => {
   test('Given the terminal theme styles When applying the shortcut override Then they preserve the component pill radius', async () => {
@@ -34,14 +12,10 @@ describe('StickyReturnToQuestionShortcut', () => {
     expect(css).not.toContain('.theme-terminal-dark [class*="rounded"] {')
   })
 
-  test('Given the previous question is above the viewport When rendering the shortcut Then the compact capsule expands into one shared glass surface', () => {
+  test('Given the previous question is above the viewport When rendering the shortcut Then it stays compact without question content on hover or focus', () => {
     const html = renderToStaticMarkup(
       <StickyReturnToQuestionShortcut
         time="08/31 19:17"
-        preview="请把返回提问入口改得更紧凑一些"
-        attachmentCount={2}
-        userName="Wlait"
-        userAvatar="🧑‍💻"
         onClick={() => undefined}
       />,
     )
@@ -53,37 +27,14 @@ describe('StickyReturnToQuestionShortcut', () => {
     expect(html).toContain('justify-center')
     expect(html).toContain('backdrop-blur-2xl')
     expect(html).toContain('bg-gradient-to-b')
-    expect(html).toContain('请把返回提问入口改得更紧凑一些')
-    expect(html).toContain('2 个附件')
-    expect(html).toContain('Wlait')
-    expect(html).toContain('🧑‍💻')
-    expect(html).toContain('line-clamp-3')
     expect(html).toContain('w-fit')
-    expect(html).toContain('hover:w-[380px]')
-    expect(html).not.toContain('w-[420px]')
-    expect(html).toContain('[interpolate-size:allow-keywords]')
     expect(html).toContain('h-8')
-    expect(html).toContain('px-3')
-    expect(html).toContain('size-6')
-    expect(html).toContain('leading-5')
     expect(html).toContain('rounded-[18px]')
-    expect(html).not.toContain('rounded-full')
-    expect(html).not.toContain('rounded-[20px]')
-    expect(html).not.toContain('transition-[max-width,border-radius')
-    expect(html).not.toContain('hover:rounded')
-    expect(html).not.toContain('focus-visible:rounded')
-    expect(html).not.toContain('border-t')
-    expect(html).toContain('grid w-0 max-w-[calc(100vw-3rem)] justify-self-center grid-rows-[0fr]')
-    expect(html).toContain('group-hover/shortcut:w-[380px]')
-    expect(html).toContain('group-focus-visible/shortcut:w-[380px]')
-    expect(html).not.toContain('group-hover/shortcut:w-full')
-    expect(html).not.toContain('group-focus-visible/shortcut:w-full')
-    expect(html).toContain('max-w-[calc(100vw-3rem)]')
-    expect(html).toContain('group-hover/shortcut:grid-rows-[1fr]')
-    expect(html).toContain('group-focus-visible/shortcut:grid-rows-[1fr]')
-    expect(html).toContain('delay-150')
-    expect(html).not.toContain('role="tooltip"')
-    expect(html).not.toContain('sticky-question-preview')
-    expect(html).not.toContain('最近提问')
+    expect(html).not.toContain('aria-describedby')
+    expect(html).not.toContain('group-hover/shortcut')
+    expect(html).not.toContain('group-focus-visible/shortcut')
+    expect(html).not.toContain('hover:w-')
+    expect(html).not.toContain('focus-visible:w-')
+    expect(html).not.toContain('grid-rows-')
   })
 })
