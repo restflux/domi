@@ -10,7 +10,7 @@ describe('Agent Composer controls', () => {
 
     expect(source).toContain("'model-effort-trigger flex h-[26px]")
     expect(source).toContain('modelName={composerModelName}')
-    expect(source).toContain('modelLogo={composerModelLogo}')
+    expect(source).not.toContain('modelLogo={composerModelLogo}')
     expect(source).toContain('channelName={composerChannelName}')
     expect(source).toContain('const composerChannelName = selectedModelOption?.channelName')
     expect(modelSelectorSource).toContain('<Tooltip open={open || !displayModelInfo ? false : undefined}>')

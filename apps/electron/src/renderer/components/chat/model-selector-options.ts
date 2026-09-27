@@ -34,6 +34,25 @@ export function buildModelOptions(
   return options
 }
 
+/** 仅在未设置别名时美化常见模型 ID；不改动真实 ID 和用户指定的名称。 */
+export function getModelDisplayName(modelName: string, modelId: string): string {
+  if (modelName && modelName !== modelId) return modelName
+  const parts = modelId.split('-')
+  if (parts.length < 2 || parts.some((part) => !/^[a-zA-Z0-9]+(?:\.[0-9]+)?$/.test(part))) {
+    return modelName || modelId
+  }
+
+  const [family = '', version = '', ...rest] = parts
+  const suffix = (part: string): string => /^[a-z]/i.test(part) ? part[0]!.toUpperCase() + part.slice(1) : part
+  if (/^(gpt|glm)$/i.test(family) && /^\d/.test(version)) {
+    return [family.toUpperCase() + '-' + version, ...rest.map(suffix)].join(' ')
+  }
+  if (/^kimi$/i.test(family) && /^k\d/i.test(version)) {
+    return ['Kimi', suffix(version), ...rest.map(suffix)].join(' ')
+  }
+  return modelName || modelId
+}
+
 /** 按渠道分组模型选项 */
 export function groupByChannel(options: ModelOption[]): Map<string, ModelOption[]> {
   const groups = new Map<string, ModelOption[]>()
@@ -48,9 +67,9 @@ export function groupByChannel(options: ModelOption[]): Map<string, ModelOption[
   return groups
 }
 
-/** 搜索跨渠道；空搜索只展示调用方展开的渠道，隐藏模型不参与键盘导航。 */
+/** 所有渠道按顺序展示；搜索同时匹配模型及其所属渠道。 */
 export function getModelPickerGroups(
-  grouped: Map<string, ModelOption[]>, search: string, expandedChannel: string | null,
+  grouped: Map<string, ModelOption[]>, search: string,
 ): { groups: Map<string, ModelOption[]>; visibleOptions: ModelOption[] } {
   const query = search.trim().toLowerCase()
   const groups = new Map<string, ModelOption[]>()
@@ -58,11 +77,12 @@ export function getModelPickerGroups(
   for (const [channelId, options] of grouped) {
     const matches = query ? options.filter((option) =>
       option.modelName.toLowerCase().includes(query) ||
+      getModelDisplayName(option.modelName, option.modelId).toLowerCase().includes(query) ||
       option.modelId.toLowerCase().includes(query) ||
       option.channelName.toLowerCase().includes(query)) : options
     if (!matches.length) continue
     groups.set(channelId, matches)
-    if (query || channelId === expandedChannel) visibleOptions.push(...matches)
+    visibleOptions.push(...matches)
   }
   return { groups, visibleOptions }
 }

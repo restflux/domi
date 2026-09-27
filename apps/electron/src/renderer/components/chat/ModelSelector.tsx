@@ -1,6 +1,4 @@
-import { BrandLogo } from '@/components/ui/brand-logo'
-/** 按渠道折叠的模型选择浮层；主聊天、Work 与侧聊共享展示，选择状态由调用方管理。 */
-
+/** 按渠道分组的紧凑模型列表；主聊天、Work 与侧聊共享展示，选择状态由调用方管理。 */
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Check, ChevronDown, Cpu, Search } from 'lucide-react'
@@ -19,13 +17,12 @@ import {
 } from '@/atoms/chat-atoms'
 import { useConversationModelOptional } from '@/hooks/useConversationSettings'
 import { useConversationIdOptional } from '@/contexts/session-context'
-import { getModelLogo, getChannelLogo, DefaultLogo } from '@/lib/model-logo'
 import { handleOptionalDialogCloseAutoFocus } from '@/lib/dialog-focus'
 import { cn } from '@/lib/utils'
 import type { ModelOption, ProviderType } from '@domi/shared'
 import { ChannelPlanQuotaBadge } from './ChannelPlanQuotaBadge'
 
-import { buildModelOptions, groupByChannel, getModelPickerGroups, nextModelHighlight } from './model-selector-options'
+import { buildModelOptions, getModelDisplayName, groupByChannel, getModelPickerGroups, nextModelHighlight } from './model-selector-options'
 export { buildModelOptions } from './model-selector-options'
 
 /** ModelSelector 可选属性 */
@@ -80,7 +77,6 @@ export function ModelSelector({
   const open = useSharedOpenState ? sharedOpen : localOpen
   const setOpen = useSharedOpenState ? setSharedOpen : setLocalOpen
   const [search, setSearch] = React.useState('')
-  const [expandedChannel, setExpandedChannel] = React.useState<string | null>(null)
   const searchRef = React.useRef<HTMLInputElement>(null)
 
   // 外部模型优先 → per-conversation 模型
@@ -91,7 +87,6 @@ export function ModelSelector({
     if (open) {
       window.electronAPI.listChannels().then(setChannels).catch(console.error)
       setSearch('')
-      setExpandedChannel(selectedModel?.channelId ?? null)
     }
   }, [open, setChannels])
 
@@ -102,8 +97,8 @@ export function ModelSelector({
   const grouped = React.useMemo(() => groupByChannel(modelOptions), [modelOptions])
 
   const { groups: filteredGrouped, visibleOptions: flatOptions } = React.useMemo(
-    () => getModelPickerGroups(grouped, search, expandedChannel),
-    [grouped, search, expandedChannel],
+    () => getModelPickerGroups(grouped, search),
+    [grouped, search],
   )
 
   // 键盘高亮索引
@@ -113,7 +108,7 @@ export function ModelSelector({
   // 搜索变化时重置高亮
   React.useEffect(() => {
     setHighlightIndex(-1)
-  }, [search, expandedChannel, open])
+  }, [search, open])
 
   // 高亮项变化时滚动到可见区域
   React.useEffect(() => {
@@ -233,18 +228,9 @@ export function ModelSelector({
               type="button"
               className="model-selector-trigger flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
-              {displayModelInfo ? (
-                <BrandLogo
-                  src={getModelLogo(displayModelInfo.modelId, displayModelInfo.provider)}
-                  alt={displayModelInfo.modelName}
-                  className="size-4 rounded object-cover"
-                />
-              ) : (
-                <Cpu className="size-3.5" />
-              )}
               <span className="max-w-[200px] truncate">
                 {displayModelInfo
-                  ? (showChannelInTrigger ? `${displayModelInfo.channelName} · ${displayModelInfo.modelName}` : displayModelInfo.modelName)
+                  ? (showChannelInTrigger ? `${displayModelInfo.channelName} · ${getModelDisplayName(displayModelInfo.modelName, displayModelInfo.modelId)}` : getModelDisplayName(displayModelInfo.modelName, displayModelInfo.modelId))
                   : '选择模型'}
               </span>
               <ChevronDown className="size-3" />
@@ -265,27 +251,24 @@ export function ModelSelector({
             event.preventDefault()
             searchRef.current?.focus()
           }}
-          className="p-0 w-[360px] max-w-[min(calc(100vw-24px),var(--radix-popover-content-available-width))] max-h-[var(--radix-popover-content-available-height)] flex flex-col overflow-hidden"
+          className="p-0 w-[288px] max-w-[min(calc(100vw-24px),var(--radix-popover-content-available-width))] max-h-[var(--radix-popover-content-available-height)] flex flex-col overflow-hidden"
           aria-describedby={undefined}
           onCloseAutoFocus={(event) => {
             handleOptionalDialogCloseAutoFocus(event, restoreFocusOnClose)
           }}
         >
           {/* 搜索栏 */}
-          <div className="flex shrink-0 items-center gap-2.5 px-4 py-3 border-b border-border/60">
-            <Search className="size-5 text-muted-foreground/60 flex-shrink-0" />
+          <div className="flex shrink-0 items-center gap-2 px-3 py-2 border-b border-border/60">
+            <Search className="size-3.5 text-muted-foreground/60 flex-shrink-0" />
             <input
               ref={searchRef}
               aria-label="搜索模型"
               type="text"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                if (!e.target.value.trim()) setExpandedChannel(selectedModel?.channelId ?? null)
-              }}
+              onChange={(e) => setSearch(e.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder="搜索模型..."
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
               autoFocus
             />
           </div>
@@ -300,83 +283,58 @@ export function ModelSelector({
               (() => {
                 let flatIndex = 0
                 return Array.from(filteredGrouped.entries()).map(([channelId, options]) => {
-                const first = options[0]
-                if (!first) return null
-                const expanded = Boolean(search.trim()) || channelId === expandedChannel
-                const channel = channels.find((c) => c.id === channelId)
+                  const first = options[0]
+                  if (!first) return null
+                  const channel = channels.find((c) => c.id === channelId)
 
-                return (
-                  <div key={channelId}>
-                    {/* 渠道标题保持可见，避免同名模型失去归属信息。 */}
-                    <div className="sticky top-0 z-10 flex items-center bg-popover">
-                    <button
-                      type="button"
-                      aria-expanded={expanded}
-                      aria-disabled={Boolean(search.trim())}
-                      onClick={() => {
-                        if (!search.trim()) setExpandedChannel(expandedChannel === channelId ? null : channelId)
-                      }}
-                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left hover:bg-accent"
-                    >
-                      <BrandLogo
-                        src={channel ? getChannelLogo(channel) : DefaultLogo}
-                        alt={first.channelName}
-                        className="size-5 rounded object-cover"
-                      />
-                      <span className="min-w-0 truncate text-sm font-medium text-muted-foreground">
-                        {first.channelName}
-                      </span>
-                      <span className="ml-auto text-xs text-muted-foreground">{options.length}</span>
-                      <ChevronDown className={cn("size-3 shrink-0", !expanded && "-rotate-90")} />
-                    </button>
-                      {channel ? <ChannelPlanQuotaBadge channel={channel} /> : null}
+                  return (
+                    <div key={channelId} className="py-1">
+                      <div className="flex min-w-0 items-center gap-1.5 px-3 pb-1 pt-2">
+                        <span className="min-w-0 truncate text-[10px] font-medium tracking-wide text-muted-foreground/70" title={first.channelName}>
+                          {first.channelName}
+                        </span>
+                        {channel ? <ChannelPlanQuotaBadge channel={channel} /> : null}
+                      </div>
+
+                      {options.map((option) => {
+                        const isSelected =
+                          selectedModel?.channelId === option.channelId &&
+                          selectedModel?.modelId === option.modelId
+                        const currentFlatIndex = flatIndex++
+                        const isHighlighted = currentFlatIndex === highlightIndex
+
+                        return (
+                          <button
+                            key={`${option.channelId}:${option.modelId}`}
+                            ref={(el) => {
+                              if (el) itemRefs.current.set(currentFlatIndex, el)
+                              else itemRefs.current.delete(currentFlatIndex)
+                            }}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => handleSelect(option)}
+                            onPointerMove={() => setHighlightIndex(-1)}
+                            onPointerLeave={() => setHighlightIndex(-1)}
+                            className={cn(
+                              'scroll-mt-8 flex items-center gap-2 w-[calc(100%-0.5rem)] px-2 py-1.5 mx-1 rounded-md text-left transition-colors',
+                              'hover:bg-accent',
+                              isHighlighted && 'bg-accent',
+                              isSelected && 'bg-foreground/10'
+                            )}
+                          >
+                            <span className={cn(
+                              'flex-1 text-xs truncate',
+                              isSelected ? 'font-medium text-foreground' : 'text-foreground/80'
+                            )}>
+                              {getModelDisplayName(option.modelName, option.modelId)}
+                            </span>
+                            {isSelected && <Check aria-hidden="true" className="size-3.5 shrink-0 text-foreground" />}
+                          </button>
+                        )
+                      })}
                     </div>
-
-                    {/* 该渠道下的模型列表 */}
-                    {expanded && options.map((option) => {
-                      const isSelected =
-                        selectedModel?.channelId === option.channelId &&
-                        selectedModel?.modelId === option.modelId
-                      const currentFlatIndex = flatIndex++
-                      const isHighlighted = currentFlatIndex === highlightIndex
-
-                      return (
-                        <button
-                          key={`${option.channelId}:${option.modelId}`}
-                          ref={(el) => {
-                            if (el) itemRefs.current.set(currentFlatIndex, el)
-                            else itemRefs.current.delete(currentFlatIndex)
-                          }}
-                          type="button"
-                          aria-pressed={isSelected}
-                          onClick={() => handleSelect(option)}
-                          onPointerMove={() => setHighlightIndex(-1)}
-                          onPointerLeave={() => setHighlightIndex(-1)}
-                          className={cn(
-                            'scroll-mt-10 flex items-center gap-3 w-[calc(100%-1rem)] px-4 py-1.5 mx-2 rounded-lg text-left transition-colors',
-                            'hover:bg-accent',
-                            isHighlighted && 'bg-accent',
-                            isSelected && 'bg-foreground/10'
-                          )}
-                        >
-                          <BrandLogo
-                            src={getModelLogo(option.modelId, option.provider)}
-                            alt={option.modelName}
-                            className="size-5 rounded object-cover flex-shrink-0"
-                          />
-                          <span className={cn(
-                            'flex-1 text-sm truncate',
-                            isSelected ? 'font-medium text-foreground' : 'text-foreground/80'
-                          )}>
-                            {option.modelName}
-                          </span>
-                          {isSelected && <Check aria-hidden="true" className="size-4 shrink-0 text-primary" />}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )
-              })
+                  )
+                })
               })()
             )}
           </div>

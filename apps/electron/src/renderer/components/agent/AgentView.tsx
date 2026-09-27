@@ -3,7 +3,6 @@ import type { ImageGenerationSelection } from '@domi/shared'
 import { persistImageSelection } from '@/lib/image-generation-settings'
 import { imageGenerationSelectionsAtom, imageGenerationChannelsAtom, imageGenerationDefaultAtom, parseImageCommand, resolveImageSelection } from '@/atoms/image-generation-atoms'
 import { openSideChatPanelAtom, sideChatHandoffAtomFamily } from '@/atoms/side-chat-atoms'
-import { BrandLogo } from '@/components/ui/brand-logo'
 /**
  * AgentView — Agent 模式主视图容器
  *
@@ -23,7 +22,7 @@ import * as React from 'react'
 import { unstable_batchedUpdates } from 'react-dom'
 import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai'
 import { toast } from 'sonner'
-import { AlertTriangle, CheckCircle2, CornerDownLeft, Square, Settings, X, Copy, Check, RotateCw, Sparkles, ChevronDown, ChevronRight, Cpu, ListTodo, MessageSquarePlus, Paperclip, FileText, FolderOpen, GitFork, GitBranch, Zap, Telescope, ClipboardList, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ArrowUp, Square, Settings, X, Copy, Check, RotateCw, Sparkles, ChevronDown, ChevronRight, ListTodo, MessageSquarePlus, Paperclip, FileText, FolderOpen, GitFork, GitBranch, Zap, Telescope, ClipboardList, type LucideIcon } from 'lucide-react'
 import { AgentMessages } from './AgentMessages'
 import { AgentHeader } from './AgentHeader'
 import { SessionFilesConversationLayout } from './SessionFilesConversationLayout'
@@ -63,6 +62,7 @@ import {
   type WorktreeIterationResumeDetail,
 } from '@/lib/worktree-iteration-resume.ts'
 import { buildModelOptions, ModelSelector } from '@/components/chat/ModelSelector'
+import { getModelDisplayName } from '@/components/chat/model-selector-options'
 import { AttachmentPreviewItem } from '@/components/chat/AttachmentPreviewItem'
 import { QuotedSelectionChip } from '@/components/diff/QuotedSelectionChip'
 import {
@@ -203,7 +203,6 @@ import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
 import { sidebarViewModeAtom } from '@/atoms/sidebar-atoms'
 import { sendWithCmdEnterAtom } from '@/atoms/shortcut-atoms'
 import { useOpenPreview } from '@/components/diff/preview-opener'
-import { getModelLogo } from '@/lib/model-logo'
 import type { AgentSendInput, AgentPendingFile, AgentThinkingLevel, AgentNextTurnAside, AgentQueueMessageKind, AgentQueueReplayMessageInput, AgentWorkflow, ComposerAttachmentKind, FileDialogLargeFile, FileDialogResult, ForkSessionTargetChoice, ModelOption, ModelPresentationPreset, ReasoningCapability, RewindSessionPreview, RewindUndoState, SDKMessage, SDKUserMessage, SessionTreeResult } from '@domi/shared'
 import { inferReasoningTransport, isCodexFastModeSupportedModel, MAX_ATTACHMENT_SIZE, normalizeReasoningCapabilityLevel, resolveReasoningCapability, resolveReasoningProfile } from '@domi/shared'
 import { fileToBase64, formatFileNames, getFileParentPath } from '@/lib/file-utils'
@@ -435,7 +434,6 @@ interface CodexThinkingConfig {
 interface AgentThinkingPopoverProps {
   agentThinking: import('@domi/shared').ThinkingConfig | undefined
   modelName: string
-  modelLogo?: string
   channelName?: string
   selectedModel: { channelId: string; modelId: string } | null
   onModelSelect: (option: import('@domi/shared').ModelOption) => void
@@ -447,7 +445,6 @@ interface AgentThinkingPopoverProps {
 function AgentThinkingPopover({
   agentThinking,
   modelName,
-  modelLogo,
   channelName,
   selectedModel,
   onModelSelect,
@@ -502,11 +499,6 @@ function AgentThinkingPopover({
                 open && 'bg-accent text-foreground',
               )}
             >
-              {modelLogo ? (
-                <BrandLogo src={modelLogo} alt="" className="size-4 shrink-0 rounded object-cover" />
-              ) : (
-                <Cpu className="size-3.5 shrink-0" />
-              )}
               <span className="min-w-0 truncate">{modelName}</span>
               <span className="shrink-0 text-muted-foreground">{triggerLabel}</span>
               <ChevronDown className="size-3 shrink-0" />
@@ -2454,11 +2446,10 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       option.channelId === externalSelectedModel.channelId && option.modelId === externalSelectedModel.modelId
     ))
   }, [externalSelectedModel, globalChannels])
-  const composerModelName = selectedModelOption?.modelName ?? externalSelectedModel?.modelId ?? '选择模型'
+  const composerModelName = selectedModelOption
+    ? getModelDisplayName(selectedModelOption.modelName, selectedModelOption.modelId)
+    : externalSelectedModel ? getModelDisplayName(externalSelectedModel.modelId, externalSelectedModel.modelId) : '选择模型'
   const composerChannelName = selectedModelOption?.channelName
-  const composerModelLogo = selectedModelOption
-    ? getModelLogo(selectedModelOption.modelId, selectedModelOption.provider)
-    : undefined
 
   /** 把当前文本保存为随下一条用户消息发送的附言；不进入 Pi 原生 steering/follow-up 队列。 */
   const handleQueueAside = React.useCallback((): void => {
@@ -4459,8 +4450,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       )}
       onClick={() => handleSend()}
       disabled={!canSend}
+      aria-label="发送"
     >
-      <CornerDownLeft className="size-[22px]" />
+      <ArrowUp className="size-[17px]" strokeWidth={2.25} />
     </Button>
   )
 
@@ -4521,7 +4513,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         <AgentThinkingPopover
           agentThinking={agentThinking}
           modelName={composerModelName}
-          modelLogo={composerModelLogo}
           channelName={composerChannelName}
           selectedModel={externalSelectedModel}
           onModelSelect={handleModelSelect}

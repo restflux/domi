@@ -9,7 +9,7 @@ import { appModeAtom } from '@/atoms/app-mode'
 import { sideChatDraftAtomFamily, sideChatHandoffAtomFamily, sideChatViewAtomFamily, sideChatOperationAtomFamily } from '@/atoms/side-chat-atoms'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { MessageLoading } from '@/components/ai-elements/message'
-import { CornerDownLeft, Square, X, Quote, ImagePlus } from 'lucide-react'
+import { ArrowUp, Square, X, Quote, ImagePlus } from 'lucide-react'
 import { AttachmentPreviewItem } from '@/components/chat/AttachmentPreviewItem'
 import { sideChatImagesAtomFamily, sideChatImageLoadingAtomFamily, sideChatComposerErrorAtomFamily, prepareSideChatImages, imagePreview } from './side-chat-images'
 import { RichTextInput, type RichTextInputHandle } from '@/components/ai-elements/rich-text-input'
@@ -153,7 +153,7 @@ export function SideChatPanel({ parentSessionId }: { parentSessionId: string }):
               void window.electronAPI.stopSideChat(parentSessionId).catch((cause: unknown) => setError(String(cause)))
             }}><Square className="size-4" /></Button>
           ) : (
-            <Button size="icon" variant="ghost" className={inputToolbarSendButtonClass} aria-label="发送" title="发送" disabled={pending || loadingImages || !view || (!draft.text.trim() && !images.length)} onClick={() => void send()}><CornerDownLeft className="size-4" /></Button>
+            <Button size="icon" variant="ghost" className={inputToolbarSendButtonClass} aria-label="发送" title="发送" disabled={pending || loadingImages || !view || (!draft.text.trim() && !images.length)} onClick={() => void send()}><ArrowUp className="size-4" strokeWidth={2.25} /></Button>
           )}
         </div>
       </div>

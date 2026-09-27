@@ -8,7 +8,7 @@ export const inputToolbarDangerButtonClass =
   'size-[32px] shrink-0 rounded-md text-destructive hover:!text-[hsl(0,75%,55%)] hover:!bg-[var(--stop-hover-bg)]'
 
 export const inputToolbarSendButtonClass =
-  'size-[32px] shrink-0 rounded-md text-primary hover:bg-primary/10'
+  'size-[30px] shrink-0 rounded-full bg-foreground text-background hover:bg-foreground/85 hover:text-background disabled:bg-muted disabled:text-muted-foreground/50 disabled:shadow-none'
 
 export const inputToolbarDisabledButtonClass =
-  'size-[32px] shrink-0 rounded-md text-foreground/30 cursor-not-allowed'
+  'size-[30px] shrink-0 rounded-full bg-muted text-muted-foreground/50 cursor-not-allowed'

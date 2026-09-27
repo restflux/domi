@@ -16,7 +16,7 @@ import { ImageGenerationSelector } from '@/components/ai-elements/ImageGeneratio
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { CornerDownLeft, Square, Brain, Paperclip } from 'lucide-react'
+import { ArrowUp, Square, Brain, Paperclip } from 'lucide-react'
 import { ModelSelector } from './ModelSelector'
 import { ClearContextButton } from './ClearContextButton'
 import { ContextSettingsPopover } from './ContextSettingsPopover'
@@ -407,8 +407,9 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
       )}
       onClick={handleSend}
       disabled={!canSend}
+      aria-label="发送"
     >
-      <CornerDownLeft className="size-[22px]" />
+      <ArrowUp className="size-[17px]" strokeWidth={2.25} />
     </Button>
   )
 
