@@ -30,15 +30,10 @@ import { detectIsMac, detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib
 import { cn } from '@/lib/utils'
 import {
   clampRightWorkspaceWidth,
-  resolveRightWorkspaceActivation,
-  resolveRightWorkspaceAutoWidthActivation,
   shouldShowRightWorkspace,
 } from '@/lib/right-workspace-model'
 import {
-  ensureRightWorkspaceToolWidthAtom,
   rightWorkspaceFocusAtom,
-  rightWorkspaceManuallyResizedSessionsAtom,
-  rightWorkspaceSessionStateMapAtom,
 } from '@/atoms/right-workspace-atoms'
 
 const MIN_LEFT_SIDEBAR_WIDTH = 300
@@ -72,25 +67,9 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     activeView,
   })
   const rightWorkspaceFocus = useAtomValue(rightWorkspaceFocusAtom)
-  const rightWorkspaceSessionStateMap = useAtomValue(rightWorkspaceSessionStateMapAtom)
-  const ensureRightWorkspaceToolWidth = useSetAtom(ensureRightWorkspaceToolWidthAtom)
   const workspaceFocusActive = showRightPanel && rightWorkspaceFocus?.sessionId === currentSessionId
-  const rightWorkspaceActivation = currentSessionId
-    ? resolveRightWorkspaceActivation(currentSessionId, rightWorkspaceSessionStateMap.get(currentSessionId))
-    : null
-  const lastAutoWidthActivationRef = React.useRef<string | null>(null)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const isMac = React.useMemo(() => detectIsMac(), [])
-
-  React.useEffect(() => {
-    const decision = resolveRightWorkspaceAutoWidthActivation(
-      lastAutoWidthActivationRef.current,
-      showRightPanel,
-      rightWorkspaceActivation,
-    )
-    lastAutoWidthActivationRef.current = decision.nextKey
-    if (decision.toolToEnsure) ensureRightWorkspaceToolWidth(decision.toolToEnsure)
-  }, [ensureRightWorkspaceToolWidth, rightWorkspaceActivation, showRightPanel])
 
   // 左侧边栏可拖拽宽度
   const [leftSidebarWidth, setLeftSidebarWidth] = useAtom(leftSidebarWidthAtom)
@@ -262,7 +241,6 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
   // 右侧面板可拖拽宽度
   const [rightPanelWidth, setRightPanelWidth] = useAtom(agentSidePanelWidthAtom)
-  const setManuallyResizedSessions = useSetAtom(rightWorkspaceManuallyResizedSessionsAtom)
   const dragging = React.useRef(false)
   const clampedRightPanelWidth = clampRightWorkspaceWidth(rightPanelWidth)
 
@@ -278,9 +256,6 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
     const startX = e.clientX
     const startWidth = clampRightWorkspaceWidth(e.currentTarget.parentElement?.getBoundingClientRect().width ?? clampedRightPanelWidth)
     setRightPanelWidth(startWidth)
-    if (currentSessionId) {
-      setManuallyResizedSessions((current) => new Set(current).add(currentSessionId))
-    }
     // 记录最新光标位置，rAF 回调读取它而非调度时捕获的旧事件，避免快拖时坐标滞后
     let latestClientX = startX
     let rafId = 0
@@ -314,7 +289,7 @@ export function AppShell({ contextValue }: AppShellProps): React.ReactElement {
 
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [clampedRightPanelWidth, currentSessionId, setManuallyResizedSessions, setRightPanelWidth])
+  }, [clampedRightPanelWidth, setRightPanelWidth])
 
   return (
     <AppShellProvider value={contextValue}>

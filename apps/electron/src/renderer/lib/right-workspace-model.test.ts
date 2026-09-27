@@ -9,10 +9,7 @@ import {
   openRightWorkspaceV2OptionalTab,
   resolveAvailableRightWorkspaceTabId,
   resolveClosedTabFallback,
-  resolveRightWorkspaceActivation,
-  resolveRightWorkspaceAutoWidth,
-  resolveRightWorkspaceAutoWidthActivation,
-  resolveRightWorkspaceDisplayWidth,
+  clampRightWorkspaceWidth,
   resolveRightWorkspaceTool,
   shouldPinRightWorkspaceMenu,
   shouldShowRightWorkspace,
@@ -60,99 +57,17 @@ describe('Right Workspace 状态模型', () => {
     expect(b.activeTool).toBe('changes')
     expect(getRightWorkspaceToolbarTools(b.activeTool)).toContain('files')
   })
-  test('活动身份同时包含会话和实例标签，未初始化时回退到文件', () => {
-    expect(resolveRightWorkspaceActivation('session-a', undefined)).toEqual({
-      key: 'session-a:files',
-      tool: 'files',
-    })
-    expect(resolveRightWorkspaceActivation('session-a', {
-      activeTool: 'browser',
-      activeTabId: 'browser:first',
-    })).toEqual({
-      key: 'session-a:browser:first',
-      tool: 'browser',
-    })
-    expect(resolveRightWorkspaceActivation('session-b', {
-      activeTool: 'terminal',
-      activeTabId: 'terminal:dev-server',
-    })).toEqual({
-      key: 'session-b:terminal:dev-server',
-      tool: 'terminal',
-    })
-  })
-
-  test('活动标签只在身份变化时请求一次扩宽，隐藏后清除记录', () => {
-    const preview = resolveRightWorkspaceActivation('session-a', { activeTool: 'preview' })
-    expect(resolveRightWorkspaceAutoWidthActivation(null, true, preview)).toEqual({
-      nextKey: 'session-a:preview',
-      toolToEnsure: 'preview',
-    })
-    expect(resolveRightWorkspaceAutoWidthActivation('session-a:preview', true, preview)).toEqual({
-      nextKey: 'session-a:preview',
-      toolToEnsure: null,
-    })
-    expect(resolveRightWorkspaceAutoWidthActivation('session-a:preview', false, preview)).toEqual({
-      nextKey: null,
-      toolToEnsure: null,
-    })
-  })
-
-  test('已关闭的宽工具不再占据空白右栏的活动标签身份', () => {
+  test('已关闭的活动标签不会阻止空白右栏回退', () => {
     const stalePreview = { activeTool: 'preview' as const, activeTabId: 'preview' as const }
     expect(resolveAvailableRightWorkspaceTabId(stalePreview, [])).toBe('files')
     expect(resolveAvailableRightWorkspaceTabId(stalePreview, [{ id: 'changes' }])).toBe('changes')
     expect(resolveAvailableRightWorkspaceTabId(stalePreview, [{ id: 'preview' }])).toBe('preview')
   })
 
-  test('v2 空白页与轻量工具不沿用自动扩出的 720px，手动拖拽及大空间工具仍保留宽度', () => {
-    expect(resolveRightWorkspaceDisplayWidth(720, 'files', true, false)).toBe(400)
-    expect(resolveRightWorkspaceDisplayWidth(720, 'changes', true, false)).toBe(400)
-    expect(resolveRightWorkspaceDisplayWidth(720, 'files', true, true)).toBe(720)
-    expect(resolveRightWorkspaceDisplayWidth(720, 'browser', true, false)).toBe(720)
-    expect(resolveRightWorkspaceDisplayWidth(720, 'terminal', true, false)).toBe(720)
-    expect(resolveRightWorkspaceDisplayWidth(720, 'preview', true, false)).toBe(720)
-    expect(resolveRightWorkspaceDisplayWidth(720, 'files', false, false)).toBe(720)
-    expect(resolveRightWorkspaceDisplayWidth(360, 'files', true, false)).toBe(360)
-  })
-
-  test('浏览器、终端和文档预览在空间允许时扩大到建议宽度', () => {
-    const base = {
-      currentWidth: 340,
-      viewportWidth: 1440,
-      leftSidebarWidth: 300,
-      leftSidebarCollapsed: false,
-    }
-
-    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'browser' })).toBe(720)
-    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'terminal' })).toBe(720)
-    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'preview' })).toBe(720)
-  })
-
-  test('紧凑工具和已经足够宽的工作区不改变宽度', () => {
-    const base = {
-      currentWidth: 720,
-      viewportWidth: 1440,
-      leftSidebarWidth: 300,
-      leftSidebarCollapsed: false,
-    }
-
-    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'files' })).toBe(720)
-    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'changes' })).toBe(720)
-    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'scratch' })).toBe(720)
-    expect(resolveRightWorkspaceAutoWidth({ ...base, tool: 'browser' })).toBe(720)
-  })
-
-  test('窗口空间有限时只扩到安全上限，左栏折叠后可使用释放出的宽度', () => {
-    const base = {
-      tool: 'browser' as const,
-      currentWidth: 340,
-      leftSidebarWidth: 300,
-      leftSidebarCollapsed: false,
-    }
-
-    expect(resolveRightWorkspaceAutoWidth({ ...base, viewportWidth: 1024 })).toBe(340)
-    expect(resolveRightWorkspaceAutoWidth({ ...base, viewportWidth: 1200 })).toBe(480)
-    expect(resolveRightWorkspaceAutoWidth({ ...base, viewportWidth: 1024, leftSidebarCollapsed: true })).toBe(604)
+  test('右侧栏共享宽度仍受统一的拖拽上下限约束', () => {
+    expect(clampRightWorkspaceWidth(280)).toBe(340)
+    expect(clampRightWorkspaceWidth(480)).toBe(480)
+    expect(clampRightWorkspaceWidth(800)).toBe(720)
   })
 
   test('Agent 终端实例使用独立标签并映射到终端工具', () => {

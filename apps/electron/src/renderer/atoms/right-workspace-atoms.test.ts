@@ -3,29 +3,26 @@ import { createStore } from 'jotai'
 import {
   activateSessionRightWorkspaceTab,
   activateSessionRightWorkspaceTool,
-  ensureRightWorkspaceToolWidthAtom,
   closeSessionRightWorkspaceTool,
   resolveBrowserFocusEscape,
   resolveRightWorkspaceFocus,
   toggleRightWorkspaceFocus,
   rightWorkspaceWidthAtom,
 } from './right-workspace-atoms'
-import { leftSidebarWidthAtom } from './sidebar-atoms'
-import { sidebarCollapsedAtom } from './tab-atoms'
+import type { RightWorkspaceSessionState } from '@/lib/right-workspace-model'
 
 describe('Right Workspace 会话隔离', () => {
-  test('统一扩宽入口会更新右侧栏宽度，紧凑工具保持当前值', () => {
+  test('切换任意工具沿用同一宽度，只有拖拽会改变共享宽度', () => {
     const store = createStore()
-    store.set(rightWorkspaceWidthAtom, 340)
-    store.set(leftSidebarWidthAtom, 300)
-    store.set(sidebarCollapsedAtom, false)
-
-    store.set(ensureRightWorkspaceToolWidthAtom, 'preview')
-    expect(store.get(rightWorkspaceWidthAtom)).toBe(720)
-
-    store.set(rightWorkspaceWidthAtom, 360)
-    store.set(ensureRightWorkspaceToolWidthAtom, 'files')
-    expect(store.get(rightWorkspaceWidthAtom)).toBe(360)
+    store.set(rightWorkspaceWidthAtom, 480)
+    let sessions = new Map<string, RightWorkspaceSessionState>()
+    sessions = activateSessionRightWorkspaceTool(sessions, 'session-a', 'preview')
+    expect(store.get(rightWorkspaceWidthAtom)).toBe(480)
+    sessions = activateSessionRightWorkspaceTool(sessions, 'session-a', 'browser')
+    expect(store.get(rightWorkspaceWidthAtom)).toBe(480)
+    store.set(rightWorkspaceWidthAtom, 560)
+    activateSessionRightWorkspaceTool(sessions, 'session-a', 'files')
+    expect(store.get(rightWorkspaceWidthAtom)).toBe(560)
   })
 
   test('激活工具只更新目标 Work Session', () => {

@@ -28,7 +28,6 @@ import {
   resolveBrowserFocusEscape,
   resolveRightWorkspaceFocus,
   rightWorkspaceFocusAtom,
-  rightWorkspaceManuallyResizedSessionsAtom,
   rightWorkspaceSessionStateMapAtom,
   toggleRightWorkspaceFocus,
 } from '@/atoms/right-workspace-atoms'
@@ -42,7 +41,6 @@ import {
   openRightWorkspaceV2OptionalTab,
   resolveAvailableRightWorkspaceTabId,
   resolveClosedTabFallback,
-  resolveRightWorkspaceDisplayWidth,
   terminalIdFromTab,
   terminalTabId,
   toolFromRightWorkspaceTab,
@@ -96,7 +94,6 @@ function ActiveRightSidePanel({
   width?: number | string
 }): React.ReactElement {
   const isWorkbenchV2 = useAtomValue(interfaceVariantAtom) === 'workbench-v2'
-  const manuallyResizedSessions = useAtomValue(rightWorkspaceManuallyResizedSessionsAtom)
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
   const legacyTabMap = useAtomValue(agentDiffPanelTabAtom)
   const setLegacyTabMap = useSetAtom(agentDiffPanelTabAtom)
@@ -158,9 +155,6 @@ function ActiveRightSidePanel({
   const showV2Launcher = isWorkbenchV2 && visibleTabs.length === 0
   const activeTabId = resolveAvailableRightWorkspaceTabId(state, visibleTabs)
   const activeTool = toolFromRightWorkspaceTab(activeTabId)
-  const displayWidth = typeof width === 'number'
-    ? resolveRightWorkspaceDisplayWidth(width, activeTool, isWorkbenchV2, manuallyResizedSessions.has(currentSessionId))
-    : width
   const activeBrowserSessionId = browserSessionIdFromTab(activeTabId)
   const activeTerminalId = terminalIdFromTab(activeTabId)
   const activeTerminal = activeTerminalId ? terminalStates.get(activeTerminalId) : undefined
@@ -330,7 +324,7 @@ function ActiveRightSidePanel({
   const Toolbar = isWorkbenchV2 ? RightWorkspaceToolbarV2 : RightWorkspaceToolbar
 
   return (
-    <div className="relative flex h-full min-w-0 shrink-0 overflow-hidden bg-content-area titlebar-no-drag" style={displayWidth ? { width: displayWidth } : undefined}>
+    <div className="relative flex h-full min-w-0 shrink-0 overflow-hidden bg-content-area titlebar-no-drag" style={width ? { width } : undefined}>
       <RightWorkspaceTitlebarDragRegion isWindows={isWindows} />
       <div className={isWindows ? 'flex h-full min-w-0 flex-1 flex-col pt-[34px]' : 'flex h-full min-w-0 flex-1 flex-col'}>
         <Toolbar
