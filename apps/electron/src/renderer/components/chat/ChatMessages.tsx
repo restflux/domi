@@ -411,7 +411,7 @@ export function ChatMessages({
   const dividerSet = new Set(contextDividers)
 
   return (
-    <Conversation resize={ready && !transitioning ? 'smooth' : 'instant'} className={cn(ready ? (skipFadeIn ? 'opacity-100' : 'opacity-100 transition-opacity duration-200') : 'opacity-0', hero && 'flex-none')}>
+    <Conversation resize={ready && !transitioning ? 'smooth' : 'instant'} className={cn('w-full', ready ? (skipFadeIn ? 'opacity-100' : 'opacity-100 transition-opacity duration-200') : 'opacity-0', hero && 'flex-none')}>
       <ScrollPositionManager id={conversationId} ready={ready} />
       {/* 滚动到顶部时自动加载更多历史 */}
       <ScrollTopLoader
@@ -419,7 +419,8 @@ export function ChatMessages({
         loading={loadingMore}
         onLoadMore={handleLoadMore}
       />
-      <ConversationContent>
+      {/* 滚动容器占满全宽（滚动条贴可用区右缘），内容用 conversation-narrow 收束居中。 */}
+      <ConversationContent className="conversation-narrow">
         {messages.length === 0 && !streaming ? (
           <EmptyState compact={hero} />
         ) : (

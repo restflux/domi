@@ -84,7 +84,7 @@ export function WorkWelcomeEmptyState({ onPickPrompt }: WorkWelcomeEmptyStatePro
       <div
         data-work-welcome-empty-state="true"
         data-welcome-variant="quiet"
-        className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-8"
+        className="flex min-h-0 w-full flex-1 items-center justify-center overflow-y-auto px-6 py-8"
       >
         <div className="flex w-full max-w-[38rem] flex-col items-center gap-7 text-center">
           <DomiConstructionWordmark />
@@ -97,7 +97,7 @@ export function WorkWelcomeEmptyState({ onPickPrompt }: WorkWelcomeEmptyStatePro
   return (
     <div
       data-work-welcome-empty-state="true"
-      className="relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-8"
+      className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-y-auto px-6 py-8"
     >
       <WelcomeWatermark placement="centered" />
       <div className="relative z-10 flex w-full max-w-[44rem] flex-col items-center gap-7">

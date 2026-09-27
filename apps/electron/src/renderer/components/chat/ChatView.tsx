@@ -662,10 +662,11 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       <div className="flex flex-col h-full flex-1 min-w-0">
         {/* Header 在 max-w 外，按钮可到达最右侧 */}
         <ChatHeader conversation={conversation} />
-        <div className="conversation-column flex flex-col flex-1 w-full max-w-[min(72rem,100%)] mx-auto overflow-hidden min-h-0">
+        {/* 会话列占满可用宽度；滚动条贴可用区右缘，内部内容用 conversation-narrow 收束居中。 */}
+        <div className="flex flex-col flex-1 w-full items-center overflow-hidden min-h-0">
           {/* Hero 布局顶部弹性占位：把问候语 + 输入框组合推向视觉中心，品牌水印从中垂下 */}
           {isChatSessionEmpty && (
-            <div aria-hidden="true" className="relative min-h-4 flex-1">
+            <div aria-hidden="true" className="relative min-h-4 w-full flex-1">
               <WelcomeWatermark />
             </div>
           )}
@@ -696,30 +697,34 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
 
           {/* 错误提示 */}
           {chatError && (
-            <div className="mx-4 mb-2 px-4 py-2.5 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center gap-2">
-              <AlertCircle className="size-4 shrink-0" />
-              <span className="flex-1 break-all">{chatError}</span>
-              <button
-                type="button"
-                className="shrink-0 p-0.5 rounded hover:bg-destructive/10 transition-colors"
-                onClick={() => {
-                  setChatStreamErrors((prev) => {
-                    const map = new Map(prev)
-                    map.delete(conversationId)
-                    return map
-                  })
-                }}
-              >
-                <X className="size-3.5" />
-              </button>
+            <div className="conversation-narrow">
+              <div className="mx-4 mb-2 px-4 py-2.5 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+                <AlertCircle className="size-4 shrink-0" />
+                <span className="flex-1 break-all">{chatError}</span>
+                <button
+                  type="button"
+                  className="shrink-0 p-0.5 rounded hover:bg-destructive/10 transition-colors"
+                  onClick={() => {
+                    setChatStreamErrors((prev) => {
+                      const map = new Map(prev)
+                      map.delete(conversationId)
+                      return map
+                    })
+                  }}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
           {/* Agent 模式推荐横幅 */}
-          <AgentRecommendBanner />
+          <div className="conversation-narrow">
+            <AgentRecommendBanner />
+          </div>
 
-          {/* 底部：输入框；Hero 布局下收窄居中 */}
-          <div className={cn(isChatSessionEmpty && 'mx-auto w-full max-w-[48rem]')}>
+          {/* 底部：输入框；Hero 布局下收窄居中，普通会话随消息列收束宽度。 */}
+          <div className={cn(isChatSessionEmpty ? 'mx-auto w-full max-w-[48rem]' : 'conversation-narrow')}>
             <ChatInput
               conversationId={conversationId}
               streaming={isStreaming}
@@ -732,7 +737,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
           </div>
 
           {/* Hero 布局底部弹性占位：与顶部 spacer 共同保证输入框组合垂直居中 */}
-          {isChatSessionEmpty && <div aria-hidden="true" className="min-h-4 flex-1" />}
+          {isChatSessionEmpty && <div aria-hidden="true" className="min-h-4 w-full flex-1" />}
         </div>
       </div>
 

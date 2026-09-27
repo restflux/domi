@@ -180,7 +180,7 @@ export function AgentHeader({
   return (
     <>
       {isModern && tabBarSlot ? createPortal(toolbar, tabBarSlot) : showInlineToolbar ? (
-        <div className="relative z-[51] flex h-10 items-center justify-end px-4">
+        <div className="conversation-narrow relative z-[51] flex h-10 items-center justify-end px-4">
           <div className={cn('absolute inset-0 titlebar-drag-region pointer-events-none', isWindows && WINDOW_CONTROLS_INSET_RIGHT)} />
           {toolbar}
         </div>

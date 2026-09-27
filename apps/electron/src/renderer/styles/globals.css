@@ -1929,8 +1929,16 @@
   color: hsl(var(--muted-foreground));
 }
 
-/* 宽屏收束正文与输入区，窄屏继续占满可用空间；侧栏、右工作区不受影响。 */
-:root.ui-modern .conversation-column {
+/* 消息区内容收束：滚动容器占满可用宽度让滚动条贴可用区右缘，
+ * 正文、横幅与输入框仍收束居中；窄屏继续占满可用空间。
+ * 默认上限 72rem；现代界面（ui-modern）收窄为 48rem。 */
+.conversation-narrow {
+  width: 100%;
+  max-width: min(72rem, 100%);
+  margin-inline: auto;
+}
+
+:root.ui-modern .conversation-narrow {
   max-width: min(48rem, 100%);
 }
 

@@ -4557,7 +4557,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     <>
     <SessionFilesConversationLayout sessionId={sessionId}>
     <AgentSessionProvider sessionId={sessionId}>
-      <div data-agent-session-id={sessionId} className="conversation-column flex h-full min-h-0 flex-1 min-w-0 max-w-[min(72rem,100%)] flex-col overflow-hidden mx-auto">
+      {/* 会话列占满可用宽度；滚动条贴可用区右缘，内部内容用 conversation-narrow 收束居中。 */}
+      <div data-agent-session-id={sessionId} className="flex h-full min-h-0 flex-1 min-w-0 flex-col items-center overflow-hidden">
         {/* Agent Header */}
         <AgentHeader
           sessionId={sessionId}
@@ -4600,18 +4601,23 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         )}
 
         {/* 权限请求横幅 */}
-        <PermissionBanner sessionId={sessionId} />
+        <div className="conversation-narrow">
+          <PermissionBanner sessionId={sessionId} />
+        </div>
 
         {/* AskUserQuestion 交互式问答横幅 */}
-        <AskUserBanner sessionId={sessionId} />
-
+        <div className="conversation-narrow">
+          <AskUserBanner sessionId={sessionId} />
+        </div>
 
         {/* ExitPlanMode 计划审批横幅 */}
-        <ExitPlanModeBanner sessionId={sessionId} />
+        <div className="conversation-narrow">
+          <ExitPlanModeBanner sessionId={sessionId} />
+        </div>
 
         {/* 输入区域 — 交互横幅显示时隐藏，由横幅替代；所有会话保持相同宽度。 */}
         {!hasBannerOverlay && (
-        <div className={cn(AGENT_CONTENT_GUTTER_CLASS, 'pb-2.5 md:pb-[18px]')}>
+        <div className={cn('conversation-narrow', AGENT_CONTENT_GUTTER_CLASS, 'pb-2.5 md:pb-[18px]')}>
           {((!sessionTargetState.snapshot && sessionTargetState.loading) || workspaceSendDeferred) && (
             <div
               className="flex items-center justify-center gap-2 pb-2 text-xs text-muted-foreground"

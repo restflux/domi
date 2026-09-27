@@ -923,7 +923,7 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
   return (
     <AgentBrowserLinkProvider sessionId={sessionId}>
     <BasePathsProvider basePaths={messageBasePaths}>
-    <div ref={historySelectionRootRef} className="relative flex min-h-0 flex-1 flex-col">
+    <div ref={historySelectionRootRef} className="relative flex min-h-0 w-full flex-1 flex-col">
       <Conversation resize={ready && !transitioning && !historyExpansionInFlight ? 'smooth' : 'instant'} className={ready ? (skipFadeIn ? 'opacity-100' : 'opacity-100 transition-opacity duration-200') : 'opacity-0'}>
         <ScrollPositionManager id={sessionId} ready={ready} />
         <AgentBottomFollowManager sessionId={sessionId} requestRevision={bottomFollowRevision} />
@@ -934,7 +934,8 @@ export function AgentMessages({ sessionId, sessionModelId, messagesLoaded, persi
           onLoad={handleAutoLoadHistory}
         />
         <PlanPreviewScrollControlProvider>
-          <ConversationContent className={AGENT_CONTENT_GUTTER_CLASS}>
+          {/* 滚动容器占满全宽（滚动条贴可用区右缘），内容用 conversation-narrow 收束居中。 */}
+          <ConversationContent className={cn(AGENT_CONTENT_GUTTER_CLASS, 'conversation-narrow')}>
           {!hasContent && !streaming && !shouldRenderPendingPlan ? (
             <EmptyState />
           ) : (
