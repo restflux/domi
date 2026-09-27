@@ -10,6 +10,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import {
   DEFAULT_INTERFACE_VARIANT,
   DEFAULT_THEME_MODE,
+  DEFAULT_THEME_STYLE,
   DEFAULT_WORK_SIDEBAR_PREFERENCES,
 } from '../../types'
 import type {
@@ -192,11 +193,16 @@ function normalizeSettings(data: PersistedSettings): {
     ...settings
   } = data
 
+  // 界面风格已统一为 V2 且不再提供切换入口；旧持久化值（classic / modern）一律归一到默认。
+  // 特殊风格入口已隐藏；旧的特殊主题模式回退为默认主题，避免用户留在无入口的状态。
+  const legacySpecialTheme = data.themeMode === 'special'
+
   return {
     settings: {
       ...settings,
-      themeMode: data.themeMode || DEFAULT_THEME_MODE,
-      interfaceVariant: data.interfaceVariant || DEFAULT_INTERFACE_VARIANT,
+      themeMode: legacySpecialTheme ? DEFAULT_THEME_MODE : (data.themeMode || DEFAULT_THEME_MODE),
+      themeStyle: legacySpecialTheme ? DEFAULT_THEME_STYLE : settings.themeStyle,
+      interfaceVariant: DEFAULT_INTERFACE_VARIANT,
       workSidebarPreferences: normalizeWorkSidebarPreferences(data.workSidebarPreferences),
       agentRtkEnabled: data.agentRtkEnabled === true,
       onboardingCompleted: data.onboardingCompleted ?? false,

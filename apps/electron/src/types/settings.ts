@@ -204,11 +204,11 @@ export const DEFAULT_THEME_MODE: ThemeMode = 'dark'
 /** 默认特殊风格 */
 export const DEFAULT_THEME_STYLE: ThemeStyle = 'default'
 
-/** 界面风格：v2 使用独立的 ZCode 风格 Workbench 呈现，保留旧版回退。 */
+/** 界面风格：V2（ZCode 风格 Workbench）是唯一用户可见形态；classic / modern 仅作旧数据兼容回退。 */
 export type InterfaceVariant = 'classic' | 'modern' | 'workbench-v2'
 
 /** 默认界面风格 */
-export const DEFAULT_INTERFACE_VARIANT: InterfaceVariant = 'modern'
+export const DEFAULT_INTERFACE_VARIANT: InterfaceVariant = 'workbench-v2'
 
 /** Markdown 预览字号档位 */
 export type MarkdownFontSize = 'small' | 'medium' | 'large'

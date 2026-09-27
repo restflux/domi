@@ -291,3 +291,33 @@ describe('Settings Pi-only 字段迁移', () => {
     expect(updated.notificationsEnabled).toBe(false)
   })
 })
+
+describe('界面风格统一 V2 与特殊风格隐藏', () => {
+  test('Given 旧配置停留在 classic / modern When 读取 Then 界面风格一律归一为 V2', () => {
+    atomicWrite = () => undefined
+    for (const variant of ['classic', 'modern', 'workbench-v2', undefined]) {
+      writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark', interfaceVariant: variant }), 'utf-8')
+      expect(getSettings().interfaceVariant).toBe('workbench-v2')
+    }
+  })
+
+  test('Given 旧配置停留在特殊主题模式 When 读取 Then 回退默认主题并清除特殊风格', () => {
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'special', themeStyle: 'ocean-dark' }), 'utf-8')
+    atomicWrite = () => undefined
+
+    const settings = getSettings()
+
+    expect(settings.themeMode).toBe('dark')
+    expect(settings.themeStyle).toBe('default')
+  })
+
+  test('Given 非特殊主题模式 When 读取 Then 保留用户主题选择', () => {
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'light', themeStyle: 'default' }), 'utf-8')
+    atomicWrite = () => undefined
+
+    const settings = getSettings()
+
+    expect(settings.themeMode).toBe('light')
+    expect(settings.themeStyle).toBe('default')
+  })
+})

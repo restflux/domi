@@ -16,7 +16,6 @@ import { DEFAULT_INTERFACE_VARIANT, THEME_STYLES, type InterfaceVariant, type Th
 /** localStorage 缓存键 */
 const THEME_CACHE_KEY = 'domi-theme-mode'
 const THEME_STYLE_CACHE_KEY = 'domi-theme-style'
-const INTERFACE_VARIANT_CACHE_KEY = 'domi-interface-variant'
 
 /**
  * 从 localStorage 读取缓存的主题模式
@@ -24,7 +23,8 @@ const INTERFACE_VARIANT_CACHE_KEY = 'domi-interface-variant'
 function getCachedThemeMode(): ThemeMode {
   try {
     const cached = localStorage.getItem(THEME_CACHE_KEY)
-    if (cached === 'light' || cached === 'dark' || cached === 'system' || cached === 'special') {
+    // 特殊风格入口已隐藏：旧缓存中的 special 视为无效，回退到默认主题
+    if (cached === 'light' || cached === 'dark' || cached === 'system') {
       return cached
     }
   } catch {
@@ -52,14 +52,7 @@ function getCachedThemeStyle(): ThemeStyle {
  * 从 localStorage 读取缓存的界面风格
  */
 function getCachedInterfaceVariant(): InterfaceVariant {
-  try {
-    const cached = localStorage.getItem(INTERFACE_VARIANT_CACHE_KEY)
-    if (cached === 'classic' || cached === 'modern' || cached === 'workbench-v2') {
-      return cached
-    }
-  } catch {
-    // localStorage 不可用时忽略
-  }
+  // 界面风格已统一为 V2：不再读取用户切换值，旧缓存（classic / modern）一律回退到默认
   return DEFAULT_INTERFACE_VARIANT
 }
 
@@ -80,17 +73,6 @@ function cacheThemeMode(mode: ThemeMode): void {
 function cacheThemeStyle(style: ThemeStyle): void {
   try {
     localStorage.setItem(THEME_STYLE_CACHE_KEY, style)
-  } catch {
-    // localStorage 不可用时忽略
-  }
-}
-
-/**
- * 缓存界面风格到 localStorage
- */
-function cacheInterfaceVariant(variant: InterfaceVariant): void {
-  try {
-    localStorage.setItem(INTERFACE_VARIANT_CACHE_KEY, variant)
   } catch {
     // localStorage 不可用时忽略
   }
@@ -225,7 +207,6 @@ export async function initializeTheme(
   if (setInterfaceVariant) {
     setInterfaceVariant(interfaceVariant)
   }
-  cacheInterfaceVariant(interfaceVariant)
 
   // 获取系统主题
   const isDark = await window.electronAPI.getSystemTheme()
@@ -249,7 +230,6 @@ export async function initializeTheme(
     }
     if (setInterfaceVariant) {
       setInterfaceVariant(variant)
-      cacheInterfaceVariant(variant)
     }
   })
 
@@ -271,16 +251,10 @@ export async function updateThemeMode(mode: ThemeMode): Promise<void> {
 
 /**
  * 更新特殊风格并持久化
+ *
+ * 特殊风格入口已隐藏，仅保留“重置回 default”的路径（如命令面板切回基础主题时）。
  */
 export async function updateThemeStyle(style: ThemeStyle): Promise<void> {
   cacheThemeStyle(style)
   await window.electronAPI.updateSettings({ themeStyle: style })
-}
-
-/**
- * 更新界面风格并持久化
- */
-export async function updateInterfaceVariant(variant: InterfaceVariant): Promise<void> {
-  cacheInterfaceVariant(variant)
-  await window.electronAPI.updateSettings({ interfaceVariant: variant })
 }

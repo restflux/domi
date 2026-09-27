@@ -13,12 +13,10 @@ import {
   Bot,
   Check,
   Keyboard,
-  Layers,
   ListTodo,
   MessageSquare,
   Monitor,
   Moon,
-  Palette,
   PanelLeft,
   Plus,
   Search,
@@ -42,34 +40,17 @@ import { settingsOpenAtom } from '@/atoms/settings-tab'
 import { shortcutGuideOpenAtom } from '@/atoms/shortcut-guide'
 import { sidebarCollapsedAtom } from '@/atoms/tab-atoms'
 import {
-  applyInterfaceVariantToDOM,
-  interfaceVariantAtom,
   themeModeAtom,
   themeStyleAtom,
-  updateInterfaceVariant,
   updateThemeMode,
   updateThemeStyle,
 } from '@/atoms/theme'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { useOpenSession } from '@/hooks/useOpenSession'
-import type { InterfaceVariant, ThemeMode, ThemeStyle } from '../../../types'
+import type { ThemeMode } from '../../../types'
 
 /** 命令面板中列出的最近会话数量上限 */
 const MAX_SESSION_ITEMS = 8
-
-/** 特殊主题显示名（与 AppearanceSettings 的 SPECIAL_STYLES 保持一致） */
-const SPECIAL_THEME_LABELS: Record<Exclude<ThemeStyle, 'default'>, string> = {
-  'ocean-light': '晴空碧海',
-  'ocean-dark': '远山暮霭',
-  'forest-light': '森息晨光',
-  'forest-dark': '森息夜语',
-  'slate-light': '云朵舞者',
-  'slate-dark': '莫兰迪夜',
-  'ember-dark': '石墨余烬',
-  'blossom-mist-light': '桃岚映水',
-  'cloud-citadel-light': '云阙新霁',
-  'terminal-dark': '旧屏微光',
-}
 
 /** 基础主题模式选项 */
 const BASE_THEME_MODES: Array<{ mode: ThemeMode; label: string }> = [
@@ -86,7 +67,6 @@ export function CommandPalette(): React.ReactElement {
   const appMode = useAtomValue(appModeAtom)
   const themeMode = useAtomValue(themeModeAtom)
   const themeStyle = useAtomValue(themeStyleAtom)
-  const interfaceVariant = useAtomValue(interfaceVariantAtom)
   const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
   const setSettingsOpen = useSetAtom(settingsOpenAtom)
   const setSearchOpen = useSetAtom(searchDialogOpenAtom)
@@ -108,22 +88,6 @@ export function CommandPalette(): React.ReactElement {
     void updateThemeMode(mode)
     void updateThemeStyle('default')
   }, [store])
-
-  /** 应用特殊主题 */
-  const applySpecialTheme = React.useCallback((style: Exclude<ThemeStyle, 'default'>): void => {
-    store.set(themeModeAtom, 'special')
-    store.set(themeStyleAtom, style)
-    void updateThemeMode('special')
-    void updateThemeStyle(style)
-  }, [store])
-
-  /** 切换界面形态（经典 / 现代） */
-  const toggleInterfaceVariant = React.useCallback((): void => {
-    const next: InterfaceVariant = interfaceVariant === 'classic' ? 'modern' : 'classic'
-    store.set(interfaceVariantAtom, next)
-    void updateInterfaceVariant(next)
-    applyInterfaceVariantToDOM(next)
-  }, [store, interfaceVariant])
 
   const recentConversations = React.useMemo(
     () => [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSION_ITEMS),
@@ -177,10 +141,6 @@ export function CommandPalette(): React.ReactElement {
             <ListTodo />
             打开任务 / 日程窗口
           </CommandItem>
-          <CommandItem onSelect={() => run(toggleInterfaceVariant)}>
-            <Layers />
-            切换界面形态（{interfaceVariant === 'classic' ? '经典 → 现代' : '现代 → 经典'}）
-          </CommandItem>
         </CommandGroup>
 
         {recentConversations.length > 0 && (
@@ -219,15 +179,6 @@ export function CommandPalette(): React.ReactElement {
               {mode === 'light' ? <Sun /> : mode === 'dark' ? <Moon /> : <Monitor />}
               <span>{label}</span>
               {themeMode === mode && themeStyle === 'default' && (
-                <Check className="ml-auto text-primary" />
-              )}
-            </CommandItem>
-          ))}
-          {(Object.keys(SPECIAL_THEME_LABELS) as Array<Exclude<ThemeStyle, 'default'>>).map((style) => (
-            <CommandItem key={style} onSelect={() => run(() => applySpecialTheme(style))}>
-              <Palette />
-              <span>{SPECIAL_THEME_LABELS[style]}</span>
-              {themeMode === 'special' && themeStyle === style && (
                 <Check className="ml-auto text-primary" />
               )}
             </CommandItem>
