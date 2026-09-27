@@ -43,6 +43,33 @@ export interface SessionTargetControlProps {
   }
 }
 
+interface CompactLocalCopy {
+  label: string
+  location: string
+  status: string
+  branch: string
+  description: string
+}
+
+/** 经典界面沿用既有术语；现代顶栏直接说明修改落在用户的项目文件夹。 */
+export function getCompactLocalCopy(modern: boolean): CompactLocalCopy {
+  return modern
+    ? {
+        label: '本地项目',
+        location: '本地项目（直接修改）',
+        status: '直接修改',
+        branch: '当前分支',
+        description: '修改会直接写入本地项目文件夹，不会创建隔离副本。',
+      }
+    : {
+        label: 'Local',
+        location: 'Local Checkout',
+        status: 'Local',
+        branch: '当前 Git',
+        description: '当前会话直接使用 Local Checkout。',
+      }
+}
+
 const STATUS_CLASSES: Record<SessionTargetStatusViewModel['tone'], string> = {
   neutral: 'bg-muted text-muted-foreground',
   progress: 'bg-primary/10 text-primary',
@@ -121,31 +148,54 @@ export function SessionTargetControl({
   )
 
   if (compact) {
+    const localCopy = getCompactLocalCopy(hideProjectName)
     // 常态和正常验收只呈现轻量身份；恢复/清理异常仍使用警告色，其他进度状态保留强调。
     const quietWorktreeStatus = hideProjectName && isWorktree && (
       model.status.tone === 'ready' || model.status.tone === 'muted'
       || target.delivery?.state === 'ready_for_review' || target.delivery?.state === 'preview_active'
     )
+    const quietLocalStatus = hideProjectName && !isWorktree && (model.status.tone === 'ready' || model.status.tone === 'muted')
+    const quietTargetStatus = quietWorktreeStatus || quietLocalStatus
+    const highlightWorktreeIcon = hideProjectName && isWorktree && model.status.tone === 'ready'
+      && (!target.delivery || target.delivery.state === 'working')
     const iteration = target.delivery?.state === 'working' || target.delivery?.state === 'delivered'
       ? target.delivery.iteration
       : target.delivery?.review.iteration
     const checkpointCount = target.checkpoints?.length ?? 0
     const productLabel = hideProjectName
-      ? isWorktree ? `Worktree · ${model.status.label}` : 'Local'
+      ? isWorktree ? `Worktree · ${model.status.label}` : localCopy.label
       : isWorktree
         ? model.status.label === '已交付' || model.status.label === '已放弃'
           ? model.status.label
           : checkpointCount > 0 && target.delivery?.state === 'working'
             ? `Worktree · ${checkpointCount} 个阶段未交付`
             : `Worktree · ${model.status.label}`
-        : 'Local'
+        : localCopy.label
     const canReveal = !!onRevealTarget && target.checkout.phase !== 'discarded'
+    let description: string
+    if (target.delivery?.state === 'delivered') {
+      description = '本轮已经提交并清理；后续可在当前会话创建新的 Worktree。'
+    } else if (target.delivery?.state === 'retained') {
+      description = '本轮已经提交，当前运行环境处于冻结保留状态。'
+    } else if (!isWorktree) {
+      description = localCopy.description
+    } else if (hideProjectName && target.delivery?.state === 'preview_active') {
+      description = '修改已预览到本地项目，可撤回；确认保存后才正式保留。'
+    } else if (checkpointCount > 0) {
+      description = hideProjectName
+        ? `当前独立工作区已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
+        : `当前 Worktree 已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
+    } else {
+      description = hideProjectName
+        ? '修改先在独立工作区进行，不会直接写入本地项目。'
+        : '当前会话在独立 Worktree 中工作。'
+    }
     const tooltip = (
       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-        <span className="text-muted-foreground">修改环境</span><span>{isWorktree ? '隔离 Worktree' : 'Local Checkout'}</span>
-        <span className="text-muted-foreground">状态</span><span>{model.status.label}</span>
+        <span className="text-muted-foreground">修改环境</span><span>{isWorktree ? hideProjectName ? '独立工作区（Worktree）' : '隔离 Worktree' : localCopy.location}</span>
+        <span className="text-muted-foreground">状态</span><span>{!isWorktree && model.status.label === 'Local' ? localCopy.status : model.status.label}</span>
         {model.identity.sourceLabel ? <><span className="text-muted-foreground">来源</span><span>{model.identity.sourceLabel.replace(/^来自\s*/, '')} · {target.source?.oid.slice(0, 7)}</span></> : null}
-        {model.identity.branchLabel ? <><span className="text-muted-foreground">当前 Git</span><span>{model.identity.branchLabel} · {model.identity.headLabel}</span></> : null}
+        {model.identity.branchLabel ? <><span className="text-muted-foreground">{hideProjectName ? '当前分支' : '当前 Git'}</span><span>{model.identity.branchLabel} · {model.identity.headLabel}</span></> : null}
         {iteration ? <><span className="text-muted-foreground">Iteration</span><span>{iteration}</span></> : null}
         {checkpointCount > 0 ? <><span className="text-muted-foreground">阶段保存</span><span>已保存 {checkpointCount} 个，尚未交付到 Local</span></> : null}
         {target.delivery?.state === 'retained' ? <><span className="text-muted-foreground">保留</span><span>{target.delivery.expiresAt ? new Date(target.delivery.expiresAt).toLocaleString() : '手动清理'}</span></> : null}
@@ -164,8 +214,8 @@ export function SessionTargetControl({
                   data-session-handoff-available={sessionHandoffAction ? 'true' : undefined}
                   className={cn(
                     'inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10px] transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    quietWorktreeStatus ? 'font-medium' : 'font-semibold',
-                    quietWorktreeStatus
+                    quietTargetStatus ? 'font-medium' : 'font-semibold',
+                    quietTargetStatus
                       ? 'border-transparent bg-transparent text-muted-foreground hover:text-foreground'
                       : model.status.tone === 'warning'
                         ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300'
@@ -174,7 +224,7 @@ export function SessionTargetControl({
                           : 'border-border/50 bg-background/60 text-muted-foreground',
                   )}
                 >
-                  <CompactTargetIcon className="size-3" aria-hidden="true" />
+                  <CompactTargetIcon className={cn('size-3', highlightWorktreeIcon && 'text-sky-600 dark:text-sky-400')} aria-hidden="true" />
                   {productLabel}
                   <ChevronDown className="size-3 opacity-60" />
                 </button>
@@ -185,13 +235,7 @@ export function SessionTargetControl({
           <PopoverContent align="end" className="w-80 space-y-3 p-3">
             <div>
               <div className="text-sm font-medium">{productLabel}</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {target.delivery?.state === 'delivered'
-                  ? '本轮已经提交并清理；后续可在当前会话创建新的 Worktree。'
-                  : target.delivery?.state === 'retained'
-                    ? '本轮已经提交，当前运行环境处于冻结保留状态。'
-                    : isWorktree ? checkpointCount > 0 ? `当前 Worktree 已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。` : '当前会话在独立 Worktree 中工作。' : '当前会话直接使用 Local Checkout。'}
-              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{description}</p>
             </div>
             <div className="rounded-md bg-muted/40 p-2.5">{tooltip}</div>
             <div className="grid gap-1">

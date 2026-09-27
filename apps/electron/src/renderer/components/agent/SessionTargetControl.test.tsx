@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { SessionTargetDisplayInput } from '@/lib/session-target-view-model.ts'
 import { TooltipProvider } from '@/components/ui/tooltip.tsx'
-import { SessionTargetControl } from './SessionTargetControl.tsx'
+import { SessionTargetControl, getCompactLocalCopy } from './SessionTargetControl.tsx'
 
 function target(kind: 'local' | 'isolated'): SessionTargetDisplayInput {
   return {
@@ -73,6 +73,24 @@ describe('SessionTargetControl compact header', () => {
     }
   })
 
+  test('现代 Local 顶部采用本地项目文案与透明入口，明确修改会写入原文件夹', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <SessionTargetControl target={target('local')} compact hideProjectName disabled onChooseTarget={() => undefined} />
+      </TooltipProvider>,
+    )
+    const modernCopy = getCompactLocalCopy(true)
+    expect(html).toContain('>本地项目<')
+    expect(html).toContain('border-transparent bg-transparent text-muted-foreground')
+    expect(html).not.toContain('text-sky-600')
+    expect(modernCopy.location).toBe('本地项目（直接修改）')
+    expect(modernCopy.status).toBe('直接修改')
+    expect(modernCopy.branch).toBe('当前分支')
+    expect(modernCopy.description).toContain('直接写入本地项目文件夹')
+    expect(getCompactLocalCopy(false).description).toBe('当前会话直接使用 Local Checkout。')
+    expect(renderCompact('local')).toContain('Local')
+  })
+
   test('Given a Worktree target When rendered Then its isolated location is visually distinguishable', () => {
     const html = renderCompact('isolated')
 
@@ -93,7 +111,7 @@ describe('SessionTargetControl compact header', () => {
     expect(html).toContain('aria-label="当前修改环境"')
   })
 
-  test('现代 Work 顶部正常 Worktree 保留身份与入口，但不再使用蓝色底块', () => {
+  test('现代 Work 顶部正常 Worktree 保留身份与入口，以轻量蓝色图标提示隔离修改', () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <SessionTargetControl target={target('isolated')} compact hideProjectName disabled onChooseTarget={() => undefined} />
@@ -102,6 +120,7 @@ describe('SessionTargetControl compact header', () => {
     expect(html).toContain('Worktree · 修改中')
     expect(html).toContain('aria-haspopup="dialog"')
     expect(html).toContain('border-transparent bg-transparent text-muted-foreground')
+    expect(html).toContain('size-3 text-sky-600 dark:text-sky-400')
     expect(html).not.toContain('bg-sky-500/10')
     expect(html).not.toContain('text-sky-700')
     expect(renderCompact('isolated')).toContain('bg-sky-500/10')
@@ -124,6 +143,7 @@ describe('SessionTargetControl compact header', () => {
       )
       expect(html).toContain(`Worktree · ${delivery.state === 'ready_for_review' ? '待验收' : 'Local 验收中'}`)
       expect(html).toContain('border-transparent bg-transparent text-muted-foreground')
+      expect(html).not.toContain('text-sky-600')
       expect(html).not.toContain('bg-sky-500/10')
       expect(html).not.toContain('bg-amber-500/10')
       expect(html).toContain('aria-haspopup="dialog"')
