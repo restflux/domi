@@ -339,7 +339,6 @@ export function WorktreeReviewCard({
   const [checkpointMessage, setCheckpointMessage] = React.useState(notice?.review.suggestedCommitMessage ?? '')
   const [retention, setRetention] = React.useState<WorktreeRetentionMode>('cleanup')
   const [slotReleased, setSlotReleased] = React.useState(false)
-  const [detailsExpanded, setDetailsExpanded] = React.useState(false)
   const [regenerationRequested, setRegenerationRequested] = React.useState(false)
   const previousSlot = React.useRef<'available' | 'waiting' | undefined>(undefined)
   const automaticPreflightAttempt = React.useRef<string | null>(null)
@@ -435,7 +434,6 @@ export function WorktreeReviewCard({
             : refreshing
               ? '正在加载验收状态…'
               : null
-  const validationWarning = notice.review.validationStatus !== 'passed'
   const waitingForSlot = activeReview && delivery?.state === 'ready_for_review' && state.snapshot?.reviewSlot === 'waiting'
   const reviewSlotOwnerSessionId = waitingForSlot ? state.snapshot?.reviewSlotOwnerSessionId : undefined
   const collaborators = activeReview ? state.snapshot?.collaborators ?? [] : []
@@ -485,32 +483,6 @@ export function WorktreeReviewCard({
         : finalized
           ? '修改已经保存，只需重试环境清理。'
           : '可以继续开始下一轮修改。'
-  const decisionStep = delivery?.state === 'ready_for_review' ? 1 : 2
-  const reviewNeedsAttention = validationWarning
-    || staleIsolatedPreflight !== null
-    || preflightConflict !== null
-    || state.preflight?.status === 'blocked'
-  const newReview = activeReview && delivery?.state === 'ready_for_review' && !reviewNeedsAttention
-  const reviewTone = reviewNeedsAttention
-    ? 'amber'
-    : delivery?.state === 'ready_for_review'
-      ? 'sky'
-      : delivery?.state === 'preview_active' || delivery?.state === 'preview_detached' || finalized
-        ? 'amber'
-      : retained || delivered
-        ? 'emerald'
-        : 'muted'
-  const reviewDotClass = reviewTone === 'sky'
-    ? 'bg-sky-400'
-    : reviewTone === 'amber'
-      ? 'bg-amber-400'
-      : reviewTone === 'emerald'
-        ? 'bg-emerald-500'
-        : 'bg-muted-foreground/60'
-  const currentStepClass = reviewTone === 'sky'
-    ? 'border-sky-500/70 text-sky-400'
-    : 'border-amber-500/70 text-amber-400'
-
   const regenerateStaleReview = (): void => {
     if (!staleIsolatedPreflight || !identityMatches || regenerationRequested) return
     setRegenerationRequested(true)
@@ -626,125 +598,62 @@ export function WorktreeReviewCard({
   }
 
   return (
-    <div className="my-3" data-worktree-review-id={notice.reviewId}>
-      <div className="mb-4 text-sm">
-        <MessageResponse>{notice.detailsMarkdown}</MessageResponse>
-      </div>
-      <div
-        data-worktree-review-layout={activeReview ? 'split' : 'history'}
-        className={`overflow-hidden rounded-lg border border-border/70 bg-background/20 text-xs transition-opacity ${newReview ? 'border-l-2 border-l-sky-500/80' : reviewNeedsAttention && activeReview ? 'border-l-2 border-l-amber-500/80' : ''} ${cardBusy ? 'pointer-events-none opacity-60' : ''}`}
-        aria-busy={cardBusy}
-        {...(cardBusy ? { inert: '' } : {})}
-      >
-        {!activeReview ? (
-          <div data-worktree-review-section="history" className="flex flex-wrap items-center gap-3 px-4 py-3">
-            <ShieldCheck className={`size-4 shrink-0 ${discarded ? 'text-muted-foreground' : 'text-emerald-500'}`} />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span className="text-xs font-medium text-foreground">第 {notice.review.iteration} 轮{cardTitle}</span>
-                <span className="text-[10px] text-muted-foreground">{notice.review.changedFiles.length} 个文件</span>
-              </div>
-              {detailsExpanded ? <p className="mt-1 truncate text-[11px] text-muted-foreground" title={notice.review.summary}>{notice.review.summary}</p> : null}
-            </div>
-            <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[10px] text-muted-foreground" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded((expanded) => !expanded)}>
-              {detailsExpanded ? '收起详情' : '查看详情'}
-            </Button>
+    <div data-worktree-review-detail={notice.reviewId} className={`space-y-5 text-sm ${cardBusy ? 'pointer-events-none opacity-60' : ''}`} aria-busy={cardBusy} {...(cardBusy ? { inert: '' } : {})}>
+      <section data-worktree-detail-section="status" className="space-y-3 rounded-xl bg-muted/35 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">第 {notice.review.iteration} 轮 · {decisionTitle}</p>
+            <h3 className="text-base font-semibold">{cardTitle}</h3>
+            <p className="text-sm text-muted-foreground">{notice.review.summary}</p>
           </div>
-        ) : (
-        <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(272px,34%)]">
-          <section data-worktree-review-section="summary" className="min-w-0 p-4 md:px-5 md:py-4">
-            <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              <span>Review {String(notice.review.iteration).padStart(2, '0')}</span>
-              <span className={`size-1.5 rounded-full ${reviewDotClass}`} />
-              {newReview ? <span className="tracking-[0.08em] text-sky-400">新验收</span> : null}
-            </div>
-            <h3 className="mt-3 text-[22px] font-semibold tracking-[-0.02em] text-foreground">{cardTitle}</h3>
-            <p className="mt-1.5 max-w-3xl truncate text-sm leading-5 text-muted-foreground" title={notice.review.summary}>{notice.review.summary}</p>
-
-            <div className="mt-4 grid gap-3 text-[11px] text-muted-foreground sm:grid-cols-3 sm:divide-x sm:divide-border/60">
-              <div className="flex items-center gap-2 sm:pr-3">
-                <TestTube2 className={`size-4 shrink-0 ${validationWarning ? 'text-amber-500' : 'text-emerald-500'}`} />
-                <span>{validationLabel(notice.review.validationStatus)}</span>
-              </div>
-              <div className="flex items-center gap-2 sm:px-3">
-                <FileText className="size-4 shrink-0" />
-                <span>{notice.review.changedFiles.length} 个文件已更新</span>
-              </div>
-              <div className="flex items-center gap-2 sm:pl-3">
-                <RotateCcw className="size-4 shrink-0" />
-                <span>{previewDetached ? '当前项目已有新变化' : '预览可随时撤回'}</span>
-              </div>
-            </div>
-
-            <div className="mt-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-[11px] text-blue-300/75 transition-colors hover:text-blue-200"
-                aria-expanded={detailsExpanded}
-                onClick={() => setDetailsExpanded((expanded) => !expanded)}
-              >
-                {detailsExpanded ? '收起变更与技术详情' : '查看变更与技术详情'}
-                {detailsExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-              </button>
-              {savedCheckpoint ? (
-                <span className="border-l border-border/60 pl-3 text-[10px] text-muted-foreground">含 <span className="text-foreground/80">1</span> 个已保存进度</span>
-              ) : checkpoints.length > 0 ? (
-                <span className="border-l border-border/60 pl-3 text-[10px] text-muted-foreground">含 <span className="text-foreground/80">{checkpoints.length}</span> 个已保存进度</span>
+          <span className="rounded-full bg-background px-2.5 py-1 text-xs">{validationLabel(notice.review.validationStatus)}</span>
+        </div>
+        {activeReview ? <p className="text-xs text-muted-foreground">{decisionDescription}</p> : <p className="text-xs text-muted-foreground">历史记录，仅供回看</p>}
+        {activeReview ? <div aria-busy={cardBusy} className="flex flex-wrap items-center gap-2">
+              {activeReview && delivery?.state === 'ready_for_review' ? (
+                staleIsolatedPreflight ? (
+                  <Button type="button" className="" disabled={cardBusy} onClick={regenerateStaleReview}><RefreshCw />重新生成验收结果</Button>
+                ) : preflightConflict ? (
+                  <Button type="button" className="" disabled={cardBusy || state.preflightLoading === true} onClick={resolvePreflightConflict}><AlertTriangle />让 Agent 解决冲突</Button>
+                ) : (
+                  <Button type="button" className="" disabled={cardBusy || (!waitingForSlot && (state.preflightLoading === true || preflightBlocksSync))} title={waitingForSlot ? '点击查看正在预览此项目修改的任务' : undefined} onClick={() => waitingForSlot ? openReviewSlotOwner() : void operate({ action: 'preview' })}>
+                    {waitingForSlot ? '查看正在预览的任务' : preflightBlocksSync ? '请先处理阻塞' : '预览修改'}
+                  </Button>
+                )
               ) : null}
-            </div>
-
-            {detailsExpanded ? (
-              <div className="mt-3 space-y-2 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
-                {notice.review.validationSummary ? <p>{notice.review.validationSummary}</p> : null}
-                {notice.review.tests.map((test, index) => (
-                  <div key={`${test.command}-${index}`} className="grid grid-cols-[34px_minmax(0,1fr)] gap-2">
-                    <span className={test.status === 'passed' ? 'text-emerald-500' : test.status === 'failed' ? 'text-amber-500' : ''}>
-                      {test.status === 'passed' ? '通过' : test.status === 'failed' ? '失败' : '未运行'}
-                    </span>
-                    <code className="truncate">{test.command}</code>
+              {previewActive ? (
+                recoveryPreview ? (
+                  <Button type="button" className="" disabled={cardBusy} onClick={() => void operate({ action: 'rollback_preview' })}><RotateCcw />恢复并撤回预览</Button>
+                ) : (
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <Button type="button" className="" disabled={cardBusy || (blockedByCollaborator && !canReleaseAll)} onClick={() => blockedByCollaborator ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />{blockedByCollaborator ? '释放并保存' : '确认保存'}</Button>
+                    <Button type="button" variant="outline" className="" disabled={cardBusy} onClick={() => { void rollbackPreviewWithFallback() }}><RotateCcw />撤回预览</Button>
                   </div>
-                ))}
-                {activeReview && delivery?.state === 'ready_for_review' && !staleIsolatedPreflight ? (
-                  <PreflightDetails
-                    preflight={state.preflight}
-                    loading={state.preflightLoading === true}
-                    error={state.preflightError}
-                    onRetry={() => void preflight({ invalidateCached: true })}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-
-            {staleIsolatedPreflight ? (
-              <div className="mt-4 space-y-1.5 rounded-md border border-amber-500/25 bg-amber-500/5 p-2.5 text-[11px] text-amber-700 dark:text-amber-300">
-                <div className="font-medium">验收结果已过期，需要重新生成</div>
-                <p>后台任务、子 Agent 或其他进程仍在写入 Worktree。Domi 会先确认写入停止，再重新检查修改和测试结果。</p>
-              </div>
-            ) : null}
-            {!detailsExpanded && activeReview && delivery?.state === 'ready_for_review' && (preflightConflict || state.preflight?.status === 'blocked' || state.preflightError) ? (
-              <div className="mt-4">
-                <PreflightDetails
-                  preflight={state.preflight}
-                  loading={state.preflightLoading === true}
-                  error={state.preflightError}
-                  onRetry={() => void preflight({ invalidateCached: true })}
-                />
-              </div>
-            ) : null}
-            {slotReleased && activeReview && delivery?.state === 'ready_for_review' ? <p className="mt-3 text-[11px] text-emerald-600 dark:text-emerald-400">其他任务的预览已结束，现在可以继续。</p> : null}
-            {recoveryPreview ? (
-              <div className="mt-4 rounded-md border border-amber-500/25 bg-amber-500/5 p-2.5 text-[11px] text-amber-700 dark:text-amber-300">
-                Preview 操作曾被中断，Domi 已保留完整撤回证据。请先恢复并撤回 Preview，再重新同步验收。
-              </div>
-            ) : null}
-            {previewDetached ? (
-              <div className="mt-4 rounded-md border border-amber-500/25 bg-amber-500/5 p-2.5 text-[11px] text-amber-700 dark:text-amber-300">
-                当前项目在本次预览后发生了变化。Domi 会基于最新 Local 重新计算，不会覆盖无关修改。
-              </div>
-            ) : null}
-            {blockedByCollaborator ? (
-              <div className="mt-4 space-y-2 rounded-md border border-amber-500/25 bg-amber-500/5 p-2.5">
-                <p className="text-[11px] font-medium text-foreground">保存或清理前，需要结束以下协作会话的占用：</p>
+                )
+              ) : null}
+              {previewDetached ? <Button type="button" className="" disabled={cardBusy || directFinishBlock !== null} onClick={() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />保存修改</Button> : null}
+              {finalized ? <Button type="button" className="" disabled={cardBusy} onClick={() => void operate({ action: 'retry_cleanup' })}><RotateCcw />重试清理</Button> : null}
+        </div> : null}
+        {busyLabel ? <p role="status" className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{busyLabel}</p> : null}
+        {state.error ? <p className="text-xs text-destructive">{state.error.message}</p> : null}
+        {recoveryPreview ? <p className="text-xs text-amber-600">预览操作曾被中断，Domi 已保留撤回证据。请先恢复并撤回预览，再重新同步验收。</p> : null}
+        {previewDetached ? <p className="text-xs text-amber-600">保存时将基于最新 Local 重新计算变更；撤回预览前请确认当前项目的其他修改。</p> : null}
+        {waitingForSlot && activeReview ? <p className="text-xs text-amber-600">当前项目正由其他任务预览，暂不能写入。</p> : null}
+        {staleIsolatedPreflight ? <p className="text-xs text-amber-600">验收结果已过期，需要重新生成；后台任务、子 Agent 或其他进程仍在写入 Worktree 时，请等待其停止。</p> : null}
+        {activeReview && delivery?.state === 'ready_for_review' ? <PreflightDetails preflight={state.preflight} loading={state.preflightLoading === true} error={state.preflightError} onRetry={() => void preflight({ invalidateCached: true })} /> : null}
+      </section>
+      <section data-worktree-detail-section="changes" className="space-y-3">
+        <h3 className="text-sm font-semibold">修改文件 <span className="font-normal text-muted-foreground">{notice.review.changedFiles.length}</span></h3>
+        {notice.review.changedFiles.length ? <ul className="max-h-44 space-y-1 overflow-auto rounded-lg bg-muted/25 p-3 font-mono text-xs">{notice.review.changedFiles.map((file) => <li key={file} className="break-all">{file}</li>)}</ul> : <p className="text-xs text-muted-foreground">没有文件改动</p>}
+      </section>
+      <section data-worktree-detail-section="validation" className="space-y-3">
+        <h3 className="text-sm font-semibold">验证结果</h3>
+        {notice.review.validationSummary ? <p className="text-xs text-muted-foreground">{notice.review.validationSummary}</p> : null}
+        <div className="space-y-1">{notice.review.tests.map((test, index) => <div key={`${test.command}-${index}`} className="flex flex-wrap gap-x-3 rounded-md bg-muted/25 px-3 py-2 text-xs"><span className={test.status === 'passed' ? 'text-emerald-600' : test.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{test.status === 'passed' ? '通过' : test.status === 'failed' ? '失败' : '未运行'}</span><code className="min-w-0 break-all">{test.command}</code>{test.summary ? <span className="w-full text-muted-foreground">{test.summary}</span> : null}</div>)}</div>
+      </section>
+      {blockedByCollaborator ? <section data-worktree-detail-section="collaborators" className="space-y-2 rounded-lg bg-amber-500/5 p-3 text-xs">
+        <h3 className="font-medium">保存或清理前需要结束协作占用</h3>
+              <div className="space-y-2">
                 {collaborators.map((collaborator) => (
                   <div key={collaborator.sessionId} className="flex flex-wrap items-center gap-2 rounded bg-background/60 px-2 py-1.5">
                     <div className="min-w-0 flex-1">
@@ -758,57 +667,16 @@ export function WorktreeReviewCard({
                   </div>
                 ))}
               </div>
-            ) : null}
-          </section>
-
-          <aside data-worktree-review-section="decision" className={`flex flex-col border-t border-border/60 bg-background/20 p-4 md:border-l md:border-t-0 md:px-5 md:py-4 ${activeReview ? 'min-h-[224px]' : 'min-h-0'}`}>
-            <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-foreground">
-              {busyLabel ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <span className={`size-2 rounded-full ${reviewDotClass}`} />}
-              <span className="truncate">{busyLabel ?? decisionTitle}</span>
-            </div>
-
-            {activeReview && !finalized ? (
-              <div className="mt-4 flex items-center gap-2.5 text-[11px]">
-                <span className={`inline-flex size-6 items-center justify-center rounded border ${decisionStep === 1 ? currentStepClass : 'border-border text-muted-foreground'}`}>1</span>
-                <span className={decisionStep === 1 ? 'text-foreground' : 'text-muted-foreground'}>预览修改</span>
-                <span className="h-px min-w-5 flex-1 bg-border" />
-                <span className={`inline-flex size-6 items-center justify-center rounded border ${decisionStep === 2 ? currentStepClass : 'border-border text-muted-foreground'}`}>2</span>
-                <span className={decisionStep === 2 ? 'text-foreground' : 'text-muted-foreground'}>确认保存</span>
-              </div>
-            ) : null}
-
-            {activeReview ? <p className="mt-4 text-[12px] leading-5 text-muted-foreground">{decisionDescription}</p> : null}
-
-            <div className="mt-4">
-              {activeReview && delivery?.state === 'ready_for_review' ? (
-                staleIsolatedPreflight ? (
-                  <Button type="button" className="w-full" disabled={cardBusy} onClick={regenerateStaleReview}><RefreshCw />重新生成验收结果</Button>
-                ) : preflightConflict ? (
-                  <Button type="button" className="w-full" disabled={cardBusy || state.preflightLoading === true} onClick={resolvePreflightConflict}><AlertTriangle />让 Agent 解决冲突</Button>
-                ) : (
-                  <Button type="button" className="w-full" disabled={cardBusy || (!waitingForSlot && (state.preflightLoading === true || preflightBlocksSync))} title={waitingForSlot ? '点击查看正在预览此项目修改的任务' : undefined} onClick={() => waitingForSlot ? openReviewSlotOwner() : void operate({ action: 'preview' })}>
-                    {waitingForSlot ? '查看正在预览的任务' : preflightBlocksSync ? '请先处理阻塞' : '预览修改'}
-                  </Button>
-                )
-              ) : null}
-              {previewActive ? (
-                recoveryPreview ? (
-                  <Button type="button" className="w-full" disabled={cardBusy} onClick={() => void operate({ action: 'rollback_preview' })}><RotateCcw />恢复并撤回预览</Button>
-                ) : (
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                    <Button type="button" className="min-w-0" disabled={cardBusy || (blockedByCollaborator && !canReleaseAll)} onClick={() => blockedByCollaborator ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />{blockedByCollaborator ? '释放并保存' : '确认保存'}</Button>
-                    <Button type="button" variant="outline" className="shrink-0" disabled={cardBusy} onClick={() => { void rollbackPreviewWithFallback() }}><RotateCcw />撤回预览</Button>
-                  </div>
-                )
-              ) : null}
-              {previewDetached ? <Button type="button" className="w-full" disabled={cardBusy || directFinishBlock !== null} onClick={() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />保存修改</Button> : null}
-              {finalized ? <Button type="button" className="w-full" disabled={cardBusy} onClick={() => void operate({ action: 'retry_cleanup' })}><RotateCcw />重试清理</Button> : null}
-            </div>
-
-            <div className="mt-auto flex min-h-8 items-center gap-2 border-t border-border/60 pt-3">
-              <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[10px] text-muted-foreground">
-                {activeReview && !finalized ? <><ShieldCheck className="size-3.5 shrink-0 text-emerald-500/80" /><span className="truncate">{previewActive ? '仅保存本轮内容' : '可撤回，不会立即保存'}</span></> : !activeReview ? <span>{discarded ? '本轮已放弃' : retained ? '环境已保留' : delivered ? '已保存到当前项目' : '历史记录'}</span> : null}
-              </div>
+      </section> : null}
+      {notice.detailsMarkdown ? <details data-worktree-detail-section="report" className="rounded-lg bg-muted/25 p-3">
+        <summary className="cursor-pointer text-sm font-medium">完整验收说明</summary>
+        <div className="mt-3 text-sm"><MessageResponse>{notice.detailsMarkdown}</MessageResponse></div>
+      </details> : null}
+      <details data-worktree-detail-section="commit" className="rounded-lg bg-muted/25 p-3">
+        <summary className="cursor-pointer text-sm font-medium">建议提交信息</summary>
+        <pre className="mt-3 whitespace-pre-wrap break-words rounded bg-background p-3 text-xs">{notice.review.suggestedCommitMessage}</pre>
+      </details>
+      {activeReview ? <div data-worktree-detail-section="more-actions" className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
               {activeReview && (delivery?.state === 'ready_for_review' || previewActive) && !savedCheckpoint && !staleIsolatedPreflight && !preflightConflict ? (
                 <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-1.5 text-[10px] text-muted-foreground hover:bg-transparent hover:text-foreground" disabled={cardBusy || blockedByCollaborator} onClick={() => setCheckpointOpen(true)}>保存进度</Button>
               ) : null}
@@ -823,13 +691,7 @@ export function WorktreeReviewCard({
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : null}
-            </div>
-
-            {state.error ? <p className="mt-3 text-[11px] text-destructive">{state.error.message}</p> : null}
-          </aside>
-        </div>
-        )}
-      </div>
+      </div> : null}
 
       <AlertDialog open={handoffOpen} onOpenChange={setHandoffOpen}>
         <AlertDialogContent>

@@ -301,6 +301,36 @@ describe('Worktree continuation authorization', () => {
     })
   })
 
+  test('较新的续轮请求覆盖旧请求，宿主不能按旧 requestId 签发授权', async () => {
+    let beginCalls = 0
+    await expect(confirmAgentWorktreeIterationContinuation('session-1', 'request-1', new AgentWorktreeContinuationAuthorizationRegistry(), {
+      getMessages: () => [requestMessage(), requestMessage({ request_id: 'request-2', task: '新的任务' })],
+      assertIdle: async () => undefined,
+      inspectTarget: async () => sourceTarget,
+      beginNextIteration: async () => { beginCalls += 1; return continuationTarget },
+      createToken: () => 'old-token',
+    })).rejects.toMatchObject({ code: 'operation_not_allowed' })
+    expect(beginCalls).toBe(0)
+  })
+
+  test('普通续聊不丢失待确认请求，但预览修订或后台唤醒必须使旧请求失效', async () => {
+    const deps = (messages: SDKMessage[]) => ({
+      getMessages: () => messages,
+      assertIdle: async () => undefined,
+      inspectTarget: async () => sourceTarget,
+      beginNextIteration: async () => continuationTarget,
+      createToken: () => 'token-followup',
+    })
+    const user = { type: 'user', content: '请继续' } as unknown as SDKMessage
+    const confirmed = await confirmAgentWorktreeIterationContinuation('session-1', 'request-1', new AgentWorktreeContinuationAuthorizationRegistry(), deps([requestMessage(), user]))
+    expect(confirmed.authorizationToken).toBe('token-followup')
+    for (const subtype of ['worktree_preview_revision_requested', 'task_notification']) {
+      await expect(confirmAgentWorktreeIterationContinuation('session-1', 'request-1', new AgentWorktreeContinuationAuthorizationRegistry(), deps([
+        requestMessage(), user, { type: 'system', subtype, request_id: 'newer' } as unknown as SDKMessage,
+      ]))).rejects.toMatchObject({ code: 'operation_not_allowed' })
+    }
+  })
+
   test('请求来源 checkout 已变化时拒绝创建下一轮', async () => {
     let beginCalls = 0
     await expect(

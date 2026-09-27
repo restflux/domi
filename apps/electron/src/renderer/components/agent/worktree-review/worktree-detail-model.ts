@@ -1,5 +1,4 @@
-import type { SDKMessage, SDKSystemMessage, SDKUserMessage, SessionTargetView } from '@domi/shared'
-import { isUserInputMessage } from '@domi/session-core'
+import type { SDKMessage, SDKSystemMessage, SessionTargetView } from '@domi/shared'
 import { parseWorktreeIterationRequest } from './WorktreeIterationRequestCard.tsx'
 
 export function currentReviewMessage(sessionId: string, target: SessionTargetView | null): SDKSystemMessage | null {
@@ -36,10 +35,10 @@ export function isCurrentIterationRequest(message: SDKSystemMessage, sessionId: 
 export function findCurrentIterationRequest(messages: SDKMessage[], sessionId: string, target: SessionTargetView | null): SDKSystemMessage | null {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
-    if (message?.type === 'user' && isUserInputMessage(message as SDKUserMessage)) break
     if (message?.type === 'system' && message.subtype === 'task_notification') break
-    if (message?.type === 'system' && isCurrentIterationRequest(message as SDKSystemMessage, sessionId, target)) {
-      return message as SDKSystemMessage
+    if (message?.type === 'system' && (message.subtype === 'worktree_next_iteration_requested' || message.subtype === 'worktree_preview_revision_requested')) {
+      // 新请求覆盖旧请求；即便它的 Checkout 已失效，也不能退回更早的任务。
+      return isCurrentIterationRequest(message as SDKSystemMessage, sessionId, target) ? message as SDKSystemMessage : null
     }
   }
   return null

@@ -35,7 +35,6 @@ import { ProcessBlockGroup, buildAssistantTurnRenderItems } from './ProcessBlock
 import { ToolRunGroup } from './ToolRunGroup'
 import { buildProcessDetailUnits } from './tool-run-group'
 import { buildToolPresentationIndex, type ToolPresentationIndex } from './tool-presentation-index'
-import { WorktreeHistoryEvent } from './worktree-review/WorktreeDetailDialog.tsx'
 import { extractToolResultText, TASK_TOOL_NAMES } from './task-progress'
 import { normalizeThinkTagsInContentBlocks } from './thinking-tag-parser'
 // 会话转录的纯逻辑(Turn 分组 / 快照去重 / 预览)已下沉到 @domi/session-core 作为唯一真源。
@@ -570,8 +569,8 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
     )
   }
 
-  // 如果没有任何聊天区内容（例如本轮只有 TaskCreate / TaskUpdate），由任务浮层独立承载。
-  if (renderableTopLevelBlocks.length === 0 && !hasError) return null
+  // 没有过程也没有正文的 turn 不单独占位；独立的 system 说明仍由系统消息分支显示。
+  if (renderableTopLevelBlocks.length === 0 && !hasError && !turn.worktreeReport) return null
 
   const renderTopLevelBlock = (
     block: SDKContentBlock,
@@ -674,6 +673,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
           />
         )}
         </TurnFileMapProvider>
+        {turn.worktreeReport && <WorktreeReportText message={turn.worktreeReport} existingText={renderableTopLevelBlocks.filter((block) => block.type === 'text' && 'text' in block).map((block) => (block as { text: string }).text).join('\n\n')} />}
       </MessageContent>
       {/* 文件改动汇总：流式结束后展示本轮所有 Edit/Write/MultiEdit/NotebookEdit 文件 */}
       {!isStreaming && (
@@ -866,7 +866,7 @@ export function SDKMessageRenderer({
 
     if (compactStatus) return <CompactStatusNotice message={sysMsg} />
     if (subtype === 'worktree_handoff_created') return <WorktreeHandoffNotice message={sysMsg} />
-    if (subtype === 'worktree_ready_for_review' || subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return <WorktreeHistoryEvent message={sysMsg} sessionId={sessionId} />
+    if (subtype === 'worktree_ready_for_review' || subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return <WorktreeReportText message={sysMsg} />
     if (subtype === 'permission_denied') {
       return <PermissionDeniedNotice message={sysMsg} />
     }
@@ -1423,6 +1423,13 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact, onReli
   )
 }
 
+/** Worktree 终止工具的说明是交付正文，不是带有历史操作资格的 system 卡。 */
+function WorktreeReportText({ message, existingText = '' }: { message: SDKSystemMessage; existingText?: string }): React.ReactElement | null {
+  const details = (message as unknown as Record<string, unknown>).details_markdown
+  if (typeof details !== 'string' || !details.trim() || existingText.includes(details.trim())) return null
+  return <div data-worktree-report="true" className="mt-4 text-sm"><MessageResponse>{details}</MessageResponse></div>
+}
+
 // ===== MessageGroup 渲染器（统一入口，同时支持 turn 和单条消息） =====
 
 export interface MessageGroupRendererProps {
@@ -1515,7 +1522,7 @@ export function MessageGroupRenderer({ group, allMessages, basePath, basePaths, 
     const subtype = group.message.subtype
     if (getSDKCompactStatus(group.message)) return <div data-message-id={groupId}><CompactStatusNotice message={group.message} /></div>
     if (subtype === 'worktree_handoff_created') return <div data-message-id={groupId}><WorktreeHandoffNotice message={group.message} /></div>
-    if (subtype === 'worktree_ready_for_review' || subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return <div data-message-id={groupId}><WorktreeHistoryEvent message={group.message} sessionId={sessionId} /></div>
+    if (subtype === 'worktree_ready_for_review' || subtype === 'worktree_next_iteration_requested' || subtype === 'worktree_preview_revision_requested') return group.inlineWithTurn ? null : <div data-message-id={groupId} data-message-role="assistant"><WorktreeReportText message={group.message} /></div>
     if (subtype === 'permission_denied') return <div data-message-id={groupId}><PermissionDeniedNotice message={group.message} /></div>
     return null
   }

@@ -65,8 +65,13 @@ function readIterationRequest(message: unknown, requestId: string): WorktreeIter
 
 function findIterationRequest(messages: SDKMessage[], requestId: string): WorktreeIterationRequestRecord | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const request = readIterationRequest(messages[index], requestId)
-    if (request) return request
+    const message = messages[index]
+    if (message?.type !== 'system') continue
+    if (message.subtype === 'task_notification') return null
+    if (message.subtype === 'worktree_preview_revision_requested') return null
+    if (message.subtype !== 'worktree_next_iteration_requested') continue
+    // 只允许当前最新请求；目标与签发的 token 仍在 confirm/consume 时核验。
+    return readIterationRequest(message, requestId)
   }
   return null
 }

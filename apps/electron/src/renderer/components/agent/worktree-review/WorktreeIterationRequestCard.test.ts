@@ -122,7 +122,7 @@ describe('WorktreeIterationRequestCard parser', () => {
       }),
     ))
 
-    expect(html).toContain('确认后将执行的完整任务')
+    expect(html).toContain('确认后执行的完整任务')
     expect(html).toContain('修复按钮文案，并删除未使用的旧实现')
   })
 

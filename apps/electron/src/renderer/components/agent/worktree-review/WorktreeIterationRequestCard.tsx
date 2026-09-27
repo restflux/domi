@@ -1,9 +1,8 @@
 import * as React from 'react'
 import type { SDKSystemMessage } from '@domi/shared'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { GitBranchPlus, Loader2, RotateCcw } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button.tsx'
-import { MessageResponse } from '@/components/ai-elements/message.tsx'
 import { confirmWorktreeIterationAtomFamily, operateSessionTargetAtomFamily, sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
 import {
   cancelReservedWorktreeIterationResumeConsumer,
@@ -134,44 +133,21 @@ export function WorktreeIterationRequestCard({
   }
 
   return (
-    <div className="my-3" data-worktree-iteration-request-id={request.requestId}>
-      <div className="mb-4 text-sm">
-        <MessageResponse>{request.detailsMarkdown}</MessageResponse>
-      </div>
-      <div
-        className={`rounded-lg border border-blue-500/25 bg-blue-500/5 p-3 transition-opacity ${cardBusy ? 'pointer-events-none opacity-70' : ''}`}
-        aria-busy={cardBusy}
-        {...(cardBusy ? { inert: '' } : {})}
-      >
-        <div className="flex items-start gap-2.5">
-          {request.mode === 'preview_revision'
-            ? <RotateCcw className="mt-0.5 size-4 shrink-0 text-amber-500" />
-            : <GitBranchPlus className="mt-0.5 size-4 shrink-0 text-blue-500" />}
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">
-              {request.mode === 'preview_revision' ? '撤回当前验收并继续修改' : `开始第 ${request.iteration} 轮修改`}
-            </div>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {request.mode === 'preview_revision'
-                ? '当前版本正在 Local 验收。确认后 Domi 会安全撤回 Preview、释放项目验收槽位，并在原 Worktree 中自动继续刚才的调整请求。'
-                : '继续使用当前 Agent 会话的完整上下文，并基于最新 Local HEAD 创建一个新的临时 Worktree。创建成功后会自动继续刚才的请求。'}
-            </p>
-            <p className="mt-2 break-words rounded bg-background/70 px-2 py-1.5 text-xs leading-5 text-foreground/80">
-              {request.summary}
-            </p>
-            <div className="mt-2 rounded border border-border/70 bg-background/70 px-2 py-1.5">
-              <p className="text-[11px] font-medium text-muted-foreground">确认后将执行的完整任务</p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-foreground/85">
-                {request.task}
-              </p>
-            </div>
-            {state.error && <p className="mt-2 text-xs text-destructive">{state.error.message}</p>}
-            {busyLabel ? (
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
-                <Loader2 className="size-3.5 animate-spin" />{busyLabel}
-              </p>
-            ) : null}
-            <div className="mt-3 flex justify-end">
+    <div data-worktree-request-detail={request.requestId} className="space-y-5 text-sm" aria-busy={cardBusy} {...(cardBusy ? { inert: '' } : {})}>
+      <section data-worktree-detail-section="request-status" className="space-y-2 rounded-xl bg-muted/35 p-4" aria-busy={cardBusy}>
+        <p className="text-xs text-muted-foreground">第 {request.iteration} 轮 · {request.mode === 'preview_revision' ? '撤回预览后继续' : '创建新 Worktree'}</p>
+        <h3 className="font-semibold">{request.summary}</h3>
+        <p className="text-xs leading-5 text-muted-foreground">{request.mode === 'preview_revision'
+          ? '确认后安全撤回当前预览，随后在原 Worktree 中继续。'
+          : '确认后基于最新 Local HEAD 创建临时 Worktree，自动继续当前会话。'}</p>
+        {state.error ? <p className="text-xs text-destructive">{state.error.message}</p> : null}
+        {busyLabel ? <p role="status" aria-live="polite" className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{busyLabel}</p> : null}
+      </section>
+      <section data-worktree-detail-section="request-task" className="space-y-2">
+        <h3 className="text-sm font-semibold">确认后执行的完整任务</h3>
+        <p className="whitespace-pre-wrap break-words rounded-lg bg-muted/25 p-3 text-xs leading-5">{request.task}</p>
+      </section>
+      <div data-worktree-detail-section="request-action" className="flex justify-end border-t pt-3">
               {requestHandled ? (
                 <span className="text-xs text-muted-foreground">
                   {request.mode === 'preview_revision' ? '当前验收已撤回，调整请求已进入处理' : `本请求已进入第 ${request.iteration} 轮处理`}
@@ -191,9 +167,6 @@ export function WorktreeIterationRequestCard({
                   {request.mode === 'preview_revision' ? '撤回验收并继续修改' : `创建第 ${request.iteration} 轮 Worktree 并继续`}
                 </Button>
               )}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )

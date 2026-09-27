@@ -1,8 +1,7 @@
 import * as React from 'react'
-import { atom, useAtom, useSetAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue } from 'jotai'
 import { atomFamily } from 'jotai/utils'
 import type { SDKSystemMessage } from '@domi/shared'
-import { Button } from '@/components/ui/button'
 import { MessageResponse } from '@/components/ai-elements/message.tsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
@@ -16,19 +15,6 @@ interface WorktreeDetailSelection {
   action?: WorktreeDetailAction
 }
 export const worktreeDetailSelectionAtomFamily = atomFamily((_sessionId: string) => atom<WorktreeDetailSelection | null>(null))
-
-export function WorktreeHistoryEvent({ message, sessionId }: { message: SDKSystemMessage; sessionId?: string }): React.ReactElement | null {
-  const select = useSetAtom(worktreeDetailSelectionAtomFamily(sessionId ?? ''))
-  const review = parseWorktreeReviewNotice(message)
-  const request = parseWorktreeIterationRequest(message)
-  if (!review && !request) return null
-  return (
-    <div data-worktree-history-event={review ? 'review' : 'iteration'} className="my-2 flex min-w-0 items-center gap-2 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-      <span className="min-w-0 flex-1 truncate">{review ? `第 ${review.review.iteration} 轮验收 · ${review.review.summary}` : `第 ${request?.iteration} 轮调整 · ${request?.summary}`}</span>
-      {sessionId ? <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={() => select({ message })}>查看详情</Button> : null}
-    </div>
-  )
-}
 
 /** 详情只在当前会话内打开；历史消息提供内容，当前交付的操作资格始终由 Session Target 判定。 */
 export function WorktreeDetailDialog({ sessionId, currentRequest }: { sessionId: string; currentRequest: SDKSystemMessage | null }): React.ReactElement {
@@ -52,15 +38,12 @@ export function WorktreeDetailDialog({ sessionId, currentRequest }: { sessionId:
         </DialogHeader>
         {review && isActiveReview && currentReview ? <WorktreeReviewCard key={review.reviewId} message={currentReview} currentSessionId={sessionId} initialAction={selection?.action} /> : null}
         {review && !isActiveReview ? (
-          <section data-worktree-history-review-details className="space-y-4 text-sm">
-            <p className="text-muted-foreground">{review.review.summary}</p>
-            <MessageResponse>{review.detailsMarkdown}</MessageResponse>
-            <div className="space-y-2 rounded-md bg-muted/30 p-3 text-xs text-muted-foreground">
-              <p>验证：{review.review.validationStatus}{review.review.validationSummary ? ` · ${review.review.validationSummary}` : ''}</p>
-              {review.review.tests.map((test, index) => <p key={`${index}-${test.command}`}>{test.status} · {test.command}{test.summary ? ` · ${test.summary}` : ''}</p>)}
-              {review.review.changedFiles.map((file) => <p key={file} className="break-all">{file}</p>)}
-              <p className="whitespace-pre-wrap break-words">{review.review.suggestedCommitMessage}</p>
-            </div>
+          <section data-worktree-history-review-details className="space-y-5 text-sm">
+            <div className="rounded-xl bg-muted/35 p-4"><p className="text-xs text-muted-foreground">历史验收 · 第 {review.review.iteration} 轮</p><h3 className="mt-1 font-semibold">{review.review.summary}</h3><p className="mt-1 text-xs text-muted-foreground">此记录不能用于当前操作</p></div>
+            <section className="space-y-2"><h3 className="font-medium">修改文件</h3><ul className="max-h-44 space-y-1 overflow-auto rounded-lg bg-muted/25 p-3 font-mono text-xs">{review.review.changedFiles.map((file) => <li key={file} className="break-all">{file}</li>)}</ul></section>
+            <section className="space-y-2"><h3 className="font-medium">验证结果</h3><p className="text-xs text-muted-foreground">{review.review.validationStatus}{review.review.validationSummary ? ` · ${review.review.validationSummary}` : ''}</p>{review.review.tests.map((test, index) => <p key={`${index}-${test.command}`} className="break-all rounded-md bg-muted/25 px-3 py-2 font-mono text-xs">{test.status} · {test.command}{test.summary ? ` · ${test.summary}` : ''}</p>)}</section>
+            <details className="rounded-lg bg-muted/25 p-3"><summary className="cursor-pointer font-medium">建议提交信息</summary><pre className="mt-3 whitespace-pre-wrap break-words text-xs">{review.review.suggestedCommitMessage}</pre></details>
+            <details className="rounded-lg bg-muted/25 p-3"><summary className="cursor-pointer font-medium">历史交付说明</summary><div className="mt-3"><MessageResponse>{review.detailsMarkdown}</MessageResponse></div></details>
           </section>
         ) : null}
         {message && request && isActiveRequest ? <WorktreeIterationRequestCard key={request.requestId} message={message} currentSessionId={sessionId} /> : null}

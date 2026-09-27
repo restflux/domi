@@ -141,6 +141,31 @@ describe('SDK 压缩状态分组', () => {
 })
 
 describe('可持久展示的系统消息分组', () => {
+  test('交付说明归入紧邻的助手轮次，系统审计记录仍保留', () => {
+    const groups = groupIntoTurns(readSessionMessagesFromString(jsonl([
+      { type: 'user', message: { content: [{ type: 'text', text: '完成工作' }] }, parent_tool_use_id: null },
+      { type: 'assistant', message: { content: [{ type: 'text', text: '已完成' }] }, parent_tool_use_id: null },
+      { type: 'system', subtype: 'worktree_ready_for_review', review_id: 'r1', details_markdown: '完整交付说明' },
+      { type: 'user', message: { content: [{ type: 'text', text: '新问题' }] }, parent_tool_use_id: null },
+      { type: 'assistant', message: { content: [{ type: 'text', text: '新回答' }] }, parent_tool_use_id: null },
+    ])))
+    expect(groups.map((group) => group.type)).toEqual(['user', 'assistant-turn', 'system', 'user', 'assistant-turn'])
+    expect(groups[1]).toMatchObject({ type: 'assistant-turn', worktreeReport: { review_id: 'r1' } })
+    expect(groups[2]).toMatchObject({ type: 'system', inlineWithTurn: true })
+    expect(groups[4]).not.toHaveProperty('worktreeReport')
+  })
+
+  test('尚未到达助手工具回合时说明独立可见，任务通知不会错误并入后续轮次', () => {
+    const groups = groupIntoTurns(readSessionMessagesFromString(jsonl([
+      { type: 'user', message: { content: [{ type: 'text', text: '继续' }] }, parent_tool_use_id: null },
+      { type: 'system', subtype: 'worktree_next_iteration_requested', request_id: 'r1', details_markdown: '下一轮任务' },
+      { type: 'system', subtype: 'task_notification', message: '后台任务' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: '新回复' }] }, parent_tool_use_id: null },
+    ])))
+    expect(groups[1]).toMatchObject({ type: 'system', message: { request_id: 'r1' } })
+    expect(groups[1]).not.toHaveProperty('inlineWithTurn')
+    expect(groups.at(-1)).not.toHaveProperty('worktreeReport')
+  })
   test('Given 回合正文后先写入下一轮确认卡再写入终止工具 When 分组 Then 正文与工具属于同轮且卡位于其后', () => {
     const raw = jsonl([
       { type: 'user', message: { content: [{ type: 'text', text: '调整消息区' }] }, parent_tool_use_id: null },

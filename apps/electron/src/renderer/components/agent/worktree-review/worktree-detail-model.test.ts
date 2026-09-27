@@ -59,7 +59,8 @@ describe('Worktree 当前详情选择', () => {
     const toolResult = { type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: 'done' }] } } as SDKMessage
     const messages = [next, { ...next, request_id: 'other-checkout', checkout_id: 'checkout-2' }, toolResult, { ...next, request_id: 'latest' }] as SDKMessage[]
     expect(findCurrentIterationRequest(messages, 'session-1', delivered)?.request_id).toBe('latest')
-    expect(findCurrentIterationRequest([...messages, userMessage], 'session-1', delivered)).toBeNull()
+    expect(findCurrentIterationRequest([...messages, userMessage], 'session-1', delivered)?.request_id).toBe('latest')
+    expect(findCurrentIterationRequest([...messages, { ...next, request_id: 'stale-new', checkout_id: 'checkout-2' }], 'session-1', delivered)).toBeNull()
     expect(findCurrentIterationRequest([...messages, { type: 'system', subtype: 'task_notification' } as SDKMessage], 'session-1', delivered)).toBeNull()
     expect(findCurrentIterationRequest(messages, 'session-2', delivered)).toBeNull()
     expect(findCurrentIterationRequest(messages, 'session-1', { ...delivered, delivery: { state: 'working', iteration: 4 } })).toBeNull()

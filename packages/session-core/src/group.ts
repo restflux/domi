@@ -75,6 +75,8 @@ export interface AssistantTurn {
    * 用于阻断与前一 turn 的合并，让自动唤醒的新输出独立成块，而不是被追加进上一轮的消息块。
    */
   startsAfterWake?: boolean
+  /** 与本轮过程相邻的 Worktree 交付说明，作为回复正文呈现而非操作卡。 */
+  worktreeReport?: SDKSystemMessage
 }
 
 export type MessageGroup =
@@ -85,6 +87,8 @@ export type MessageGroup =
       message: SDKSystemMessage
       /** 首次创建该 group 的消息，用于压缩状态原位更新时保持稳定身份。 */
       identityMessage: SDKSystemMessage
+      /** 说明已并入紧邻的助手轮次；记录仍保留作详情历史。 */
+      inlineWithTurn?: boolean
     }
   | AssistantTurn
 
@@ -233,7 +237,19 @@ export function groupIntoTurns(messages: SDKMessage[], sessionModelId?: string):
   }
 
   flushTurn()
-  return moveReadyForReviewAfterLatestTerminatingTurn(mergeAdjacentSameModelTurns(groups))
+  return attachWorktreeReports(moveReadyForReviewAfterLatestTerminatingTurn(mergeAdjacentSameModelTurns(groups)))
+}
+
+function attachWorktreeReports(groups: MessageGroup[]): MessageGroup[] {
+  for (let index = 1; index < groups.length; index++) {
+    const group = groups[index]
+    const previous = groups[index - 1]
+    if (group?.type !== 'system' || previous?.type !== 'assistant-turn') continue
+    if (!['worktree_ready_for_review', 'worktree_next_iteration_requested', 'worktree_preview_revision_requested'].includes(group.message.subtype ?? '')) continue
+    previous.worktreeReport = group.message
+    group.inlineWithTurn = true
+  }
+  return groups
 }
 
 function assistantTurnCallsTool(turn: AssistantTurn, toolName: string): boolean {
