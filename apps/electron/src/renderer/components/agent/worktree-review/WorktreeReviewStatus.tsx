@@ -257,7 +257,7 @@ export function WorktreeReviewStatus({
   const primaryLabel = delivery.state === 'ready_for_review'
     ? staleIsolatedPreflight ? '重新检查' : preflight?.status === 'conflict' ? '让 Agent 解决冲突' : waitingForSlot ? '查看占用任务' : '预览修改'
     : delivery.state === 'preview_active'
-      ? recoveryPreview ? '恢复并撤回预览' : blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并保存` : '确认并保存'
+      ? recoveryPreview ? '恢复并撤回预览' : blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并保存` : '确认保存'
       : delivery.state === 'preview_detached'
         ? blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并保存` : '保存修改'
       : delivery.state === 'finalized' || (delivery.state === 'retained' && delivery.cleanup === 'blocked')
@@ -279,10 +279,11 @@ export function WorktreeReviewStatus({
       <ComposerActionRail
         dataKind={railKind}
         dataTestId="worktree-review-status"
+        contentClassName={compactActiveSurface ? 'min-w-24' : undefined}
         className={legacySurface
           ? 'legacy-worktree-review-status mx-3 mt-2 rounded-md border-blue-500/20 bg-blue-500/5'
           : compactActiveSurface
-            ? 'mx-2 rounded-none border-0 bg-transparent px-1.5 py-1'
+            ? 'mx-2 flex-wrap rounded-none border-0 bg-transparent px-1.5 py-1'
             : undefined}
         icon={busyLabel
           ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
@@ -295,12 +296,24 @@ export function WorktreeReviewStatus({
               type="button"
               variant="ghost"
               size="sm"
-              className={compactActiveSurface ? 'h-6 shrink-0 px-2 text-[11px] text-foreground/80' : 'h-6 shrink-0 px-2 text-[11px]'}
+              className={compactActiveSurface ? 'h-7 shrink-0 px-2 text-[11px] text-foreground/80' : 'h-6 shrink-0 px-2 text-[11px]'}
               disabled={compactActiveSurface ? pending : primaryDisabled}
               onClick={compactActiveSurface ? focusCard : primaryAction}
             >
               {compactActiveSurface ? <><ClipboardCheck className="size-3.5" />查看详情</> : primaryLabel}
             </Button>
+            {compactActiveSurface ? (
+              <>
+                {delivery.state === 'preview_active' && !recoveryPreview ? (
+                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[11px]" disabled={pending} onClick={() => void operate({ action: 'rollback_preview' })}>
+                    撤回预览
+                  </Button>
+                ) : null}
+                <Button type="button" size="sm" className="h-7 shrink-0 px-3 text-[11px]" disabled={primaryDisabled} onClick={primaryAction}>
+                  {primaryLabel}
+                </Button>
+              </>
+            ) : null}
             {hasMenuActions ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -309,7 +322,7 @@ export function WorktreeReviewStatus({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="z-[9999] min-w-56">
-                  {reviewId ? (
+                  {reviewId && !compactActiveSurface ? (
                     <DropdownMenuItem onSelect={focusCard}>
                       <ClipboardCheck />查看详情
                     </DropdownMenuItem>

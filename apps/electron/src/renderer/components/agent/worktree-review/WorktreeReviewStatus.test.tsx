@@ -71,14 +71,15 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(preview).not.toContain('撤回预览</button>')
   })
 
-  test('待验收状态收敛为贴近输入框的轻量验收入口', () => {
+  test('待验收状态在输入框上方同时提供详情与直接预览', () => {
     const html = renderStatus({ state: 'ready_for_review', review })
 
     expect(html).toContain('新修改待验收')
     expect(html).toContain('查看详情')
+    expect(html).toContain('>预览修改</button>')
     expect(html).toContain('bg-sky-400')
     expect(html).toContain('lucide-clipboard-check')
-    expect(html).toContain('mx-2 rounded-none border-0 bg-transparent')
+    expect(html).toContain('mx-2 flex-wrap rounded-none border-0 bg-transparent')
     expect(html).toContain('aria-label="更多交付操作"')
   })
 
@@ -91,10 +92,13 @@ describe('WorktreeReviewStatus current delivery actions', () => {
 
     expect(html).toContain('正在加载验收状态…')
     expect(html).toContain('查看详情</button>')
+    expect(html).toContain('预览修改</button>')
     expect(html.match(/animate-spin/g)).toHaveLength(1)
     expect(html).not.toContain('处理中…')
     const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
     expect(reviewButton).toMatch(/\sdisabled(?:=|>)/)
+    const previewButton = html.match(/<button[^>]*>预览修改<\/button>/)?.[0]
+    expect(previewButton).toMatch(/\sdisabled(?:=|>)/)
   })
 
   test('真实操作只在 rail 图标处显示一个准确 Spinner，按钮文案保持稳定', () => {
@@ -106,10 +110,14 @@ describe('WorktreeReviewStatus current delivery actions', () => {
 
     expect(html).toContain('正在撤回预览…')
     expect(html).toContain('查看详情</button>')
+    expect(html).toContain('撤回预览</button>')
+    expect(html).toContain('确认保存</button>')
     expect(html.match(/animate-spin/g)).toHaveLength(1)
     expect(html).not.toContain('处理中…')
     const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
     expect(reviewButton).toMatch(/\sdisabled(?:=|>)/)
+    const saveButton = html.match(/<button[^>]*>确认保存<\/button>/)?.[0]
+    expect(saveButton).toMatch(/\sdisabled(?:=|>)/)
   })
 
   test('已放弃的 Worktree 即使残留旧验收快照也不再显示待验收状态条', () => {
@@ -174,6 +182,8 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     const html = renderToStaticMarkup(<Provider store={store}><WorktreeReviewStatus sessionId="session-1" /></Provider>)
 
     expect(html).toContain('本次修改暂时无法预览 · 1 个文件冲突')
+    expect(html).toContain('>让 Agent 解决冲突</button>')
+    expect(html).not.toContain('>预览修改</button>')
     const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
@@ -195,6 +205,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     const html = renderToStaticMarkup(<Provider store={store}><WorktreeReviewStatus sessionId="session-1" /></Provider>)
 
     expect(html).toContain('暂时无法预览 · Worktree 在准备验收后发生变化，请重新生成验收结果')
+    expect(html).toContain('>重新检查</button>')
     const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
@@ -205,6 +216,8 @@ describe('WorktreeReviewStatus current delivery actions', () => {
 
     expect(html).toContain('正在预览本次修改')
     expect(html).toContain('查看详情')
+    expect(html).toContain('>撤回预览</button>')
+    expect(html).toContain('>确认保存</button>')
     expect(html).toContain('bg-amber-400')
   })
 
@@ -228,6 +241,9 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
+    const saveButton = html.match(/<button[^>]*>确认保存<\/button>/)?.[0]
+    expect(saveButton).toMatch(/\sdisabled(?:=|>)/)
+    expect(html).toContain('>撤回预览</button>')
   })
 
   test('Preview 操作中断进入 recovery 时只提供恢复撤回主操作，不再引导直接提交', () => {
@@ -238,7 +254,8 @@ describe('WorktreeReviewStatus current delivery actions', () => {
 
     expect(html).toContain('预览需要恢复，安全记录已保留')
     expect(html).toContain('查看详情')
-    expect(html).not.toContain('>确认并保存</button>')
+    expect(html).toContain('>恢复并撤回预览</button>')
+    expect(html).not.toContain('>确认保存</button>')
   })
 
   test('旧 Preview 进入 detached 后可直接提交、重新撤回或交接到新会话', () => {
@@ -252,6 +269,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     })
 
     expect(html).toContain('当前项目已有新变化，本次修改仍可保存')
+    expect(html).toContain('>保存修改</button>')
     expect(html).toContain('查看详情')
     expect(html).toContain('aria-label="更多交付操作"')
   })

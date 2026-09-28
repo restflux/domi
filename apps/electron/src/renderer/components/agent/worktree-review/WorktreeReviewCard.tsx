@@ -609,7 +609,7 @@ export function WorktreeReviewCard({
           <span className="rounded-full bg-background px-2.5 py-1 text-xs">{validationLabel(notice.review.validationStatus)}</span>
         </div>
         {activeReview ? <p className="text-xs text-muted-foreground">{decisionDescription}</p> : <p className="text-xs text-muted-foreground">历史记录，仅供回看</p>}
-        {activeReview ? <div aria-busy={cardBusy} className="flex flex-wrap items-center gap-2">
+        {activeReview ? <div aria-busy={cardBusy} className="flex flex-wrap items-center justify-end gap-2 border-t border-border/50 pt-3">
               {activeReview && delivery?.state === 'ready_for_review' ? (
                 staleIsolatedPreflight ? (
                   <Button type="button" className="" disabled={cardBusy} onClick={regenerateStaleReview}><RefreshCw />重新生成验收结果</Button>
@@ -633,7 +633,7 @@ export function WorktreeReviewCard({
               ) : null}
               {previewDetached ? <Button type="button" className="" disabled={cardBusy || directFinishBlock !== null} onClick={() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />保存修改</Button> : null}
               {finalized ? <Button type="button" className="" disabled={cardBusy} onClick={() => void operate({ action: 'retry_cleanup' })}><RotateCcw />重试清理</Button> : null}
-          <div data-worktree-detail-section="more-actions" className="flex flex-wrap items-center gap-2 text-xs">
+          <div data-worktree-detail-section="more-actions" className="flex flex-wrap items-center justify-end gap-2 text-xs">
             {(delivery?.state === 'ready_for_review' || previewActive) && !savedCheckpoint && !staleIsolatedPreflight && !preflightConflict ? (
               <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-1.5 text-[10px] text-muted-foreground hover:bg-transparent hover:text-foreground" disabled={cardBusy || blockedByCollaborator} onClick={() => setCheckpointOpen(true)}>保存进度</Button>
             ) : null}
