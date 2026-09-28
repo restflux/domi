@@ -79,7 +79,7 @@ export function TaskBadge({ task, onClick }: TaskBadgeProps): React.ReactElement
       type="button"
       onClick={onClick}
       className={cn(
-        'h-[30px] px-3 py-1.5 rounded-[8px]',
+        'h-[30px] rounded-md px-3 py-1.5',
         'flex items-center gap-2 shrink-0',
         'bg-background/70 backdrop-blur-sm',
         'border-[0.5px] border-border',

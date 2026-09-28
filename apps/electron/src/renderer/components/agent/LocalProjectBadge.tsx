@@ -35,7 +35,7 @@ export function LocalProjectBadge({
         aria-label={label}
         title={title}
         className={cn(
-          'inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] transition-colors',
+          'inline-flex size-4 shrink-0 items-center justify-center rounded-xs transition-colors',
           isUnavailable
             ? 'bg-destructive/10 text-destructive'
             : 'text-muted-foreground/55 group-hover/project:text-muted-foreground/80',

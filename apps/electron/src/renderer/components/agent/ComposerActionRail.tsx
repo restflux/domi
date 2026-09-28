@@ -104,7 +104,7 @@ export function ComposerActionRail({
       data-composer-action-rail={dataKind}
       data-testid={dataTestId}
       className={cn(
-        'composer-action-rail flex items-center gap-2 rounded-[10px] border border-transparent bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground',
+        'composer-action-rail flex items-center gap-2 rounded-lg border border-transparent bg-transparent px-2.5 py-1.5 text-xs text-muted-foreground',
         className,
       )}
     >

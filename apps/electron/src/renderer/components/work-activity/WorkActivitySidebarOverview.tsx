@@ -154,7 +154,7 @@ export const WorkActivitySidebarRailButton = React.memo(function WorkActivitySid
           aria-label={ariaLabel}
           onClick={onClick}
           className={cn(
-            'relative flex size-10 items-center justify-center rounded-[12px] border transition-colors titlebar-no-drag',
+            'relative flex size-10 items-center justify-center rounded-xl border transition-colors titlebar-no-drag',
             active
               ? 'border-primary/80 bg-primary text-primary-foreground shadow-sm'
               : 'border-border/45 bg-foreground/[0.025] text-foreground/45 hover:border-border/70 hover:bg-foreground/[0.045] hover:text-primary',

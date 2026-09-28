@@ -935,7 +935,7 @@ function FileTreeItem({
         <span
           aria-hidden="true"
           className={cn(
-            'pointer-events-none absolute inset-y-0 left-2 right-2 z-0 rounded-[17px] transition-colors',
+            'pointer-events-none absolute inset-y-0 left-2 right-2 z-0 rounded-lg transition-colors',
             // sticky 行 hover 用不透明色，避免下方滚动内容透出；普通行保持半透明柔和感
             isSelected
               ? 'bg-accent'

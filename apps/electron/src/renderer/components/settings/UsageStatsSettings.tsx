@@ -439,7 +439,7 @@ function TokenActivityCalendar({
       {hovered?.columnBounds && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute z-10 rounded-[5px] border-2 border-orange-500"
+          className="pointer-events-none absolute z-10 rounded-xs border-2 border-orange-500"
           style={hovered.columnBounds}
         />
       )}

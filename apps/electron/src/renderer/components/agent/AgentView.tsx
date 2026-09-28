@@ -4849,7 +4849,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
             <div
             data-agent-composer-surface="true"
             className={cn(
-              'agent-composer-surface rounded-[10px] border-[0.5px] border-border bg-background/70 backdrop-blur-sm transition-all duration-200',
+              'agent-composer-surface rounded-lg border-[0.5px] border-border bg-background/70 backdrop-blur-sm transition-all duration-200',
               workspaceSendDeferred && 'pointer-events-none opacity-80',
               (isPlanMode || isPermissionPlanMode) && !isDragOver && 'plan-mode-border',
               isDragOver && 'border-[2px] border-dashed border-[#2ecc71] bg-[#2ecc71]/[0.03]'

@@ -29,7 +29,7 @@ describe('StickyReturnToQuestionShortcut', () => {
     expect(html).toContain('bg-gradient-to-b')
     expect(html).toContain('w-fit')
     expect(html).toContain('h-8')
-    expect(html).toContain('rounded-[18px]')
+    expect(html).toContain('rounded-full')
     expect(html).not.toContain('aria-describedby')
     expect(html).not.toContain('group-hover/shortcut')
     expect(html).not.toContain('group-focus-visible/shortcut')

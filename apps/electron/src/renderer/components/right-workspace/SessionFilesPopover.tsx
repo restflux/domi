@@ -190,7 +190,7 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
           ref={panelRef}
           data-session-files-popover
           style={{ top: position.top, right: position.right, width: position.width }}
-          className="titlebar-no-drag fixed z-[100] flex max-h-[min(244px,calc(100vh-74px))] flex-col overflow-hidden rounded-[22px] border border-border/25 bg-popover/98 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-150"
+          className="titlebar-no-drag fixed z-[100] flex max-h-[min(244px,calc(100vh-74px))] flex-col overflow-hidden rounded-xl border border-border/25 bg-popover/98 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-150"
         >
           <SessionFilesCard sessionId={sessionId} sessionPath={sessionPath} onViewAll={viewAll} />
         </div>,

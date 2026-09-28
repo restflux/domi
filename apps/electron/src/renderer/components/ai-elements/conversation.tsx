@@ -105,7 +105,7 @@ export function ConversationScrollButton({
   return (
     <Button
       className={cn(
-        'absolute bottom-[26px] left-1/2 -translate-x-1/2 rounded-[17px] size-9',
+        'absolute bottom-[26px] left-1/2 -translate-x-1/2 rounded-md size-9',
         'bg-card shadow-sm hover:bg-accent/80',
         className
       )}

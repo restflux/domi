@@ -86,15 +86,16 @@ export default {
           'sans-serif',
         ],
       },
-      // ===== 圆角：覆写 shadcn 标准三档，全部由 --radius 派生 =====
-      // 改一处 --radius 即可整站统一调圆角节奏，无需 grep 替换 300+ 处 rounded-*
+      // ===== 圆角：共享语义尺度，避免组件各自写任意像素值 =====
+      // 控件使用 sm/md，卡片与弹层使用 lg/xl；圆形与胶囊继续使用 rounded-full。
       borderRadius: {
-        sm: 'calc(var(--radius) - 4px)',
-        DEFAULT: 'calc(var(--radius) - 2px)',
-        md: 'calc(var(--radius) - 2px)',
-        lg: 'var(--radius)',
-        xl: 'calc(var(--radius) + var(--radius-xl-extra, 2px))',
-        '2xl': 'calc(var(--radius) + var(--radius-2xl-extra, 4px))',
+        xs: 'var(--radius-xs)',
+        sm: 'var(--radius-sm)',
+        DEFAULT: 'var(--radius-md)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
+        '2xl': 'var(--radius-2xl)',
       },
       // ===== 阴影：覆写 Tailwind 内置的 sm/md/lg/xl/DEFAULT =====
       // 现有 78 处 shadow-md / shadow-lg 等代码无需改动，自动吃多层柔阴影 + 主题自适应

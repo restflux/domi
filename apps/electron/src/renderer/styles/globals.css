@@ -94,14 +94,16 @@
    * 深色态额外加 inset 顶高光来制造"浮起"感（弥补黑底缺乏自然阴影的问题）。
    */
   :root {
-    --radius: 0.375rem;
+    /* 统一圆角节奏：小控件 6px、常规控件 8px、容器 10/12/16px。 */
+    --radius: 8px;
     --radius-xs: 4px;
     --radius-sm: 6px;
     --radius-md: 8px;
     --radius-lg: 10px;
-    --radius-cap: var(--radius-sm);
-    --radius-xl-extra: 2px;
-    --radius-2xl-extra: 4px;
+    --radius-xl: 12px;
+    --radius-2xl: 16px;
+    /* 现代界面将历史大圆角收敛到面板级，避免同一层级出现 17/22px 等孤立值。 */
+    --radius-cap: var(--radius-lg);
     --duration-fast: 100ms;
     --duration-normal: 160ms;
     --ease-ui: cubic-bezier(0.2, 0, 0, 1);
@@ -765,7 +767,7 @@
     --tooltip-muted: 90 15% 48%;
     /* 代码块背景 */
     --code-bg: 100 8% 4%;
-    /* 全局直角 — rounded-md = calc(2px - 2px) = 0，避免负值 */
+    /* 终端主题由末尾的全局直角规则统一处理；基础 token 仅作为安全回退。 */
     --radius: 2px;
     /* 虚线边框色 */
     --dashed-border: 100 30% 48% / 0.25;
@@ -2060,10 +2062,10 @@
   justify-self: end;
 }
 
-/* 输入框用一层细描边与柔和圆角代替偏硬的方形卡片；保留拖放与 Plan 状态样式。 */
+/* 输入框用一层细描边与面板级圆角代替偏硬的方形卡片；保留拖放与 Plan 状态样式。 */
 :root.ui-modern .agent-composer-surface:not(.plan-mode-border),
 :root.ui-modern [data-input-mode="chat"] > div:first-child:not(.border-dashed) {
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   border-color: hsl(var(--border) / 0.8);
   background-color: hsl(var(--input-surface));
   box-shadow: 0 2px 12px hsl(var(--foreground) / 0.035);
@@ -2089,20 +2091,21 @@
   border-radius: var(--radius-md);
 }
 
-/* 现代界面：保留 rounded-full 的圆形/胶囊语义，只压低卡片、面板、气泡等大圆角。 */
-:root:not(.ui-classic) [class*="rounded-lg"]:not([class*="rounded-full"]):not(.agent-composer-surface):not(.mode-switcher-track),
-:root:not(.ui-classic) [class*="rounded-xl"]:not([class*="rounded-full"]):not(.agent-composer-surface):not(.mode-switcher-track),
-:root:not(.ui-classic) [class*="rounded-2xl"]:not([class*="rounded-full"]):not(.agent-composer-surface):not(.mode-switcher-track),
-:root:not(.ui-classic) [class*="rounded-3xl"]:not([class*="rounded-full"]):not(.agent-composer-surface):not(.mode-switcher-track),
+/* 现代界面：保留 rounded-full 的圆形/胶囊语义；历史任意像素值统一收敛到面板级。
+ * 语义化的 rounded-lg/xl/2xl 不再被覆盖，确保组件共享同一套可读尺度。 */
 :root:not(.ui-classic) [class*="rounded-["]:not([class*="rounded-full"]):not(.agent-composer-surface):not(.mode-switcher-track) {
   border-radius: var(--radius-cap);
 }
 
-/* 经典界面：视觉规则对齐 upstream。 */
+/* 经典界面：保留更宽松的基础节奏，但仍使用同一套语义 token。 */
 :root.ui-classic {
-  --radius: 0.625rem;
-  --radius-xl-extra: 4px;
-  --radius-2xl-extra: 8px;
+  --radius: 10px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
 }
 
 /* 经典界面浅色：侧栏使用纯白对齐 upstream；深色下不覆盖，保持主题的深色侧栏 */

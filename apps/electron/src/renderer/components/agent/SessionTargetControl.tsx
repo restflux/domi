@@ -333,7 +333,7 @@ export function SessionTargetControl({
     <section
       data-session-target-chooser="true"
       className={cn(
-        'flex min-h-9 min-w-0 items-center rounded-[10px] border border-transparent bg-transparent px-2.5 py-1 text-foreground',
+        'flex min-h-9 min-w-0 items-center rounded-lg border border-transparent bg-transparent px-2.5 py-1 text-foreground',
         className,
       )}
       aria-label="当前修改环境"
