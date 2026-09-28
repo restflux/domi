@@ -57,29 +57,35 @@ function renderStatus(
 }
 
 describe('WorktreeReviewStatus current delivery actions', () => {
-  test('待确认下一轮与撤回修订只在输入区显示精简状态和单一详情入口', () => {
+  test('待确认下一轮与撤回修订在输入区提供醒目的确认入口' , () => {
     const request = { type: 'system', subtype: 'worktree_next_iteration_requested', request_id: 'request-2', iteration: 2,
       task: '继续做第二轮', summary: '调整布局', details_markdown: '## 完整任务' } as SDKSystemMessage
     const delivered = renderStatus({ state: 'delivered', iteration: 1, commitOid: null, deliveredAt: 2 }, undefined, { pendingRequest: request })
-    expect(delivered).toContain('待确认创建下一轮修改')
-    expect(delivered).toContain('查看任务并确认')
+    expect(delivered).toContain('本轮已结束 · 待确认下一轮')
+    expect(delivered).toContain('>确认开启下一轮</button>')
+    expect(delivered).toContain('bg-amber-500/[0.08]')
+    expect(delivered).toContain('min-w-0 max-w-full flex-wrap justify-end')
     expect(delivered).not.toContain('开始下一轮修改</button>')
+    const pending = renderStatus({ state: 'delivered', iteration: 1, commitOid: null, deliveredAt: 2 }, undefined, { pendingRequest: request, loading: true })
+    const confirmButton = pending.match(/<button[^>]*>确认开启下一轮<\/button>/)?.[0]
+    expect(confirmButton).toMatch(/\sdisabled(?:=|>)/)
     const preview = renderStatus({ state: 'preview_active', review, previewedAt: 2 }, undefined, {
       pendingRequest: { ...request, subtype: 'worktree_preview_revision_requested', iteration: 1 },
     })
-    expect(preview).toContain('待确认继续修改当前验收')
+    expect(preview).toContain('验收中 · 待确认继续修改')
+    expect(preview).toContain('>确认继续修改</button>')
     expect(preview).not.toContain('撤回预览</button>')
   })
 
   test('待验收状态在输入框上方同时提供详情与直接预览', () => {
     const html = renderStatus({ state: 'ready_for_review', review })
 
-    expect(html).toContain('新修改待验收')
+    expect(html).toContain('修改已完成 · 可先预览')
     expect(html).toContain('查看详情')
     expect(html).toContain('>预览修改</button>')
     expect(html).toContain('bg-sky-400')
     expect(html).toContain('lucide-clipboard-check')
-    expect(html).toContain('mx-2 flex-wrap rounded-none border-0 bg-transparent')
+    expect(html).toContain('mx-2 flex-wrap border px-3 py-2 shadow-sm')
     expect(html).toContain('aria-label="更多交付操作"')
   })
 
@@ -95,7 +101,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('预览修改</button>')
     expect(html.match(/animate-spin/g)).toHaveLength(1)
     expect(html).not.toContain('处理中…')
-    const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
+    const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toMatch(/\sdisabled(?:=|>)/)
     const previewButton = html.match(/<button[^>]*>预览修改<\/button>/)?.[0]
     expect(previewButton).toMatch(/\sdisabled(?:=|>)/)
@@ -114,7 +120,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('确认保存</button>')
     expect(html.match(/animate-spin/g)).toHaveLength(1)
     expect(html).not.toContain('处理中…')
-    const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
+    const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toMatch(/\sdisabled(?:=|>)/)
     const saveButton = html.match(/<button[^>]*>确认保存<\/button>/)?.[0]
     expect(saveButton).toMatch(/\sdisabled(?:=|>)/)
@@ -135,7 +141,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
       { checkpoints: [{ checkpointId: 'checkpoint-1', sequence: 1, reviewId: review.reviewId, createdAt: 1, summary: '完成任务', validationStatus: 'passed', changedFiles: ['src/a.ts'] }] },
     )
 
-    expect(html).toContain('新修改待验收')
+    expect(html).toContain('修改已完成 · 可先预览')
     expect(html).toContain('查看详情')
     expect(html).not.toContain('保存阶段并继续')
   })
@@ -158,7 +164,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     })
     const html = renderToStaticMarkup(<Provider store={store}><WorktreeReviewStatus sessionId="session-1" /></Provider>)
 
-    const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
+    const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toContain('title=')
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
@@ -184,7 +190,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('本次修改暂时无法预览 · 1 个文件冲突')
     expect(html).toContain('>让 Agent 解决冲突</button>')
     expect(html).not.toContain('>预览修改</button>')
-    const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
+    const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
   })
@@ -206,7 +212,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
 
     expect(html).toContain('暂时无法预览 · Worktree 在准备验收后发生变化，请重新生成验收结果')
     expect(html).toContain('>重新检查</button>')
-    const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
+    const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
   })
@@ -227,7 +233,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
       { collaborators: [{ sessionId: 'child-1', title: '已完成协作', kind: 'delegation', status: 'completed', canRelease: true }] },
     )
 
-    const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
+    const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
   })
@@ -238,7 +244,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
       { collaborators: [{ sessionId: 'child-1', title: '运行中的协作', kind: 'delegation', status: 'running', canRelease: false }] },
     )
 
-    const reviewButton = html.match(/<button[^>]*>.*查看详情<\/button>/)?.[0]
+    const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
     const saveButton = html.match(/<button[^>]*>确认保存<\/button>/)?.[0]
@@ -297,7 +303,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).not.toContain('>开始下一轮修改</button>')
   })
 
-  test('已交付状态使用透明的 settled 元信息行和开始下一轮修改主操作', () => {
+  test('已交付状态使用醒目的 settled 状态条和开始下一轮修改主操作', () => {
     const html = renderStatus(
       { state: 'delivered', iteration: 1, commitOid: 'abcdef0123456789', deliveredAt: 3 },
       undefined,
@@ -307,7 +313,8 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('data-composer-action-rail="worktree_settled"')
     expect(html).toContain('text-emerald-500')
     expect(html).toContain('开始下一轮修改')
-    expect(html).toContain('bg-transparent')
+    expect(html).toContain('bg-emerald-500/[0.07]')
+    expect(html).toContain('h-8 shrink-0 px-3 text-xs font-semibold')
     expect(html).not.toContain('legacy-worktree-review-status')
     expect(html).not.toContain('border-blue-500/20')
     expect(html).not.toContain('bg-blue-500/5')

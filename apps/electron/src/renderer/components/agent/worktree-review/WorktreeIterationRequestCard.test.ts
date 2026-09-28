@@ -96,7 +96,7 @@ describe('WorktreeIterationRequestCard parser', () => {
     })
   })
 
-  test('确认卡逐字展示将获得本次执行授权的完整任务，而不是只展示摘要', () => {
+  test('确认卡先显示摘要和授权结果，需要时可展开完整任务', () => {
     const store = createStore()
     store.set(sessionTargetStateAtomFamily('session-1'), {
       snapshot: {
@@ -122,7 +122,11 @@ describe('WorktreeIterationRequestCard parser', () => {
       }),
     ))
 
-    expect(html).toContain('确认后执行的完整任务')
+    expect(html).toContain('修复按钮文案')
+    expect(html).toContain('确认后基于最新 Local HEAD 创建临时 Worktree')
+    expect(html).toContain('>确认开启第 2 轮修改</button>')
+    expect(html).not.toContain('确认后执行的完整任务')
+    expect(html).toContain('<summary class="cursor-pointer font-medium">查看本轮将执行的任务</summary>')
     expect(html).toContain('修复按钮文案，并删除未使用的旧实现')
   })
 
@@ -154,10 +158,10 @@ describe('WorktreeIterationRequestCard parser', () => {
     ))
     expect(loadingHtml).toContain('正在加载请求状态…')
     expect(loadingHtml).toContain('inert=""')
-    expect(loadingHtml).toContain('>撤回验收并继续修改</button>')
+    expect(loadingHtml).toContain('>确认撤回预览并继续修改</button>')
     expect(loadingHtml.match(/animate-spin/g)).toHaveLength(1)
     expect(loadingHtml).not.toContain('正在撤回验收…')
-    const loadingButton = loadingHtml.match(/<button[^>]*>撤回验收并继续修改<\/button>/)?.[0]
+    const loadingButton = loadingHtml.match(/<button[^>]*>确认撤回预览并继续修改<\/button>/)?.[0]
     expect(loadingButton).toMatch(/\sdisabled(?:=|>)/)
 
     store.set(sessionTargetStateAtomFamily('session-1'), {
@@ -169,7 +173,7 @@ describe('WorktreeIterationRequestCard parser', () => {
       React.createElement(WorktreeIterationRequestCard, { message, currentSessionId: 'session-1' }),
     ))
     expect(pendingHtml).toContain('正在撤回预览…')
-    expect(pendingHtml).toContain('>撤回验收并继续修改</button>')
+    expect(pendingHtml).toContain('>确认撤回预览并继续修改</button>')
     expect(pendingHtml.match(/animate-spin/g)).toHaveLength(1)
   })
 
@@ -207,7 +211,7 @@ describe('WorktreeIterationRequestCard parser', () => {
       React.createElement(WorktreeIterationRequestCard, { message, currentSessionId: 'session-1' }),
     ))
 
-    const button = html.match(/<button[^>]*>创建第 2 轮 Worktree 并继续<\/button>/)?.[0]
+    const button = html.match(/<button[^>]*>确认开启第 2 轮修改<\/button>/)?.[0]
     expect(button).toBeDefined()
     expect(button).not.toMatch(/\sdisabled(?:=|>)/)
 
@@ -223,7 +227,7 @@ describe('WorktreeIterationRequestCard parser', () => {
       { store },
       React.createElement(WorktreeIterationRequestCard, { message, currentSessionId: 'session-1' }),
     ))
-    const inheritedButton = inheritedHtml.match(/<button[^>]*>创建第 2 轮 Worktree 并继续<\/button>/)?.[0]
+    const inheritedButton = inheritedHtml.match(/<button[^>]*>确认开启第 2 轮修改<\/button>/)?.[0]
     expect(inheritedButton).toMatch(/\sdisabled(?:=|>)/)
   })
 
@@ -272,7 +276,7 @@ describe('WorktreeIterationRequestCard parser', () => {
       React.createElement(WorktreeIterationRequestCard, { message, currentSessionId: 'session-1' }),
     ))
 
-    const button = html.match(/<button[^>]*>创建第 4 轮 Worktree 并继续<\/button>/)?.[0]
+    const button = html.match(/<button[^>]*>确认开启第 4 轮修改<\/button>/)?.[0]
     expect(button).toBeDefined()
     expect(button).not.toMatch(/\sdisabled(?:=|>)/)
 
@@ -288,7 +292,7 @@ describe('WorktreeIterationRequestCard parser', () => {
       { store },
       React.createElement(WorktreeIterationRequestCard, { message, currentSessionId: 'session-1' }),
     ))
-    const recoveryButton = recoveryHtml.match(/<button[^>]*>创建第 4 轮 Worktree 并继续<\/button>/)?.[0]
+    const recoveryButton = recoveryHtml.match(/<button[^>]*>确认开启第 4 轮修改<\/button>/)?.[0]
     expect(recoveryButton).toMatch(/\sdisabled(?:=|>)/)
   })
 })

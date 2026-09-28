@@ -9,7 +9,7 @@ import {
 } from './ComposerActionRail'
 
 describe('ComposerActionRail', () => {
-  test('uses AI issue → runtime → urgent Worktree → review Worktree → summary → channel → settled Worktree priority in modern mode', () => {
+  test('uses AI issue → runtime → active Worktree → channel → settled Worktree → summary priority in modern mode', () => {
     const base = {
       modern: true,
       hasUrgentWorktreeAction: false,
@@ -22,8 +22,9 @@ describe('ComposerActionRail', () => {
     }
 
     expect(resolveComposerActionRailKind({ ...base, hasSettledWorktreeAction: true })).toBe('worktree_settled')
+    expect(resolveComposerActionRailKind({ ...base, hasSettledWorktreeAction: true, hasAgentSummary: true })).toBe('worktree_settled')
     expect(resolveComposerActionRailKind({ ...base, hasSettledWorktreeAction: true, hasChannelSetupAction: true })).toBe('channel_setup')
-    expect(resolveComposerActionRailKind({ ...base, hasChannelSetupAction: true, hasAgentSummary: true })).toBe('agent_summary')
+    expect(resolveComposerActionRailKind({ ...base, hasChannelSetupAction: true, hasAgentSummary: true })).toBe('channel_setup')
     expect(resolveComposerActionRailKind({ ...base, hasAgentSummary: true, hasActiveWorktreeAction: true })).toBe('worktree_active')
     expect(resolveComposerActionRailKind({ ...base, hasActiveWorktreeAction: true, hasUrgentWorktreeAction: true })).toBe('worktree_active')
     expect(resolveComposerActionRailKind({ ...base, hasActiveWorktreeAction: true, hasAgentRuntime: true })).toBe('agent_runtime')

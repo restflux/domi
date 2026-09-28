@@ -2,7 +2,6 @@ import * as React from 'react'
 import { atom, useAtom, useAtomValue } from 'jotai'
 import { atomFamily } from 'jotai/utils'
 import type { SDKSystemMessage } from '@domi/shared'
-import { MessageResponse } from '@/components/ai-elements/message.tsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
 import { WorktreeReviewCard, parseWorktreeReviewNotice } from './WorktreeReviewCard.tsx'
@@ -16,7 +15,11 @@ interface WorktreeDetailSelection {
 }
 export const worktreeDetailSelectionAtomFamily = atomFamily((_sessionId: string) => atom<WorktreeDetailSelection | null>(null))
 
-/** 详情只在当前会话内打开；历史消息提供内容，当前交付的操作资格始终由 Session Target 判定。 */
+export function shouldOpenWorktreeDetailDialog(selection: WorktreeDetailSelection | null, isActiveRequest: boolean): boolean {
+  return selection !== null && (!parseWorktreeIterationRequest(selection.message) || isActiveRequest)
+}
+
+/** 历史验收仍可查阅文件与验证；已失效的下一轮请求不再弹出消息区已有的正文。 */
 export function WorktreeDetailDialog({ sessionId, currentRequest }: { sessionId: string; currentRequest: SDKSystemMessage | null }): React.ReactElement {
   const [selection, select] = useAtom(worktreeDetailSelectionAtomFamily(sessionId))
   const state = useAtomValue(sessionTargetStateAtomFamily(sessionId))
@@ -29,12 +32,15 @@ export function WorktreeDetailDialog({ sessionId, currentRequest }: { sessionId:
     && review.reviewId === currentReview.review_id && review.review.iteration === currentReview.iteration
   const isActiveRequest = message != null && request != null && currentRequest?.request_id === request.requestId
     && currentRequest.subtype === message.subtype && isCurrentIterationRequest(message, sessionId, state.snapshot)
+  React.useEffect(() => {
+    if (selection && request && !isActiveRequest) select(null)
+  }, [selection, request?.requestId, isActiveRequest, select])
   return (
-    <Dialog open={selection !== null} onOpenChange={(open) => { if (!open) select(null) }}>
-      <DialogContent data-worktree-detail-dialog className="max-h-[min(88vh,920px)] w-[min(900px,calc(100vw-32px))] max-w-none overflow-y-auto p-5 sm:p-6">
+    <Dialog open={shouldOpenWorktreeDetailDialog(selection, isActiveRequest)} onOpenChange={(open) => { if (!open) select(null) }}>
+      <DialogContent data-worktree-detail-dialog className={`max-h-[min(88vh,920px)] max-w-none overflow-y-auto p-5 sm:p-6 ${request ? 'w-[min(520px,calc(100vw-32px))]' : 'w-[min(900px,calc(100vw-32px))]'}`}>
         <DialogHeader>
-          <DialogTitle>{review ? `第 ${review.review.iteration} 轮验收` : request ? `第 ${request.iteration} 轮调整` : 'Worktree 详情'}</DialogTitle>
-          <DialogDescription>{(review && !isActiveReview) || (request && !isActiveRequest) ? '历史记录 · 仅供回看' : '查看任务详情与当前操作'}</DialogDescription>
+          <DialogTitle>{review ? `第 ${review.review.iteration} 轮验收` : request ? `确认第 ${request.iteration} 轮调整` : 'Worktree 详情'}</DialogTitle>
+          <DialogDescription>{review && !isActiveReview ? '历史验收 · 仅供回看' : request ? '确认后将继续执行当前任务' : '查看任务详情与当前操作'}</DialogDescription>
         </DialogHeader>
         {review && isActiveReview && currentReview ? <WorktreeReviewCard key={review.reviewId} message={currentReview} currentSessionId={sessionId} initialAction={selection?.action} /> : null}
         {review && !isActiveReview ? (
@@ -45,7 +51,6 @@ export function WorktreeDetailDialog({ sessionId, currentRequest }: { sessionId:
           </section>
         ) : null}
         {message && request && isActiveRequest ? <WorktreeIterationRequestCard key={request.requestId} message={message} currentSessionId={sessionId} /> : null}
-        {message && request && !isActiveRequest ? <div className="space-y-3 text-sm"><p className="text-muted-foreground">{request.summary}</p><MessageResponse>{request.detailsMarkdown}</MessageResponse></div> : null}
       </DialogContent>
     </Dialog>
   )

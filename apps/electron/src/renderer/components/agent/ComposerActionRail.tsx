@@ -72,9 +72,9 @@ export function resolveComposerActionRailKind({
   if (hasAgentRuntime) return 'agent_runtime'
   if (hasUrgentWorktreeAction) return 'worktree_active'
   if (hasActiveWorktreeAction) return 'worktree_active'
-  if (hasAgentSummary) return 'agent_summary'
   if (hasChannelSetupAction) return 'channel_setup'
   if (hasSettledWorktreeAction) return 'worktree_settled'
+  if (hasAgentSummary) return 'agent_summary'
   return null
 }
 
@@ -87,6 +87,7 @@ export function ComposerActionRail({
   dataTestId,
   iconClassName,
   contentClassName,
+  actionsClassName,
 }: {
   icon: React.ReactNode
   children: React.ReactNode
@@ -96,6 +97,7 @@ export function ComposerActionRail({
   dataTestId?: string
   iconClassName?: string
   contentClassName?: string
+  actionsClassName?: string
 }): React.ReactElement {
   return (
     <div
@@ -112,7 +114,7 @@ export function ComposerActionRail({
       <span className={cn('min-w-0 flex-1 truncate', contentClassName)}>
         {children}
       </span>
-      {actions ? <span className="ml-auto flex shrink-0 items-center gap-1">{actions}</span> : null}
+      {actions ? <span className={cn('ml-auto flex shrink-0 items-center gap-1', actionsClassName)}>{actions}</span> : null}
     </div>
   )
 }

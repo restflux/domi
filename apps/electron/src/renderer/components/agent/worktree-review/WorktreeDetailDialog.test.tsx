@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { SDKSystemMessage } from '@domi/shared'
-import { worktreeDetailSelectionAtomFamily } from './WorktreeDetailDialog.tsx'
+import { shouldOpenWorktreeDetailDialog, worktreeDetailSelectionAtomFamily } from './WorktreeDetailDialog.tsx'
 
 const review = {
   type: 'system', subtype: 'worktree_ready_for_review', session_id: 'session-1', checkout_id: 'checkout-1', review_id: 'review-1', iteration: 1,
@@ -13,6 +13,13 @@ const request = {
 } as SDKSystemMessage
 
 describe('Worktree 消息事件与详情展示边界', () => {
+  test('当前下一轮请求可确认，处理后立即关闭历史弹窗；历史验收仍可查看', () => {
+    expect(shouldOpenWorktreeDetailDialog(null, false)).toBe(false)
+    expect(shouldOpenWorktreeDetailDialog({ message: request }, true)).toBe(true)
+    expect(shouldOpenWorktreeDetailDialog({ message: request }, false)).toBe(false)
+    expect(shouldOpenWorktreeDetailDialog({ message: review }, false)).toBe(true)
+  })
+
   test('消息区不再插入验收和下一轮 system 事件条；详情选择状态按会话隔离', async () => {
     const renderer = await Bun.file('apps/electron/src/renderer/components/agent/SDKMessageRenderer.tsx').text()
     expect(renderer).not.toContain('<WorktreeHistoryEvent')
@@ -30,6 +37,9 @@ describe('Worktree 消息事件与详情展示边界', () => {
     expect(dialog).not.toContain('历史交付说明')
     expect(dialog).not.toContain('review.detailsMarkdown')
     expect(dialog).not.toContain('review.review.suggestedCommitMessage')
+    expect(dialog).not.toContain('request.detailsMarkdown')
+    expect(dialog).not.toContain('历史记录 · 仅供回看')
+    expect(dialog).toContain('shouldOpenWorktreeDetailDialog(selection, isActiveRequest)')
     expect(dialog).toContain('<WorktreeIterationRequestCard key={request.requestId} message={message} currentSessionId={sessionId} />')
     expect(dialog).toContain('<WorktreeReviewCard key={review.reviewId} message={currentReview} currentSessionId={sessionId} initialAction={selection?.action} />')
     expect(agentView).toContain('<WorktreeDetailDialog sessionId={sessionId} currentRequest={currentIterationRequest} />')

@@ -143,30 +143,30 @@ export function WorktreeIterationRequestCard({
         {state.error ? <p className="text-xs text-destructive">{state.error.message}</p> : null}
         {busyLabel ? <p role="status" aria-live="polite" className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{busyLabel}</p> : null}
       </section>
-      <section data-worktree-detail-section="request-task" className="space-y-2">
-        <h3 className="text-sm font-semibold">确认后执行的完整任务</h3>
-        <p className="whitespace-pre-wrap break-words rounded-lg bg-muted/25 p-3 text-xs leading-5">{request.task}</p>
-      </section>
+      <details data-worktree-detail-section="request-task" className="rounded-lg bg-muted/25 p-3 text-xs">
+        <summary className="cursor-pointer font-medium">查看本轮将执行的任务</summary>
+        <p className="mt-2 whitespace-pre-wrap break-words leading-5 text-muted-foreground">{request.task}</p>
+      </details>
       <div data-worktree-detail-section="request-action" className="flex justify-end border-t pt-3">
-              {requestHandled ? (
-                <span className="text-xs text-muted-foreground">
-                  {request.mode === 'preview_revision' ? '当前验收已撤回，调整请求已进入处理' : `本请求已进入第 ${request.iteration} 轮处理`}
-                </span>
-              ) : alreadyCreated || revisionReady ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={cardBusy}
-                  onClick={() => request.mode === 'preview_revision' ? resume() : void start()}
-                >
-                  {request.mode === 'preview_revision' ? '继续调整' : '继续本轮任务'}
-                </Button>
-              ) : (
-                <Button type="button" size="sm" disabled={!canStart} onClick={() => void start()}>
-                  {request.mode === 'preview_revision' ? '撤回验收并继续修改' : `创建第 ${request.iteration} 轮 Worktree 并继续`}
-                </Button>
-              )}
+        {requestHandled ? (
+          <span className="text-xs text-muted-foreground">
+            {request.mode === 'preview_revision' ? '当前验收已撤回，调整请求已进入处理' : `本请求已进入第 ${request.iteration} 轮处理`}
+          </span>
+        ) : alreadyCreated || revisionReady ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={cardBusy}
+            onClick={() => request.mode === 'preview_revision' ? resume() : void start()}
+          >
+            {request.mode === 'preview_revision' ? '继续调整' : '继续本轮任务'}
+          </Button>
+        ) : (
+          <Button type="button" size="sm" disabled={!canStart} onClick={() => void start()}>
+            {request.mode === 'preview_revision' ? '确认撤回预览并继续修改' : `确认开启第 ${request.iteration} 轮修改`}
+          </Button>
+        )}
       </div>
     </div>
   )

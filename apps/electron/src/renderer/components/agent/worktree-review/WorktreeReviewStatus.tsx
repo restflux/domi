@@ -76,8 +76,18 @@ export function WorktreeReviewStatus({
   const [retainedCleanupOpen, setRetainedCleanupOpen] = React.useState(false)
   const delivery = state.snapshot?.delivery
   if (pendingRequest) return (
-    <ComposerActionRail dataKind={railKind} dataTestId="worktree-pending-request-status" icon={<Clock3 className="size-3.5 text-amber-500" />} actions={<Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" disabled={state.loading || state.pendingAction !== null} onClick={() => selectDetail({ message: pendingRequest })}>查看任务并确认</Button>}>
-      {pendingRequest.subtype === 'worktree_preview_revision_requested' ? '待确认继续修改当前验收' : '待确认创建下一轮修改'}
+    <ComposerActionRail
+      dataKind={railKind}
+      dataTestId="worktree-pending-request-status"
+      className="mx-2 flex-wrap border-amber-500/25 bg-amber-500/[0.08] px-3 py-2 shadow-sm"
+      contentClassName="min-w-28 font-medium text-foreground"
+      actionsClassName="min-w-0 max-w-full flex-wrap justify-end"
+      icon={<Clock3 className="size-3.5 text-amber-500" />}
+      actions={<Button type="button" size="sm" className="h-8 shrink-0 px-3 text-xs font-semibold" disabled={state.loading || state.pendingAction !== null} onClick={() => selectDetail({ message: pendingRequest })}>
+        {pendingRequest.subtype === 'worktree_preview_revision_requested' ? '确认继续修改' : '确认开启下一轮'}
+      </Button>}
+    >
+      {pendingRequest.subtype === 'worktree_preview_revision_requested' ? '验收中 · 待确认继续修改' : '本轮已结束 · 待确认下一轮'}
     </ComposerActionRail>
   )
   if (
@@ -165,7 +175,7 @@ export function WorktreeReviewStatus({
   const compactLabel = delivery.state === 'ready_for_review'
     ? preflight?.status === 'conflict' || preflight?.status === 'blocked'
       ? label
-      : '新修改待验收'
+      : '修改已完成 · 可先预览'
     : delivery.state === 'preview_active'
       ? recoveryPreview ? label : '正在预览本次修改'
       : delivery.state === 'preview_detached' || delivery.state === 'finalized'
@@ -176,6 +186,11 @@ export function WorktreeReviewStatus({
     && preflight?.status !== 'blocked'
     ? 'bg-sky-400'
     : 'bg-amber-400'
+  const surfaceToneClass = delivery.state === 'ready_for_review' && preflight?.status !== 'conflict' && preflight?.status !== 'blocked'
+    ? 'border-sky-500/25 bg-sky-500/[0.07]'
+    : delivery.state === 'delivered' || (delivery.state === 'retained' && delivery.cleanup !== 'blocked')
+      ? 'border-emerald-500/25 bg-emerald-500/[0.07]'
+      : 'border-amber-500/25 bg-amber-500/[0.08]'
   const fallbackIconClass = delivery.state === 'retained' && delivery.cleanup === 'blocked'
     ? 'text-amber-500'
     : delivery.state === 'retained' || delivery.state === 'delivered'
@@ -279,12 +294,11 @@ export function WorktreeReviewStatus({
       <ComposerActionRail
         dataKind={railKind}
         dataTestId="worktree-review-status"
-        contentClassName={compactActiveSurface ? 'min-w-24' : undefined}
+        contentClassName={!legacySurface ? 'min-w-24 font-medium text-foreground' : undefined}
+        actionsClassName={!legacySurface ? 'min-w-0 max-w-full flex-wrap justify-end' : undefined}
         className={legacySurface
           ? 'legacy-worktree-review-status mx-3 mt-2 rounded-md border-blue-500/20 bg-blue-500/5'
-          : compactActiveSurface
-            ? 'mx-2 flex-wrap rounded-none border-0 bg-transparent px-1.5 py-1'
-            : undefined}
+          : `mx-2 flex-wrap border px-3 py-2 shadow-sm ${surfaceToneClass}`}
         icon={busyLabel
           ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
           : compactActiveSurface
@@ -292,32 +306,23 @@ export function WorktreeReviewStatus({
             : <Icon className={`size-3.5 ${fallbackIconClass}`} />}
         actions={(
           <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={compactActiveSurface ? 'h-7 shrink-0 px-2 text-[11px] text-foreground/80' : 'h-6 shrink-0 px-2 text-[11px]'}
-              disabled={compactActiveSurface ? pending : primaryDisabled}
-              onClick={compactActiveSurface ? focusCard : primaryAction}
-            >
-              {compactActiveSurface ? <><ClipboardCheck className="size-3.5" />查看详情</> : primaryLabel}
+            <Button type="button" variant={legacySurface ? 'ghost' : 'default'} size="sm" className="h-8 shrink-0 px-3 text-xs font-semibold" disabled={primaryDisabled} onClick={primaryAction}>
+              {primaryLabel}
             </Button>
+            {compactActiveSurface && delivery.state === 'preview_active' && !recoveryPreview ? (
+              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-xs" disabled={pending} onClick={() => void operate({ action: 'rollback_preview' })}>
+                撤回预览
+              </Button>
+            ) : null}
             {compactActiveSurface ? (
-              <>
-                {delivery.state === 'preview_active' && !recoveryPreview ? (
-                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[11px]" disabled={pending} onClick={() => void operate({ action: 'rollback_preview' })}>
-                    撤回预览
-                  </Button>
-                ) : null}
-                <Button type="button" size="sm" className="h-7 shrink-0 px-3 text-[11px]" disabled={primaryDisabled} onClick={primaryAction}>
-                  {primaryLabel}
-                </Button>
-              </>
+              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-xs text-foreground/80" disabled={pending} onClick={focusCard}>
+                <ClipboardCheck className="size-3.5" />查看详情
+              </Button>
             ) : null}
             {hasMenuActions ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon-sm" className="size-6 shrink-0" disabled={pending} aria-label="更多交付操作">
+                  <Button type="button" variant="ghost" size="icon-sm" className="size-8 shrink-0" disabled={pending} aria-label="更多交付操作">
                     <MoreHorizontal className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
