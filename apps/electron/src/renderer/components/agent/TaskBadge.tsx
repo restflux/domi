@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react'
-import { Loader2, Terminal, GitBranch } from 'lucide-react'
+import { Loader2, Terminal, ListTodo } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { BackgroundTask } from '@/atoms/agent-atoms'
 
@@ -72,7 +72,7 @@ export function TaskBadge({ task, onClick }: TaskBadgeProps): React.ReactElement
   }, [task.type, task.startTime])
 
   const displayElapsed = task.type === 'shell' ? localElapsed : task.elapsedSeconds
-  const Icon = task.type === 'shell' ? Terminal : GitBranch
+  const Icon = task.type === 'shell' ? Terminal : ListTodo
 
   return (
     <button

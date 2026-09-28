@@ -2,7 +2,7 @@
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
-import { FileImage, Folder, Link2, Paperclip, Plus } from 'lucide-react'
+import { FileImage, Folder, FolderOpen, Paperclip, Plus } from 'lucide-react'
 import type { GeneratedImageItem, SDKMessage } from '@domi/shared'
 import {
   agentAttachedDirectoriesMapAtom,
@@ -166,9 +166,9 @@ export function SessionFilesCard({ sessionId, sessionPath, onViewAll }: SessionF
     <>
       <ImageLightbox src={lightbox?.src} alt={lightbox?.alt} open={lightbox !== null} onOpenChange={(open) => { if (!open) setLightbox(null) }} />
       <div className="flex h-9 shrink-0 items-center justify-between pl-5 pr-4 pt-1">
-        <span className="text-[12px] font-medium text-popover-foreground/80">输出内容</span>
+        <span className="text-[12px] font-medium text-popover-foreground/80">会话文件 · 输出内容</span>
         <button type="button" onClick={onViewAll} title="查看会话文件" aria-label="查看会话文件" className="flex size-6 items-center justify-center text-muted-foreground/55 hover:text-foreground">
-          <Plus className="size-4" />
+          <FolderOpen className="size-4" />
         </button>
       </div>
       {outputs.length === 0 ? (
@@ -230,7 +230,7 @@ export function SessionFilesCard({ sessionId, sessionPath, onViewAll }: SessionF
           )
         })}
         <button type="button" className={`${rowClass} w-full text-left text-muted-foreground/60`} onClick={onViewAll}>
-          <Link2 className="size-[15px] shrink-0" />
+          <FolderOpen className="size-[15px] shrink-0" />
           <span>查看全部</span>
         </button>
       </div>

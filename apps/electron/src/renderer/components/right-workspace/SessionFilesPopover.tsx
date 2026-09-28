@@ -1,14 +1,15 @@
 /**
- * SessionFilesPopover — 顶部常驻入口与右上角的会话文件浮窗。
+ * SessionFilesPopover — 顶部会话概览入口，展示后台任务和会话文件。
  *
- * 使用轻量的输出／来源清单；完整文件树只在用户显式查看全部时打开。
+ * 文件使用轻量的输出／来源清单；完整文件树只在用户显式查看全部时打开。
  * 用户按需点击入口展开，点击卡片外层或按 Escape 关闭。
  */
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { agentFileSourceFilterMapAtom, agentSessionPathMapAtom } from '@/atoms/agent-atoms'
+import { LayoutList } from 'lucide-react'
+import { agentFileSourceFilterMapAtom, agentSessionPathMapAtom, backgroundTasksAtomFamily } from '@/atoms/agent-atoms'
 import { interfaceVariantAtom } from '@/atoms/theme'
 import { openRightWorkspaceV2OptionalTab } from '@/lib/right-workspace-model'
 import {
@@ -18,6 +19,7 @@ import {
   sessionFilesPopoverReservationMapAtom,
 } from '@/atoms/right-workspace-atoms'
 import { SessionFilesCard } from './SessionFilesCard'
+import { SessionBackgroundTasksSection } from './SessionBackgroundTasksSection'
 import { Button } from '@/components/ui/button'
 import {
   DEFAULT_SESSION_FILES_POPOVER_OPEN,
@@ -35,6 +37,7 @@ interface SessionFilesPopoverProps {
 export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFilesPopoverProps): React.ReactElement | null {
   const sessionPathMap = useAtomValue(agentSessionPathMapAtom)
   const sessionPath = sessionPathMap.get(sessionId) ?? null
+  const backgroundTasks = useAtomValue(backgroundTasksAtomFamily(sessionId))
   const isWorkbenchV2 = useAtomValue(interfaceVariantAtom) === 'workbench-v2'
   const setRightWorkspaceSessionStateMap = useSetAtom(rightWorkspaceSessionStateMapAtom)
   const setRightWorkspaceOpen = useSetAtom(rightWorkspaceOpenAtom)
@@ -176,17 +179,12 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
         className={open
           ? 'relative h-7 w-7 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary'
           : 'relative h-7 w-7'}
-        aria-label={open ? '关闭会话文件浮窗' : '查看会话文件'}
+        aria-label={open ? '关闭会话概览' : '查看会话概览'}
         aria-expanded={open}
-        title="会话文件"
+        title="会话概览"
         onClick={() => setOpen((current) => !current)}
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" className="size-3.5">
-          <circle cx="5" cy="7" r="1.2" />
-          <path d="M9 7h10" />
-          <circle cx="5" cy="16" r="1.2" />
-          <path d="M9 16h10" />
-        </svg>
+        <LayoutList className="size-3.5" />
       </Button>
 
       {open && position && typeof document !== 'undefined' && createPortal(
@@ -194,8 +192,9 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
           ref={panelRef}
           data-session-files-popover
           style={{ top: position.top, right: position.right, width: position.width }}
-          className="titlebar-no-drag fixed z-[100] flex max-h-[min(244px,calc(100vh-74px))] flex-col overflow-hidden rounded-[22px] border border-border/25 bg-popover/98 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-150"
+          className="titlebar-no-drag fixed z-[100] flex max-h-[min(400px,calc(100vh-74px))] flex-col overflow-y-auto rounded-[22px] border border-border/25 bg-popover/98 shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-150 scrollbar-thin"
         >
+          <SessionBackgroundTasksSection tasks={backgroundTasks} />
           <SessionFilesCard sessionId={sessionId} sessionPath={sessionPath} onViewAll={viewAll} />
         </div>,
         document.body,
