@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Boxes, CheckCircle2, ChevronDown, FolderGit2, FolderOpen, GitBranch, GitBranchPlus, HardDrive, Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import { Boxes, CheckCircle2, ChevronDown, CircleHelp, FolderGit2, FolderOpen, GitBranch, GitBranchPlus, HardDrive, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils.ts'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
 import { openDialogAfterDropdownMenu } from '@/lib/open-dialog-after-dropdown-menu.ts'
@@ -148,13 +148,16 @@ export function SessionTargetControl({
             className="size-3 accent-primary"
           />
           <span className="font-medium">Worktree（独立工作区）</span>
+          <span aria-label="Worktree 使用说明" className="inline-flex shrink-0 text-muted-foreground/70">
+            <CircleHelp className="size-3.5" aria-hidden="true" />
+          </span>
         </label>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs">
         <p>
           {worktreeUnavailable
             ? '当前项目不是 Git 仓库，无法使用 Worktree'
-            : '勾选后在 Worktree（独立工作区）中修改代码，不影响本地项目；不勾选则直接在本地项目中修改'}
+            : 'Worktree 会在独立工作区中修改代码，不会直接影响本地项目。适合尝试新功能、修复问题或并行处理任务；完成后可以预览修改，确认无误后再保存，也可以随时撤回。'}
         </p>
       </TooltipContent>
     </Tooltip>

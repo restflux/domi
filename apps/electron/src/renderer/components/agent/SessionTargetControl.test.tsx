@@ -92,6 +92,23 @@ describe('SessionTargetControl compact header', () => {
     expect(renderCompact('local')).toContain('本地项目')
   })
 
+  test('Worktree 勾选项提供问号使用说明，解释隔离修改与预览流程', () => {
+    const html = renderToStaticMarkup(
+      <TooltipProvider>
+        <SessionTargetControl
+          target={target('local')}
+          worktreeAvailable
+          onToggleWorktree={() => undefined}
+          onChooseTarget={() => undefined}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(html).toContain('aria-label="Worktree 使用说明"')
+    expect(html).toContain('Worktree 会在独立工作区中修改代码，不会直接影响本地项目。')
+    expect(html).toContain('完成后可以预览修改，确认无误后再保存，也可以随时撤回。')
+  })
+
   test('当前 Worktree 弹层提供验收详情入口，关闭弹层后打开对话框', async () => {
     // Radix 的 Portal 不在 SSR 中渲染；结构断言核对真正的 compact Popover 内容。
     const source = await Bun.file(new URL('./SessionTargetControl.tsx', import.meta.url)).text()
