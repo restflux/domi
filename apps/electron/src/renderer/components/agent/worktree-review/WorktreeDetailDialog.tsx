@@ -16,7 +16,8 @@ interface WorktreeDetailSelection {
 export const worktreeDetailSelectionAtomFamily = atomFamily((_sessionId: string) => atom<WorktreeDetailSelection | null>(null))
 
 export function shouldOpenWorktreeDetailDialog(selection: WorktreeDetailSelection | null, isActiveRequest: boolean): boolean {
-  return selection !== null && (!parseWorktreeIterationRequest(selection.message) || isActiveRequest)
+  return selection !== null && selection.action !== 'commit'
+    && (!parseWorktreeIterationRequest(selection.message) || isActiveRequest)
 }
 
 /** 历史验收仍可查阅文件与验证；已失效的下一轮请求不再弹出消息区已有的正文。 */
@@ -33,9 +34,10 @@ export function WorktreeDetailDialog({ sessionId, currentRequest }: { sessionId:
   const isActiveRequest = message != null && request != null && currentRequest?.request_id === request.requestId
     && currentRequest.subtype === message.subtype && isCurrentIterationRequest(message, sessionId, state.snapshot)
   React.useEffect(() => {
-    if (selection && request && !isActiveRequest) select(null)
-  }, [selection, request?.requestId, isActiveRequest, select])
+    if (selection && ((request && !isActiveRequest) || (selection.action === 'commit' && !isActiveReview))) select(null)
+  }, [selection, request?.requestId, isActiveRequest, isActiveReview, select])
   return (
+    <>
     <Dialog open={shouldOpenWorktreeDetailDialog(selection, isActiveRequest)} onOpenChange={(open) => { if (!open) select(null) }}>
       <DialogContent data-worktree-detail-dialog className={`max-h-[min(88vh,920px)] max-w-none overflow-y-auto p-5 sm:p-6 ${request ? 'w-[min(520px,calc(100vw-32px))]' : 'w-[min(900px,calc(100vw-32px))]'}`}>
         <DialogHeader>
@@ -53,5 +55,9 @@ export function WorktreeDetailDialog({ sessionId, currentRequest }: { sessionId:
         {message && request && isActiveRequest ? <WorktreeIterationRequestCard key={request.requestId} message={message} currentSessionId={sessionId} /> : null}
       </DialogContent>
     </Dialog>
+    {selection?.action === 'commit' && review && currentReview && isActiveReview ? (
+      <WorktreeReviewCard key={review.reviewId} message={currentReview} currentSessionId={sessionId} initialAction="commit" confirmationOnly onActionClose={() => select(null)} />
+    ) : null}
+    </>
   )
 }

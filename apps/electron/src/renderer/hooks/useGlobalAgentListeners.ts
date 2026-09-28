@@ -87,7 +87,7 @@ import {
   createAgentDeltaFrameBatcher,
   hasAgentAssistantDeltaControlEvent,
 } from '@/lib/agent-delta-frame-batcher'
-import { shouldRefreshMessagesAfterToolResult } from '@/lib/worktree-review-message-refresh'
+import { refreshWorkingWorktreeAfterStreamComplete, refreshWorktreeReviewAfterToolResult } from '@/lib/worktree-review-message-refresh'
 
 /** 触发右侧文件浏览器自动定位的写入类工具集合 */
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Update'])
@@ -827,13 +827,8 @@ export function useGlobalAgentListeners(): void {
             continue
           }
 
-          if (shouldRefreshMessagesAfterToolResult(event, eventStreamState)) {
-            store.set(agentMessageRefreshAtom, (prev) => {
-              const map = new Map(prev)
-              map.set(sessionId, (prev.get(sessionId) ?? 0) + 1)
-              return map
-            })
-          }
+          // 验收消息与 Session Target 同源；不能只刷新正文而让两处操作入口停在 working。
+          void refreshWorktreeReviewAfterToolResult(store, sessionId, event, eventStreamState)
 
           // 会话首次进入 running 时，清除旧的完成提醒状态
           if (event.type !== 'prompt_suggestion') {
@@ -1272,6 +1267,10 @@ export function useGlobalAgentListeners(): void {
           // 后台任务等待态：保留后台任务列表（面板继续显示在跑任务），不做收尾清理，
           // 等任务完成 Agent 自动唤醒续轮后再走真正的完成路径。
           if (backgroundTasksPending) return
+
+          // ReadyForReview 是终止型工具：若结果没有进入实时流，仍在 run 结束后
+          // 从 Main 收敛权威 Checkout，避免正文已可见但验收按钮和顶栏入口缺失。
+          void refreshWorkingWorktreeAfterStreamComplete(store, data.sessionId)
 
           // 每轮完成后主动重新聚合会话关联文件，覆盖 Bash/脚本和附件工具未触发 watcher 的情况。
           store.set(workspaceFilesVersionAtom, (version) => version + 1)

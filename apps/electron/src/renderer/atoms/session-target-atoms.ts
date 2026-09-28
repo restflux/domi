@@ -216,6 +216,10 @@ export const inspectSessionTargetAtomFamily = atomFamily((sessionId: string) => 
     if (bindChanged()) return
     if (result.ok) {
       set(stateAtom, (current) => {
+        // 早先的后台 inspect 可能晚于 Preview/保存操作返回，不得用旧 revision 覆盖新状态。
+        if (current.snapshot?.checkout.id === result.value.checkout.id && current.snapshot.revision > result.value.revision) {
+          return { ...current, loading: false }
+        }
         const keepPreflight = preflightMatchesSnapshot(current.preflight, current.snapshot, result.value)
         return {
           snapshot: result.value,

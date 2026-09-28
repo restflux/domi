@@ -311,10 +311,14 @@ export function WorktreeReviewCard({
   message,
   currentSessionId,
   initialAction,
+  confirmationOnly = false,
+  onActionClose,
 }: {
   message: SDKSystemMessage
   currentSessionId?: string
   initialAction?: 'commit' | 'checkpoint' | 'discard' | 'handoff'
+  confirmationOnly?: boolean
+  onActionClose?: () => void
 }): React.ReactElement | null {
   const notice = parseWorktreeReviewNotice(message)
   const operationSessionId = currentSessionId ?? 'invalid-review'
@@ -335,6 +339,7 @@ export function WorktreeReviewCard({
   const [handoffOpen, setHandoffOpen] = React.useState(false)
   const [handoffStarting, setHandoffStarting] = React.useState(false)
   const [commitMessage, setCommitMessage] = React.useState(notice?.review.suggestedCommitMessage ?? '')
+  const [saveError, setSaveError] = React.useState<string | null>(null)
   const [checkpointMessage, setCheckpointMessage] = React.useState(notice?.review.suggestedCommitMessage ?? '')
   const [retention, setRetention] = React.useState<WorktreeRetentionMode>('cleanup')
   const [slotReleased, setSlotReleased] = React.useState(false)
@@ -343,6 +348,8 @@ export function WorktreeReviewCard({
   const automaticPreflightAttempt = React.useRef<string | null>(null)
   const regenerationObservedRunning = React.useRef(false)
   const openedInitialAction = React.useRef(false)
+  const submittingCommit = React.useRef(false)
+  const releasingAll = React.useRef(false)
 
   React.useEffect(() => {
     if (!initialAction || openedInitialAction.current || !notice || currentSessionId !== notice.sessionId) return
@@ -358,6 +365,7 @@ export function WorktreeReviewCard({
       })
       if (action === 'release_collaborators') setReleaseAllOpen(true)
       if (action === 'open_commit') setCommitOpen(true)
+      if (action === 'blocked') onActionClose?.()
     }
     if (initialAction === 'checkpoint') setCheckpointOpen(true)
     if (initialAction === 'discard') setDiscardOpen(true)
@@ -512,18 +520,26 @@ export function WorktreeReviewCard({
 
   const submitCommit = async (): Promise<void> => {
     const value = commitMessage.trim()
-    if (!value || directFinishNextAction !== 'open_commit' || recoveryPreview || submitting) return
+    if (!value || directFinishNextAction !== 'open_commit' || recoveryPreview || submitting || submittingCommit.current) return
+    submittingCommit.current = true
+    setSaveError(null)
     // 对话框保持打开并显示提交中；operate 超时后原子会自动等待主进程收敛，
     // 期间用户能看到明确的处理中状态，而不是关掉后只能看到卡片按钮转圈。
     setSubmitting(true)
     try {
       const result = await operate({ action: previewActive ? 'finalize_preview' : 'finish', commitMessage: value, retention })
-      if ((result?.status === 'error' || result?.status === 'preview_detached') && (previewActive || previewDetached)) {
-        toast.warning('直接提交仍无法可靠收口', { description: '可以使用“交接到新会话”保底，由新 Agent 基于最新 Local HEAD 恢复缺失增量。' })
+      if (result?.status !== 'finished') {
+        setSaveError(result?.status === 'error' ? result.message : '保存未完成，请检查当前状态后重试。')
+        if ((result?.status === 'error' || result?.status === 'preview_detached') && (previewActive || previewDetached)) {
+          toast.warning('直接提交仍无法可靠收口', { description: '可以使用“交接到新会话”保底，由新 Agent 基于最新 Local HEAD 恢复缺失增量。' })
+        }
+        return
       }
-    } finally {
-      setSubmitting(false)
       setCommitOpen(false)
+      onActionClose?.()
+    } finally {
+      submittingCommit.current = false
+      setSubmitting(false)
     }
   }
 
@@ -590,14 +606,22 @@ export function WorktreeReviewCard({
   }
 
   const releaseAllAndContinue = async (): Promise<void> => {
-    if (!canReleaseAll || cardBusy) return
-    setReleaseAllOpen(false)
-    const result = await operate({ action: 'release_collaborators' })
-    if (result?.status === 'collaborators_released') setCommitOpen(true)
+    if (!canReleaseAll || cardBusy || releasingAll.current) return
+    releasingAll.current = true
+    try {
+      const result = await operate({ action: 'release_collaborators' })
+      if (result?.status === 'collaborators_released') {
+        setReleaseAllOpen(false)
+        setCommitOpen(true)
+      }
+    } finally {
+      releasingAll.current = false
+    }
   }
 
   return (
-    <div data-worktree-review-detail={notice.reviewId} className={`space-y-5 text-sm ${cardBusy ? 'pointer-events-none opacity-60' : ''}`} aria-busy={cardBusy} {...(cardBusy ? { inert: '' } : {})}>
+    <>
+      {!confirmationOnly ? <div data-worktree-review-detail={notice.reviewId} className={`space-y-5 text-sm ${cardBusy ? 'pointer-events-none opacity-60' : ''}`} aria-busy={cardBusy} {...(cardBusy ? { inert: '' } : {})}>
       <section data-worktree-detail-section="status" className="space-y-3 rounded-xl bg-muted/35 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
@@ -683,6 +707,8 @@ export function WorktreeReviewCard({
                 ))}
               </div>
       </section> : null}
+      </div> : null}
+      {!confirmationOnly ? <>
       <AlertDialog open={handoffOpen} onOpenChange={setHandoffOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -733,8 +759,9 @@ export function WorktreeReviewCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </> : null}
 
-      <AlertDialog open={commitOpen} onOpenChange={setCommitOpen}>
+      <AlertDialog open={commitOpen} onOpenChange={(open) => { if (!open && submittingCommit.current) return; setCommitOpen(open); if (!open) onActionClose?.() }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{previewActive ? '确认并保存本次修改？' : previewDetached ? '保存本次修改？' : '跳过预览并直接保存？'}</AlertDialogTitle>
@@ -748,6 +775,7 @@ export function WorktreeReviewCard({
                 {directFinishBlock}
               </p>
             ) : null}
+            {state.error || saveError ? <p role="alert" className="text-xs text-destructive">{state.error?.message ?? saveError}</p> : null}
             <Textarea
               value={commitMessage}
               onChange={(event) => setCommitMessage(event.target.value)}
@@ -784,7 +812,7 @@ export function WorktreeReviewCard({
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>
-            <AlertDialogAction disabled={!commitMessage.trim() || directFinishNextAction !== 'open_commit' || submitting} onClick={() => void submitCommit()}>
+            <AlertDialogAction disabled={!commitMessage.trim() || directFinishNextAction !== 'open_commit' || submitting} onClick={(event) => { event.preventDefault(); void submitCommit() }}>
               {submitting ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
               {submitting ? '正在交付…' : retention === 'cleanup' ? '确认交付并清理' : '确认交付并保留环境'}
             </AlertDialogAction>
@@ -792,7 +820,7 @@ export function WorktreeReviewCard({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={releaseAllOpen} onOpenChange={setReleaseAllOpen}>
+      <AlertDialog open={releaseAllOpen} onOpenChange={(open) => { if (!open && releasingAll.current) return; setReleaseAllOpen(open); if (!open) onActionClose?.() }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>一次释放全部协作占用并继续提交？</AlertDialogTitle>
@@ -816,9 +844,10 @@ export function WorktreeReviewCard({
               </div>
             ) : null}
           </div>
+          {state.error ? <p role="alert" className="text-xs text-destructive">{state.error.message}</p> : null}
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction disabled={!canReleaseAll || pending} onClick={() => void releaseAllAndContinue()}>
+            <AlertDialogCancel disabled={pending}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={!canReleaseAll || pending} onClick={(event) => { event.preventDefault(); void releaseAllAndContinue() }}>
               {pending ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
               {canReleaseAll ? `确认释放 ${releasableCollaborators.length} 个并继续` : '请先停止仍在运行的会话'}
             </AlertDialogAction>
@@ -826,6 +855,7 @@ export function WorktreeReviewCard({
         </AlertDialogContent>
       </AlertDialog>
 
+      {!confirmationOnly ? <>
       <AlertDialog open={releaseTarget !== null} onOpenChange={(open) => { if (!open) setReleaseTarget(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -864,6 +894,7 @@ export function WorktreeReviewCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </> : null}
+    </>
   )
 }

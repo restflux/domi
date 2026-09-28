@@ -63,12 +63,15 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     const delivered = renderStatus({ state: 'delivered', iteration: 1, commitOid: null, deliveredAt: 2 }, undefined, { pendingRequest: request })
     expect(delivered).toContain('本轮已结束 · 待确认下一轮')
     expect(delivered).toContain('>确认开启下一轮</button>')
+    const confirmButton = delivered.match(/<button[^>]*>确认开启下一轮<\/button>/)?.[0]
+    expect(confirmButton).toContain('rounded-lg')
+    expect(confirmButton).not.toContain('rounded-sm')
     expect(delivered).toContain('bg-amber-500/[0.08]')
     expect(delivered).toContain('min-w-0 max-w-full flex-wrap justify-end')
     expect(delivered).not.toContain('开始下一轮修改</button>')
     const pending = renderStatus({ state: 'delivered', iteration: 1, commitOid: null, deliveredAt: 2 }, undefined, { pendingRequest: request, loading: true })
-    const confirmButton = pending.match(/<button[^>]*>确认开启下一轮<\/button>/)?.[0]
-    expect(confirmButton).toMatch(/\sdisabled(?:=|>)/)
+    const disabledConfirmButton = pending.match(/<button[^>]*>确认开启下一轮<\/button>/)?.[0]
+    expect(disabledConfirmButton).toMatch(/\sdisabled(?:=|>)/)
     const preview = renderStatus({ state: 'preview_active', review, previewedAt: 2 }, undefined, {
       pendingRequest: { ...request, subtype: 'worktree_preview_revision_requested', iteration: 1 },
     })
@@ -83,10 +86,17 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('修改已完成 · 可先预览')
     expect(html).toContain('查看详情')
     expect(html).toContain('>预览修改</button>')
+    const previewButton = html.match(/<button[^>]*>预览修改<\/button>/)?.[0]
+    expect(previewButton).toContain('rounded-lg')
+    expect(previewButton).not.toContain('rounded-sm')
     expect(html).toContain('bg-sky-400')
     expect(html).toContain('lucide-clipboard-check')
     expect(html).toContain('mx-2 flex-wrap border px-3 py-2 shadow-sm')
-    expect(html).toContain('aria-label="更多交付操作"')
+    expect(html.indexOf('查看详情</button>')).toBeLessThan(html.indexOf('预览修改</button>'))
+    expect(html.indexOf('预览修改</button>')).toBeLessThan(html.indexOf('aria-label="更多交付操作"'))
+    const moreButton = html.match(/<button[^>]*aria-label="更多交付操作"[^>]*>/)?.[0]
+    expect(moreButton).toContain('rounded-lg')
+    expect(moreButton).not.toContain('rounded-sm')
   })
 
   test('初始化加载只显示一个中性 Spinner，不冒充具体操作', () => {
@@ -118,6 +128,9 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('查看详情</button>')
     expect(html).toContain('撤回预览</button>')
     expect(html).toContain('确认保存</button>')
+    expect(html.indexOf('查看详情</button>')).toBeLessThan(html.indexOf('撤回预览</button>'))
+    expect(html.indexOf('撤回预览</button>')).toBeLessThan(html.indexOf('确认保存</button>'))
+    expect(html.indexOf('确认保存</button>')).toBeLessThan(html.indexOf('aria-label="更多交付操作"'))
     expect(html.match(/animate-spin/g)).toHaveLength(1)
     expect(html).not.toContain('处理中…')
     const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
@@ -224,6 +237,11 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('查看详情')
     expect(html).toContain('>撤回预览</button>')
     expect(html).toContain('>确认保存</button>')
+    for (const label of ['撤回预览', '确认保存']) {
+      const button = html.match(new RegExp(`<button[^>]*>${label}</button>`))?.[0]
+      expect(button).toContain('rounded-lg')
+      expect(button).not.toContain('rounded-sm')
+    }
     expect(html).toContain('bg-amber-400')
   })
 
@@ -314,7 +332,10 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('text-emerald-500')
     expect(html).toContain('开始下一轮修改')
     expect(html).toContain('bg-emerald-500/[0.07]')
-    expect(html).toContain('h-8 shrink-0 px-3 text-xs font-semibold')
+    expect(html).toContain('ml-auto flex')
+    const nextButton = html.match(/<button[^>]*>开始下一轮修改<\/button>/)?.[0]
+    expect(nextButton).toContain('h-8 shrink-0 rounded-lg px-3 text-xs font-semibold')
+    expect(nextButton).not.toContain('rounded-sm')
     expect(html).not.toContain('legacy-worktree-review-status')
     expect(html).not.toContain('border-blue-500/20')
     expect(html).not.toContain('bg-blue-500/5')

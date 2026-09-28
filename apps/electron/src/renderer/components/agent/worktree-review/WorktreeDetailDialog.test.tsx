@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import type { SDKSystemMessage } from '@domi/shared'
+import type { SDKSystemMessage, SessionTargetView } from '@domi/shared'
+import { createStore, Provider } from 'jotai'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
+import { WorktreeReviewCard } from './WorktreeReviewCard.tsx'
 import { shouldOpenWorktreeDetailDialog, worktreeDetailSelectionAtomFamily } from './WorktreeDetailDialog.tsx'
 
 const review = {
@@ -18,6 +22,33 @@ describe('Worktree 消息事件与详情展示边界', () => {
     expect(shouldOpenWorktreeDetailDialog({ message: request }, true)).toBe(true)
     expect(shouldOpenWorktreeDetailDialog({ message: request }, false)).toBe(false)
     expect(shouldOpenWorktreeDetailDialog({ message: review }, false)).toBe(true)
+    expect(shouldOpenWorktreeDetailDialog({ message: review, action: 'commit' }, false)).toBe(false)
+  })
+
+  test('保存入口不呈现验收详情正文，查看详情仍保留文件与验证', () => {
+    const store = createStore()
+    const snapshot: SessionTargetView = {
+      project: { id: 'project-1', name: 'domi' },
+      checkout: { id: 'checkout-1', kind: 'isolated', label: 'Isolated Checkout', phase: 'ready' },
+      source: { ref: 'main', oid: 'abc123' },
+      current: { branch: null, oid: 'abc123' },
+      ownership: 'owner', dirty: false, revision: 2,
+      delivery: {
+        state: 'preview_active', previewedAt: 2,
+        review: { reviewId: 'review-1', iteration: 1, preparedAt: 1, summary: '本轮验收',
+          validationStatus: 'passed', tests: [], changedFiles: ['src/a.ts'], suggestedCommitMessage: 'feat: 工作改动' },
+      },
+    }
+    store.set(sessionTargetStateAtomFamily('session-1'), {
+      snapshot, selectionRequired: false, loading: false, pendingAction: null, error: null,
+    })
+    const renderCard = (confirmationOnly: boolean): string => renderToStaticMarkup(
+      <Provider store={store}><WorktreeReviewCard message={review} currentSessionId="session-1" initialAction="commit" confirmationOnly={confirmationOnly} /></Provider>,
+    )
+    expect(renderCard(true)).not.toContain('data-worktree-review-detail')
+    expect(renderCard(true)).not.toContain('修改文件')
+    expect(renderCard(false)).toContain('data-worktree-review-detail')
+    expect(renderCard(false)).toContain('修改文件')
   })
 
   test('消息区不再插入验收和下一轮 system 事件条；详情选择状态按会话隔离', async () => {

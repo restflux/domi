@@ -83,7 +83,7 @@ export function WorktreeReviewStatus({
       contentClassName="min-w-28 font-medium text-foreground"
       actionsClassName="min-w-0 max-w-full flex-wrap justify-end"
       icon={<Clock3 className="size-3.5 text-amber-500" />}
-      actions={<Button type="button" size="sm" className="h-8 shrink-0 px-3 text-xs font-semibold" disabled={state.loading || state.pendingAction !== null} onClick={() => selectDetail({ message: pendingRequest })}>
+      actions={<Button type="button" size="sm" className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold" disabled={state.loading || state.pendingAction !== null} onClick={() => selectDetail({ message: pendingRequest })}>
         {pendingRequest.subtype === 'worktree_preview_revision_requested' ? '确认继续修改' : '确认开启下一轮'}
       </Button>}
     >
@@ -306,23 +306,23 @@ export function WorktreeReviewStatus({
             : <Icon className={`size-3.5 ${fallbackIconClass}`} />}
         actions={(
           <>
-            <Button type="button" variant={legacySurface ? 'ghost' : 'default'} size="sm" className="h-8 shrink-0 px-3 text-xs font-semibold" disabled={primaryDisabled} onClick={primaryAction}>
-              {primaryLabel}
-            </Button>
-            {compactActiveSurface && delivery.state === 'preview_active' && !recoveryPreview ? (
-              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-xs" disabled={pending} onClick={() => void operate({ action: 'rollback_preview' })}>
-                撤回预览
-              </Button>
-            ) : null}
             {compactActiveSurface ? (
-              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-xs text-foreground/80" disabled={pending} onClick={focusCard}>
+              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs text-foreground/80" disabled={pending} onClick={focusCard}>
                 <ClipboardCheck className="size-3.5" />查看详情
               </Button>
             ) : null}
+            {compactActiveSurface && delivery.state === 'preview_active' && !recoveryPreview ? (
+              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" disabled={pending} onClick={() => void operate({ action: 'rollback_preview' })}>
+                撤回预览
+              </Button>
+            ) : null}
+            <Button type="button" variant={legacySurface ? 'ghost' : 'default'} size="sm" className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold" disabled={primaryDisabled} onClick={primaryAction}>
+              {primaryLabel}
+            </Button>
             {hasMenuActions ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon-sm" className="size-8 shrink-0" disabled={pending} aria-label="更多交付操作">
+                  <Button type="button" variant="ghost" size="icon-sm" className="size-8 shrink-0 rounded-lg" disabled={pending} aria-label="更多交付操作">
                     <MoreHorizontal className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>

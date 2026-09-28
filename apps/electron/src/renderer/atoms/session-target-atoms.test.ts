@@ -972,6 +972,28 @@ describe('session target atoms', () => {
     expect(store.get(sessionTargetStateAtomFamily('late-inspect')).snapshot).toEqual(view('new-bound'))
   })
 
+  test('后台验收 inspect 晚于用户操作完成时不回退到旧 revision', async () => {
+    let finishInspect!: (value: { ok: true; value: SessionTargetView }) => void
+    installApi({
+      inspect: () => new Promise((resolve) => { finishInspect = resolve }),
+      bind: async () => ({ ok: true, value: view('unused') }),
+      operate: async () => ({ ok: true, value: { status: 'applied', target: view('unused'), changedFiles: [] } }),
+    })
+    const store = createStore()
+    store.set(sessionTargetStateAtomFamily('late-review-inspect'), {
+      snapshot: view('same-checkout', 2), selectionRequired: false,
+      loading: false, pendingAction: null, error: null,
+    })
+    const inspecting = store.set(inspectSessionTargetAtomFamily('late-review-inspect'), { silent: true })
+    store.set(sessionTargetStateAtomFamily('late-review-inspect'), {
+      snapshot: view('same-checkout', 3), selectionRequired: false,
+      loading: false, pendingAction: null, error: null,
+    })
+    finishInspect({ ok: true, value: view('same-checkout', 2) })
+    await inspecting
+    expect(store.get(sessionTargetStateAtomFamily('late-review-inspect')).snapshot?.revision).toBe(3)
+  })
+
   test('Given bind 成功 When 调用方等待结果 Then 返回 true 且 target 就绪', async () => {
     const bound = view('bound-a')
     installApi({
