@@ -40,10 +40,10 @@ describe('WorktreeReviewCard sync explainability', () => {
   test('safe collaborator release remains a one-click step before direct finish while unsafe occupancy stays blocked', () => {
     expect(directFinishBlockReason({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: true })).toBeNull()
     expect(directFinishAction({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: true })).toBe('release_collaborators')
-    expect(directFinishActionLabel({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: true, releasableCount: 1 })).toBe('结束 1 个占用并保存')
+    expect(directFinishActionLabel({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: true, releasableCount: 1 })).toBe('结束 1 个占用并应用修改')
     expect(directFinishBlockReason({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: false })).toBe('请先停止或等待仍在运行的协作会话，再释放 Worktree 占用。')
     expect(directFinishAction({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: false })).toBe('blocked')
-    expect(directFinishActionLabel({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: false, releasableCount: 1 })).toBe('跳过预览并保存（协作占用未结束）')
+    expect(directFinishActionLabel({ waitingForSlot: false, blockedByCollaborator: true, canReleaseAll: false, releasableCount: 1 })).toBe('跳过预览并应用修改（协作占用未结束）')
   })
 
   test('acceptance busy keeps navigation available, exposes one checkpoint entry and blocks direct finish until the Local slot is released', () => {
@@ -176,8 +176,8 @@ describe('WorktreeReviewCard sync explainability', () => {
     })
     const rollbackHtml = renderToStaticMarkup(createElement(Provider, { store }, createElement(WorktreeReviewCard, { message, currentSessionId: 'session-1' })))
     expect(rollbackHtml).toContain('正在撤回预览…')
-    expect(rollbackHtml).toContain('>确认保存</button>')
-    expect(rollbackHtml).toContain('>撤回预览</button>')
+    expect(rollbackHtml).toContain('应用修改')
+    expect(rollbackHtml).toContain('撤回预览')
     expect(rollbackHtml).toContain('修改正在预览')
     expect(rollbackHtml.match(/animate-spin/g)).toHaveLength(1)
     expect(rollbackHtml).not.toContain('处理中…')
@@ -239,7 +239,7 @@ describe('WorktreeReviewCard sync explainability', () => {
     expect(html).toContain('修改正在预览')
     expect(html).toContain('检查预览效果')
     expect(html).toContain('data-worktree-detail-section="status"')
-    expect(html).toContain('确认保存')
+    expect(html).toContain('应用修改')
     const actionRowIndex = html.indexOf('data-worktree-detail-section="more-actions"')
     const changesSectionIndex = html.indexOf('data-worktree-detail-section="changes"')
     expect(actionRowIndex).toBeGreaterThan(html.indexOf('data-worktree-detail-section="status"'))
@@ -275,7 +275,7 @@ describe('WorktreeReviewCard sync explainability', () => {
     const html = renderToStaticMarkup(createElement(Provider, { store }, createElement(WorktreeReviewCard, { message, currentSessionId: 'session-1' })))
 
     expect(html).toContain('基于最新 Local 重新计算')
-    expect(html).toContain('保存修改')
+    expect(html).toContain('应用修改')
     expect(html).toContain('需要重新确认')
     expect(html).toContain('aria-label="更多交付操作"')
     expect(html).toContain('当前项目已有新变化')

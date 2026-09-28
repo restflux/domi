@@ -90,7 +90,8 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(previewButton).toContain('rounded-lg')
     expect(previewButton).not.toContain('rounded-sm')
     expect(html).toContain('bg-sky-400')
-    expect(html).toContain('lucide-clipboard-check')
+    expect(html).toContain('lucide-file-search')
+    expect(html).not.toContain('lucide-clipboard-check')
     expect(html).toContain('mx-2 flex-wrap border px-3 py-2 shadow-sm')
     expect(html.indexOf('查看详情</button>')).toBeLessThan(html.indexOf('预览修改</button>'))
     expect(html.indexOf('预览修改</button>')).toBeLessThan(html.indexOf('aria-label="更多交付操作"'))
@@ -126,16 +127,16 @@ describe('WorktreeReviewStatus current delivery actions', () => {
 
     expect(html).toContain('正在撤回预览…')
     expect(html).toContain('查看详情</button>')
-    expect(html).toContain('撤回预览</button>')
-    expect(html).toContain('确认保存</button>')
-    expect(html.indexOf('查看详情</button>')).toBeLessThan(html.indexOf('撤回预览</button>'))
-    expect(html.indexOf('撤回预览</button>')).toBeLessThan(html.indexOf('确认保存</button>'))
-    expect(html.indexOf('确认保存</button>')).toBeLessThan(html.indexOf('aria-label="更多交付操作"'))
+    expect(html).toContain('撤回预览')
+    expect(html).toContain('应用修改')
+    expect(html.indexOf('lucide-file-search')).toBeLessThan(html.indexOf('lucide-undo2'))
+    expect(html.indexOf('lucide-undo2')).toBeLessThan(html.indexOf('lucide-badge-check'))
+    expect(html.indexOf('lucide-badge-check')).toBeLessThan(html.indexOf('aria-label="更多交付操作"'))
     expect(html.match(/animate-spin/g)).toHaveLength(1)
     expect(html).not.toContain('处理中…')
     const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toMatch(/\sdisabled(?:=|>)/)
-    const saveButton = html.match(/<button[^>]*>确认保存<\/button>/)?.[0]
+    const saveButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*应用修改<\/button>/)?.[0]
     expect(saveButton).toMatch(/\sdisabled(?:=|>)/)
   })
 
@@ -235,10 +236,12 @@ describe('WorktreeReviewStatus current delivery actions', () => {
 
     expect(html).toContain('正在预览本次修改')
     expect(html).toContain('查看详情')
-    expect(html).toContain('>撤回预览</button>')
-    expect(html).toContain('>确认保存</button>')
-    for (const label of ['撤回预览', '确认保存']) {
-      const button = html.match(new RegExp(`<button[^>]*>${label}</button>`))?.[0]
+    expect(html).toContain('撤回预览')
+    expect(html).toContain('应用修改')
+    expect(html).toContain('lucide-undo2')
+    expect(html).toContain('lucide-badge-check')
+    for (const label of ['撤回预览', '应用修改']) {
+      const button = html.match(new RegExp(`<button[^>]*>[\\s\\S]*?${label}<\\/button>`))?.[0]
       expect(button).toContain('rounded-lg')
       expect(button).not.toContain('rounded-sm')
     }
@@ -265,9 +268,9 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     const reviewButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*查看详情<\/button>/)?.[0]
     expect(reviewButton).toBeDefined()
     expect(reviewButton).not.toMatch(/\sdisabled(?:=|>)/)
-    const saveButton = html.match(/<button[^>]*>确认保存<\/button>/)?.[0]
+    const saveButton = html.match(/<button[^>]*>(?:(?!<\/button>).)*应用修改<\/button>/)?.[0]
     expect(saveButton).toMatch(/\sdisabled(?:=|>)/)
-    expect(html).toContain('>撤回预览</button>')
+    expect(html).toContain('撤回预览')
   })
 
   test('Preview 操作中断进入 recovery 时只提供恢复撤回主操作，不再引导直接提交', () => {
@@ -279,7 +282,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(html).toContain('预览需要恢复，安全记录已保留')
     expect(html).toContain('查看详情')
     expect(html).toContain('>恢复并撤回预览</button>')
-    expect(html).not.toContain('>确认保存</button>')
+    expect(html).not.toContain('应用修改')
   })
 
   test('旧 Preview 进入 detached 后可直接提交、重新撤回或交接到新会话', () => {
@@ -293,7 +296,7 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     })
 
     expect(html).toContain('当前项目已有新变化，本次修改仍可保存')
-    expect(html).toContain('>保存修改</button>')
+    expect(html).toContain('应用修改')
     expect(html).toContain('查看详情')
     expect(html).toContain('aria-label="更多交付操作"')
   })

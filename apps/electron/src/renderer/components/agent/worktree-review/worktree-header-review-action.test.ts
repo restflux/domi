@@ -30,7 +30,7 @@ describe('右上角 Worktree 验收兜底入口', () => {
     expect(result?.label).toBe('查看验收并预览修改')
     expect(result?.message).toMatchObject({ session_id: 'session-1', checkout_id: 'checkout-1', review_id: 'review-3', changed_files: ['src/a.ts'] })
     const preview = { ...base, delivery: { state: 'preview_active', review, previewedAt: 120 } } as SessionTargetView
-    expect(resolveWorktreeHeaderReviewAction('session-1', preview, null)?.label).toBe('查看预览并确认保存')
+    expect(resolveWorktreeHeaderReviewAction('session-1', preview, null)?.label).toBe('查看预览并应用修改')
     const detached = { ...base, delivery: { state: 'preview_detached', review, previewedAt: 120, detachedAt: 121, reason: 'stale_local', attemptedAction: 'discard' } } as SessionTargetView
     expect(resolveWorktreeHeaderReviewAction('session-1', detached, null)?.label).toBe('查看预览状态与恢复操作')
   })

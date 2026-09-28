@@ -3,16 +3,18 @@ import type { SDKSystemMessage } from '@domi/shared'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
   AlertTriangle,
+  BadgeCheck,
   CheckCircle2,
-  ClipboardCheck,
   Clock3,
   FolderOpen,
   GitBranchPlus,
   GitCommitHorizontal,
   Loader2,
   MoreHorizontal,
+  FileSearch,
   RotateCcw,
   Trash2,
+  Undo2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button.tsx'
@@ -272,15 +274,18 @@ export function WorktreeReviewStatus({
   const primaryLabel = delivery.state === 'ready_for_review'
     ? staleIsolatedPreflight ? '重新检查' : preflight?.status === 'conflict' ? '让 Agent 解决冲突' : waitingForSlot ? '查看占用任务' : '预览修改'
     : delivery.state === 'preview_active'
-      ? recoveryPreview ? '恢复并撤回预览' : blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并保存` : '确认保存'
+      ? recoveryPreview ? '恢复并撤回预览' : blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并应用修改` : '应用修改'
       : delivery.state === 'preview_detached'
-        ? blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并保存` : '保存修改'
+        ? blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并应用修改` : '应用修改'
       : delivery.state === 'finalized' || (delivery.state === 'retained' && delivery.cleanup === 'blocked')
         ? '重试清理环境'
         : '开始下一轮修改'
   const acceptanceBusyNavigation = waitingForSlot
     && preflight?.status === 'blocked'
     && preflight.reason === 'project_acceptance_busy'
+  const primaryActionIcon = (delivery.state === 'preview_active' && !recoveryPreview) || delivery.state === 'preview_detached'
+    ? <BadgeCheck className="size-3.5" />
+    : null
   const primaryDisabled = pending
     || (delivery.state === 'ready_for_review' && preflight?.status === 'blocked' && !staleIsolatedPreflight && !acceptanceBusyNavigation)
     || (
@@ -308,15 +313,16 @@ export function WorktreeReviewStatus({
           <>
             {compactActiveSurface ? (
               <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs text-foreground/80" disabled={pending} onClick={focusCard}>
-                <ClipboardCheck className="size-3.5" />查看详情
+                <FileSearch className="size-3.5" />查看详情
               </Button>
             ) : null}
             {compactActiveSurface && delivery.state === 'preview_active' && !recoveryPreview ? (
               <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" disabled={pending} onClick={() => void operate({ action: 'rollback_preview' })}>
-                撤回预览
+                <Undo2 className="size-3.5" />撤回预览
               </Button>
             ) : null}
             <Button type="button" variant={legacySurface ? 'ghost' : 'default'} size="sm" className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold" disabled={primaryDisabled} onClick={primaryAction}>
+              {primaryActionIcon}
               {primaryLabel}
             </Button>
             {hasMenuActions ? (
@@ -329,7 +335,7 @@ export function WorktreeReviewStatus({
                 <DropdownMenuContent align="end" className="z-[9999] min-w-56">
                   {reviewId && !compactActiveSurface ? (
                     <DropdownMenuItem onSelect={focusCard}>
-                      <ClipboardCheck />查看详情
+                      <FileSearch />查看详情
                     </DropdownMenuItem>
                   ) : null}
                   {canReveal ? (

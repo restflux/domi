@@ -25,7 +25,7 @@ export function resolveWorktreeHeaderReviewAction(
   const label = delivery.state === 'ready_for_review'
     ? '查看验收并预览修改'
     : delivery.state === 'preview_active'
-      ? '查看预览并确认保存'
+      ? '查看预览并应用修改'
       : delivery.state === 'preview_detached'
         ? '查看预览状态与恢复操作'
         : null

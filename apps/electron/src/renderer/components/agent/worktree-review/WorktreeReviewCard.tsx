@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import type { ApplyBaseStrategy, SDKSystemMessage, WorktreeApplyPreflightView, WorktreeCollaboratorStatus, WorktreeCollaboratorView, WorktreeDeliveryProofView, WorktreeRetentionMode, WorktreeReviewView } from '@domi/shared'
-import { AlertTriangle, ChevronDown, ChevronUp, ExternalLink, FileText, GitBranchPlus, GitCommitHorizontal, Loader2, MoreHorizontal, RefreshCw, RotateCcw, ShieldCheck, TestTube2, Trash2, Unplug } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, ChevronDown, ChevronUp, ExternalLink, FileText, GitBranchPlus, GitCommitHorizontal, Loader2, MoreHorizontal, RefreshCw, RotateCcw, ShieldCheck, TestTube2, Trash2, Unplug } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
@@ -83,11 +83,11 @@ export function directFinishActionLabel({
   canReleaseAll: boolean
   releasableCount: number
 }): string {
-  if (waitingForSlot) return '跳过预览并保存（等待其他任务）'
+  if (waitingForSlot) return '跳过预览并应用修改（等待其他任务）'
   if (blockedByCollaborator) {
-    return canReleaseAll ? `结束 ${releasableCount} 个占用并保存` : '跳过预览并保存（协作占用未结束）'
+    return canReleaseAll ? `结束 ${releasableCount} 个占用并应用修改` : '跳过预览并应用修改（协作占用未结束）'
   }
-  return '跳过预览并保存'
+  return '跳过预览并应用修改'
 }
 
 function buildLegacyWorktreeReviewDetails(
@@ -433,7 +433,7 @@ export function WorktreeReviewCard({
     : handoffStarting
       ? '正在创建接力会话…'
       : submitting
-        ? checkpointOpen ? '正在保存进度…' : '正在保存修改…'
+        ? checkpointOpen ? '正在保存进度…' : '正在应用修改…'
         : regenerationRequested
           ? '正在重新检查验收结果…'
           : state.preflightLoading
@@ -649,12 +649,12 @@ export function WorktreeReviewCard({
                   <Button type="button" className="" disabled={cardBusy} onClick={() => void operate({ action: 'rollback_preview' })}><RotateCcw />恢复并撤回预览</Button>
                 ) : (
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                    <Button type="button" className="" disabled={cardBusy || (blockedByCollaborator && !canReleaseAll)} onClick={() => blockedByCollaborator ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />{blockedByCollaborator ? '释放并保存' : '确认保存'}</Button>
+                    <Button type="button" className="" disabled={cardBusy || (blockedByCollaborator && !canReleaseAll)} onClick={() => blockedByCollaborator ? setReleaseAllOpen(true) : setCommitOpen(true)}><BadgeCheck />{blockedByCollaborator ? '释放并应用修改' : '应用修改'}</Button>
                     <Button type="button" variant="outline" className="" disabled={cardBusy} onClick={() => { void rollbackPreviewWithFallback() }}><RotateCcw />撤回预览</Button>
                   </div>
                 )
               ) : null}
-              {previewDetached ? <Button type="button" className="" disabled={cardBusy || directFinishBlock !== null} onClick={() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true)}><GitCommitHorizontal />保存修改</Button> : null}
+              {previewDetached ? <Button type="button" className="" disabled={cardBusy || directFinishBlock !== null} onClick={() => directFinishNextAction === 'release_collaborators' ? setReleaseAllOpen(true) : setCommitOpen(true)}><BadgeCheck />应用修改</Button> : null}
               {finalized ? <Button type="button" className="" disabled={cardBusy} onClick={() => void operate({ action: 'retry_cleanup' })}><RotateCcw />重试清理</Button> : null}
           <div data-worktree-detail-section="more-actions" className="flex flex-wrap items-center justify-end gap-2 text-xs">
             {(delivery?.state === 'ready_for_review' || previewActive) && !savedCheckpoint && !staleIsolatedPreflight && !preflightConflict ? (
@@ -764,9 +764,9 @@ export function WorktreeReviewCard({
       <AlertDialog open={commitOpen} onOpenChange={(open) => { if (!open && submittingCommit.current) return; setCommitOpen(open); if (!open) onActionClose?.() }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{previewActive ? '确认并保存本次修改？' : previewDetached ? '保存本次修改？' : '跳过预览并直接保存？'}</AlertDialogTitle>
+            <AlertDialogTitle>{previewActive ? '确认应用本次修改？' : previewDetached ? '应用本次修改？' : '跳过预览并直接应用？'}</AlertDialogTitle>
             <AlertDialogDescription>
-              Domi 只会保存本轮任务内容，不会包含当前项目中已有或之后新增的其他修改。默认保存后清理临时运行环境，你仍可回到当前会话继续下一轮。
+              Domi 只会应用本轮任务内容，不会包含当前项目中已有或之后新增的其他修改。默认应用后清理临时运行环境，你仍可回到当前会话继续下一轮。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-1.5">
@@ -814,7 +814,7 @@ export function WorktreeReviewCard({
             <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>
             <AlertDialogAction disabled={!commitMessage.trim() || directFinishNextAction !== 'open_commit' || submitting} onClick={(event) => { event.preventDefault(); void submitCommit() }}>
               {submitting ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
-              {submitting ? '正在交付…' : retention === 'cleanup' ? '确认交付并清理' : '确认交付并保留环境'}
+              {submitting ? '正在应用…' : retention === 'cleanup' ? '确认应用并清理' : '确认应用并保留环境'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

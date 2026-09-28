@@ -10,7 +10,7 @@ export function worktreeOperationBusyLabel(action: SessionCheckoutAction): strin
       return '正在撤回预览…'
     case 'finish':
     case 'finalize_preview':
-      return '正在保存修改…'
+      return '正在应用修改…'
     case 'retry_cleanup':
       return '正在清理环境…'
     case 'discard':
