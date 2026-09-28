@@ -8,17 +8,10 @@ import {
   terminalServiceUrlsMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
-import { currentAgentSessionIdAtom } from '@/atoms/agent-atoms.ts'
 import {
   accumulateTerminalServiceOutput,
   type TerminalServiceOutputState,
 } from '@/components/terminal/running-terminals-model.ts'
-import {
-  activateSessionRightWorkspaceTab,
-  rightWorkspaceOpenAtom,
-  rightWorkspaceSessionStateMapAtom,
-} from '@/atoms/right-workspace-atoms.ts'
-import { terminalTabId } from '@/lib/right-workspace-model.ts'
 
 export function useGlobalTerminalListeners(): void {
   const store = useStore()
@@ -70,15 +63,7 @@ export function useGlobalTerminalListeners(): void {
 
       if (change.status === 'starting') {
         if (change.kind === 'agent-run') clearServiceOutput(change.terminalId)
-        if (change.presentation === 'workspace') {
-          store.set(rightWorkspaceSessionStateMapAtom, (current) => (
-            activateSessionRightWorkspaceTab(current, change.ownerSessionId, terminalTabId(change.terminalId))
-          ))
-          if (store.get(currentAgentSessionIdAtom) === change.ownerSessionId) {
-            store.set(rightWorkspaceOpenAtom, true)
-          }
-          return
-        }
+        if (change.presentation === 'workspace') return
 
         store.set(terminalDockOpenMapAtom, (current) => new Map(current).set(change.ownerSessionId, true))
         store.set(terminalActiveIdMapAtom, (current) => new Map(current).set(change.ownerSessionId, change.terminalId))
