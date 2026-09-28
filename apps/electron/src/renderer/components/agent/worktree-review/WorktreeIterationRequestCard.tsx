@@ -14,9 +14,9 @@ import { worktreeOperationBusyLabel } from './worktree-review-busy-state.ts'
 
 function normalizeLegacyWorktreeIterationRedactions(value: string): string {
   return value
-    .replace(/(?:用户\s*)?Local Checkout\s*`?\[路径\]`?/gi, '当前项目的 Local Checkout')
-    .replace(/(^|[\p{Script=Han}])\s*`?\[路径\]`?/gu, '$1当前项目的 Local Checkout')
-    .replace(/`?\[路径\]`?/g, '当前项目的 Local Checkout')
+    .replace(/(?:用户\s*)?Local Checkout\s*`?\[路径\]`?/gi, '当前项目')
+    .replace(/(^|[\p{Script=Han}])\s*`?\[路径\]`?/gu, '$1当前项目')
+    .replace(/`?\[路径\]`?/g, '当前项目')
     .replace(/`?\[内部引用\]`?/g, '内部引用已隐藏')
 }
 

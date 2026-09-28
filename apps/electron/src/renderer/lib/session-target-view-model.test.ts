@@ -240,8 +240,8 @@ describe('Session Target renderer view model', () => {
     expect(model.chooser).toEqual({
       visible: true,
       options: [
-        { choice: 'local', label: 'Local', description: '直接在当前项目中工作' },
-        { choice: 'isolated', label: 'Worktree', description: '基于当前 HEAD 创建，不复制 Local 未提交修改' },
+        { choice: 'local', label: '本地项目', description: '直接在当前项目中工作' },
+        { choice: 'isolated', label: 'Worktree（独立工作区）', description: '基于当前 HEAD 创建，不复制本地项目的未提交修改' },
       ],
     })
     // 未绑定新会话默认显示 Local，不展示分支/HEAD 占位。

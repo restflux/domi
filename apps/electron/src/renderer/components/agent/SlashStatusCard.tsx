@@ -152,9 +152,9 @@ export function SlashStatusCard({
   const targetLabel = !target
     ? '—'
     : isWorktree
-      ? '隔离 Worktree'
+      ? 'Worktree（独立工作区）'
       : target.checkout.kind === 'local'
-        ? 'Local Checkout'
+        ? '本地项目'
         : target.checkout.kind
   const workflowDisplay = getAgentWorkflowDisplay(controls.workflow)
 

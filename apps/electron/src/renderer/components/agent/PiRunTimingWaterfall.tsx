@@ -104,7 +104,7 @@ function EnvelopeRow({ label, children }: { label: string; children: React.React
 function targetDescription(envelope: PiRequestEnvelopeView): string {
   const target = envelope.sessionTarget
   if (!target) return '—'
-  const label = target.kind === 'isolated' ? '隔离 Worktree' : 'Local Checkout'
+  const label = target.kind === 'isolated' ? 'Worktree（独立工作区）' : '本地项目'
   return target.revision === undefined ? label : `${label} · revision ${target.revision}`
 }
 

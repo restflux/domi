@@ -95,7 +95,7 @@ describe('PiRunTimingWaterfall', () => {
     expect(html).toContain('xhigh')
     expect(html).toContain('272k')
     expect(html).toContain('Controlled · Direct')
-    expect(html).toContain('隔离 Worktree · revision 8')
+    expect(html).toContain('Worktree（独立工作区） · revision 8')
     expect(html).toContain('sha256:aaaaaaaaaaaa…')
     expect(html).toContain('sha256:bbbbbbbbbbbb…')
     expect(html).toContain('模型可见')

@@ -34,10 +34,10 @@ function renderCompact(kind: 'local' | 'isolated'): string {
 }
 
 describe('SessionTargetControl compact header', () => {
-  test('Given a Local target When rendered Then the project precedes a clearly labelled Local badge', () => {
+  test('Given a local target When rendered Then the project precedes a clearly labelled local project badge', () => {
     const html = renderCompact('local')
 
-    expect(html.indexOf('domi')).toBeLessThan(html.indexOf('Local'))
+    expect(html.indexOf('domi')).toBeLessThan(html.indexOf('本地项目'))
     expect(html).toContain('data-session-target-mode="local"')
     expect(html).toContain('aria-label="当前修改环境"')
     expect(html).not.toContain('>HEAD fd97bfc')
@@ -88,8 +88,8 @@ describe('SessionTargetControl compact header', () => {
     expect(modernCopy.status).toBe('直接修改')
     expect(modernCopy.branch).toBe('当前分支')
     expect(modernCopy.description).toContain('直接写入本地项目文件夹')
-    expect(getCompactLocalCopy(false).description).toBe('当前会话直接使用 Local Checkout。')
-    expect(renderCompact('local')).toContain('Local')
+    expect(getCompactLocalCopy(false).description).toBe('当前会话直接使用本地项目。')
+    expect(renderCompact('local')).toContain('本地项目')
   })
 
   test('当前 Worktree 弹层提供验收详情入口，关闭弹层后打开对话框', async () => {

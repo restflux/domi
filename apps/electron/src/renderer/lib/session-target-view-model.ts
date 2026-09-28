@@ -204,8 +204,8 @@ export function buildSessionTargetViewModel(input: SessionTargetDisplayInput): S
     chooser: {
       visible: checkout.kind === 'unselected',
       options: [
-        { choice: 'local', label: 'Local', description: '直接在当前项目中工作' },
-        { choice: 'isolated', label: 'Worktree', description: '基于当前 HEAD 创建，不复制 Local 未提交修改' },
+        { choice: 'local', label: '本地项目', description: '直接在当前项目中工作' },
+        { choice: 'isolated', label: 'Worktree（独立工作区）', description: '基于当前 HEAD 创建，不复制本地项目的未提交修改' },
       ],
     },
     actions: {

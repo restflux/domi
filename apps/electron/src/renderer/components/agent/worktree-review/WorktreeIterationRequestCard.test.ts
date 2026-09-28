@@ -43,7 +43,7 @@ describe('WorktreeIterationRequestCard parser', () => {
     })).toBeNull()
   })
 
-  test('历史请求中的脱敏路径占位符显示为可理解的 Local Checkout 语义', () => {
+  test('历史请求中的脱敏路径占位符显示为可理解的当前项目语义', () => {
     expect(parseWorktreeIterationRequest({
       type: 'system',
       subtype: 'worktree_next_iteration_requested',
@@ -55,9 +55,9 @@ describe('WorktreeIterationRequestCard parser', () => {
     })).toEqual({
       requestId: 'redacted-request',
       iteration: 2,
-      detailsMarkdown: '从当前项目的 Local Checkout 的最新 Local revision 创建。',
+      detailsMarkdown: '从当前项目的 Local revision 创建。',
       summary: '从 Local 最新状态开始',
-      task: '从当前项目的 Local Checkout 的最新状态继续修改。',
+      task: '从当前项目的最新状态继续修改。',
       mode: 'next_iteration',
     })
   })

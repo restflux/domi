@@ -414,8 +414,8 @@ const WORKFLOW_PICKER_OPTIONS: SlashPickerOption[] = AGENT_WORKFLOW_DISPLAY_OPTI
 }))
 
 const FORK_PICKER_OPTIONS: SlashPickerOption[] = [
-  { value: 'inherit', label: 'Fork 为普通会话', description: 'Isolated 会话会复制当前修改到独立 Worktree', icon: GitFork },
-  { value: 'isolated', label: 'Fork 到 Managed Worktree', description: '在隔离 Worktree 中继续（仅 Local 会话）', icon: GitBranch },
+  { value: 'inherit', label: 'Fork 为普通会话', description: 'Isolated 会话会复制当前修改到 Worktree（独立工作区）', icon: GitFork },
+  { value: 'isolated', label: 'Fork 到 Managed Worktree', description: '在 Worktree（独立工作区）中继续（仅本地项目会话）', icon: GitBranch },
 ]
 
 function normalizeOpenAIThinkingLevel(
@@ -2630,7 +2630,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       toast.error('本次执行未启动', { description: '会话已有新活动，请在续跑卡片中重新确认。' })
       return
     }
-    // 全新会话未绑定 target：发送前自动绑定（默认 Local；已勾选 Worktree 则创建隔离 Worktree）。
+    // 全新会话未绑定 target：发送前自动绑定（默认本地项目；已勾选 Worktree 则创建独立工作区）。
     if (!targetStateForSend.snapshot) {
       const branch = store.get(sessionTargetBranchAtomFamily(sessionId))
       const kind = sessionWorktreePending || branch ? 'isolated' : 'local'
@@ -3532,7 +3532,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       openSession('agent', meta.id, meta.title)
       toast.success(
         target.kind === 'isolated-copy'
-          ? '已复制当前修改到独立 Worktree'
+          ? '已复制当前修改到 Worktree（独立工作区）'
           : target.kind === 'isolated'
             ? '已创建 Worktree 分叉'
             : '已创建分叉会话',

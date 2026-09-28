@@ -259,19 +259,19 @@ export function MoveSessionDialog({
                     selected={targetKind === 'local'}
                     title="使用项目当前目录"
                     description={localMayMissChanges
-                      ? '当前独立工作区中的修改不会自动带到项目目录。'
+                      ? '当前 Worktree（独立工作区）中的修改不会自动带到项目目录。'
                       : '新会话直接使用目标项目现在的文件。'}
                     onSelect={() => setTargetKind('local')}
                   />
                   <HandoffLocationChoice
                     selected={targetKind === 'isolated'}
                     disabled={worktreeAvailable === false}
-                    title="新建独立工作区（Worktree）"
+                    title="新建 Worktree（独立工作区）"
                     description={worktreeAvailable === false
                       ? '这个项目目前不能创建 Worktree。'
                       : worktreeAvailable === null
                         ? '正在检查项目是否可以创建 Worktree。'
-                        : '从已提交内容创建，当前未提交的修改不会带过去。'}
+                        : '从已提交内容创建，当前本地项目的未提交修改不会带过去。'}
                     onSelect={() => setTargetKind('isolated')}
                   />
                 </div>

@@ -59,7 +59,7 @@ interface CompactLocalCopy {
   description: string
 }
 
-/** 经典界面沿用既有术语；现代顶栏直接说明修改落在用户的项目文件夹。 */
+/** 本地项目统一使用中文；现代顶栏直接说明修改落在用户的项目文件夹。 */
 export function getCompactLocalCopy(modern: boolean): CompactLocalCopy {
   return modern
     ? {
@@ -67,14 +67,14 @@ export function getCompactLocalCopy(modern: boolean): CompactLocalCopy {
         location: '本地项目（直接修改）',
         status: '直接修改',
         branch: '当前分支',
-        description: '修改会直接写入本地项目文件夹，不会创建隔离副本。',
+        description: '修改会直接写入本地项目，不会创建 Worktree。',
       }
     : {
-        label: 'Local',
-        location: 'Local Checkout',
-        status: 'Local',
+        label: '本地项目',
+        location: '本地项目',
+        status: '本地项目',
         branch: '当前 Git',
-        description: '当前会话直接使用 Local Checkout。',
+        description: '当前会话直接使用本地项目。',
       }
 }
 
@@ -91,11 +91,11 @@ export function getCompactTargetDescription(target: SessionTargetDisplayInput, m
   if (modern && delivery?.state === 'preview_active') return '修改已预览到本地项目，可撤回；确认保存后才正式保留。'
   const checkpointCount = target.checkpoints?.length ?? 0
   if (checkpointCount > 0) return modern
-    ? `当前独立工作区已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
+    ? `当前 Worktree（独立工作区）已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
     : `当前 Worktree 已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
   return modern
-    ? '修改先在独立工作区进行，不会直接写入本地项目。'
-    : '当前会话在独立 Worktree 中工作。'
+    ? '修改先在 Worktree（独立工作区）中进行，不会直接写入本地项目。'
+    : '当前会话在 Worktree（独立工作区）中工作。'
 }
 
 const STATUS_CLASSES: Record<SessionTargetStatusViewModel['tone'], string> = {
@@ -147,14 +147,14 @@ export function SessionTargetControl({
             onChange={(event) => { onToggleWorktree(event.target.checked) }}
             className="size-3 accent-primary"
           />
-          <span className="font-medium">Worktree（隔离副本）</span>
+          <span className="font-medium">Worktree（独立工作区）</span>
         </label>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs">
         <p>
           {worktreeUnavailable
-            ? '当前项目不是 Git 仓库，无法使用 Worktree 隔离副本'
-            : '勾选后在独立副本中修改代码，不影响原项目；不勾选则直接在原项目中修改'}
+            ? '当前项目不是 Git 仓库，无法使用 Worktree'
+            : '勾选后在 Worktree（独立工作区）中修改代码，不影响本地项目；不勾选则直接在本地项目中修改'}
         </p>
       </TooltipContent>
     </Tooltip>
@@ -208,12 +208,12 @@ export function SessionTargetControl({
     const description = getCompactTargetDescription(target, hideProjectName)
     const tooltip = (
       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-        <span className="text-muted-foreground">修改环境</span><span>{isWorktree ? hideProjectName ? '独立工作区（Worktree）' : '隔离 Worktree' : localCopy.location}</span>
+        <span className="text-muted-foreground">修改环境</span><span>{isWorktree ? 'Worktree（独立工作区）' : localCopy.location}</span>
         <span className="text-muted-foreground">状态</span><span>{!isWorktree && model.status.label === 'Local' ? localCopy.status : model.status.label}</span>
         {model.identity.sourceLabel ? <><span className="text-muted-foreground">来源</span><span>{model.identity.sourceLabel.replace(/^来自\s*/, '')} · {target.source?.oid.slice(0, 7)}</span></> : null}
         {model.identity.branchLabel ? <><span className="text-muted-foreground">{hideProjectName ? '当前分支' : '当前 Git'}</span><span>{model.identity.branchLabel} · {model.identity.headLabel}</span></> : null}
         {iteration ? <><span className="text-muted-foreground">Iteration</span><span>{iteration}</span></> : null}
-        {checkpointCount > 0 ? <><span className="text-muted-foreground">阶段保存</span><span>已保存 {checkpointCount} 个，尚未交付到 Local</span></> : null}
+        {checkpointCount > 0 ? <><span className="text-muted-foreground">阶段保存</span><span>已保存 {checkpointCount} 个，尚未交付到本地项目</span></> : null}
         {target.delivery?.state === 'retained' ? <><span className="text-muted-foreground">保留</span><span>{target.delivery.expiresAt ? new Date(target.delivery.expiresAt).toLocaleString() : '手动清理'}</span></> : null}
       </div>
     )

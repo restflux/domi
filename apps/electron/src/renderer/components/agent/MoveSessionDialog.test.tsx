@@ -20,7 +20,7 @@ describe('MoveSessionDialog model', () => {
     const choice = HandoffLocationChoice({
       selected: true,
       title: '使用项目当前目录',
-      description: '当前独立工作区中的修改不会自动带到项目目录。',
+      description: '当前 Worktree（独立工作区）中的修改不会自动带到项目目录。',
       onSelect,
     })
 
@@ -33,7 +33,7 @@ describe('MoveSessionDialog model', () => {
     expect(html).toContain('bg-primary/10')
     expect(html).toContain('使用项目当前目录')
     expect(html).toContain('已选择')
-    expect(html).toContain('当前独立工作区中的修改不会自动带到项目目录。')
+    expect(html).toContain('当前 Worktree（独立工作区）中的修改不会自动带到项目目录。')
   })
 
   test('仅复制操作写入 AI 返回的完整交接正文', async () => {
@@ -49,7 +49,7 @@ describe('MoveSessionDialog model', () => {
     const choice = HandoffLocationChoice({
       selected: false,
       disabled: true,
-      title: '新建独立工作区（Worktree）',
+      title: '新建 Worktree（独立工作区）',
       description: '这个项目目前不能创建 Worktree。',
       onSelect: () => undefined,
     })
