@@ -270,7 +270,7 @@ Domi 没有 updater atom；不要新增或恢复指向 Proma 官方更新通道�
 
 - **`app-shell/`**：三面板布局（左侧导航 | 中间主任务 | Right Workspace）；左侧负责项目/会话导航，右侧以顶部工具带统一承载文件、改动、Browser、动态 Preview 与辅助问答，文件 Preview 和 Browser 不再进入 MainArea 分屏
 - **`chat/`**：聊天核心 — ChatView（消息加载/流式订阅）、ChatHeader（模型选择/上下文设置）、ChatInput（Tiptap 富文本编辑器）、ChatMessages（消息列表/自动滚动）、ParallelChatMessages（并排模式）
-- **`agent/`**：Work 模式 — AgentView（纯展示 + 交互，IPC 监听已提升到全局）、AgentHeader（渠道/模型选择）、AgentMessages（消息列表 + 工具活动）、ToolActivityItem（工具调用展示）、WorkspaceSelector（工作区切换）、PermissionBanner/AskUserBanner（权限/问答请求 UI）；现代输入框上方的 Worktree 验收状态条直接提供预览、保存与撤回操作，详情弹窗保留完整报告与确认流程
+- **`agent/`**：Work 模式 — AgentView（纯展示 + 交互，IPC 监听已提升到全局）、AgentHeader（渠道/模型选择）、AgentMessages（消息列表 + 工具活动）、ToolActivityItem（工具调用展示）、WorkspaceSelector（工作区切换）、PermissionBanner/AskUserBanner（权限/问答请求 UI）；现代输入框上方的 Worktree 验收状态条直接提供预览、保存与撤回操作；验收正文只在消息区显示，详情弹窗保留文件、验证记录与确认流程，不重复正文或建议提交信息
 - **`settings/`**：设置面板 — GeneralSettings（用户档案）、AppearanceSettings（主题）、ChannelSettings（渠道管理）、ChannelForm（Provider 配置）、AgentSettings（Agent 渠道/工作区/MCP）、McpServerForm（MCP 服务器配置）、AboutSettings（版本、环境与手动更新说明）、FeishuSettings（飞书集成）；含 `primitives/` 可复用表单组件
 - **`right-workspace/`**：右侧工作区 — RightWorkspaceToolbar（旧版：紧凑图标与窄宽度“更多”菜单；v2：独立扁平工具标签）、RightWorkspaceHeader（上下文标题、文件来源、草稿聚焦与动态关闭）；整区折叠入口固定在 MainArea 右上角，按 Work Session 隔离活动工具和 Preview 返回目标，草稿正文继续全局持久化，Browser 切换仅隐藏原生 View，显式关闭才释放 Session。外观 `interfaceVariant: workbench-v2` 只切换右侧标签、终端和浏览器呈现，左侧导航沿用现代界面；底层 Jotai Session/Browser/Terminal 状态及 Main 所有权不切换。
 - **`file-browser/`**：文件浏览器 — FileBrowser（会话文件与项目根目录文件树浏览）

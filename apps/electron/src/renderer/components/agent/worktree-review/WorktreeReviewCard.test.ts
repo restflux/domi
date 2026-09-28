@@ -117,7 +117,7 @@ describe('WorktreeReviewCard sync explainability', () => {
     })
     const message = {
       type: 'system', subtype: 'worktree_ready_for_review', session_id: 'session-1', checkout_id: 'checkout-1', review_id: 'review-1',
-      iteration: 1, summary: '阶段 A', validation_status: 'passed', tests: [], changed_files: ['src/a.ts'], suggested_commit_message: 'fix: task',
+      iteration: 1, summary: '阶段 A', details_markdown: '仅在消息区显示的交付报告', validation_status: 'passed', tests: [], changed_files: ['src/a.ts'], suggested_commit_message: 'fix: 仅在保存确认中显示',
     } as unknown as SDKSystemMessage
 
     const html = renderToStaticMarkup(createElement(Provider, { store }, createElement(WorktreeReviewCard, { message, currentSessionId: 'session-1' })))
@@ -127,11 +127,14 @@ describe('WorktreeReviewCard sync explainability', () => {
     expect(html).toContain('data-worktree-detail-section="changes"')
     expect(html).toContain('data-worktree-detail-section="validation"')
     expect(html).not.toContain('data-worktree-detail-section="collaborators"')
-    expect(html).toContain('data-worktree-detail-section="report"')
+    expect(html).not.toContain('data-worktree-detail-section="report"')
+    expect(html).not.toContain('data-worktree-detail-section="commit"')
     expect(html).toContain('修改已完成')
     expect(html).toContain('src/a.ts')
     expect(html).toContain('预览修改')
-    expect(html).toContain('建议提交信息')
+    expect(html).not.toContain('建议提交信息')
+    expect(html).not.toContain('仅在消息区显示的交付报告')
+    expect(html).not.toContain('仅在保存确认中显示')
     expect(html).not.toContain('保存进度并继续')
   })
 

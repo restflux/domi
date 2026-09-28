@@ -4,7 +4,6 @@ import type { ApplyBaseStrategy, SDKSystemMessage, WorktreeApplyPreflightView, W
 import { AlertTriangle, ChevronDown, ChevronUp, ExternalLink, FileText, GitBranchPlus, GitCommitHorizontal, Loader2, MoreHorizontal, RefreshCw, RotateCcw, ShieldCheck, TestTube2, Trash2, Unplug } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button.tsx'
-import { MessageResponse } from '@/components/ai-elements/message.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import {
   AlertDialog,
@@ -684,14 +683,6 @@ export function WorktreeReviewCard({
                 ))}
               </div>
       </section> : null}
-      {notice.detailsMarkdown ? <details data-worktree-detail-section="report" className="rounded-lg bg-muted/25 p-3">
-        <summary className="cursor-pointer text-sm font-medium">完整验收说明</summary>
-        <div className="mt-3 text-sm"><MessageResponse>{notice.detailsMarkdown}</MessageResponse></div>
-      </details> : null}
-      <details data-worktree-detail-section="commit" className="rounded-lg bg-muted/25 p-3">
-        <summary className="cursor-pointer text-sm font-medium">建议提交信息</summary>
-        <pre className="mt-3 whitespace-pre-wrap break-words rounded bg-background p-3 text-xs">{notice.review.suggestedCommitMessage}</pre>
-      </details>
       <AlertDialog open={handoffOpen} onOpenChange={setHandoffOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

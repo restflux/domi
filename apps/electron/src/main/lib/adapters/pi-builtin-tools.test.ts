@@ -18,6 +18,13 @@ describe('Pi builtin tool capability metadata', () => {
       expect(text).toContain('type is required and scope is optional')
       expect(text).toContain('actual net diff')
       expect(text).toContain('never omit the prefix or blindly default to fix')
+    }
+    for (const text of readyFields) {
+      expect(text).toContain('suggestedCommitMessage')
+      expect(text).toContain('instead of')
+      expect(text).not.toContain('suggested commit message in details')
+    }
+    for (const text of [PI_FINISH_WORKTREE_GUIDANCE.description, PI_FINISH_WORKTREE_GUIDANCE.promptSnippet]) {
       expect(text).toContain('identical to the tool parameter')
     }
   })
