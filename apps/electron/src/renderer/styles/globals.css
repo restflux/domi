@@ -1863,7 +1863,7 @@
   }
 }
 
-/* Agent 输入区是主操作表面：只保留一层弱边框，聚焦时用轻量 ring 提示。 */
+/* Agent 输入区是主操作表面：始终保留一层弱边框，不随聚焦改变外观。 */
 :root:not(.ui-classic) .agent-composer-surface {
   border-radius: var(--radius-lg);
   border-color: hsl(var(--border) / 0.62);
@@ -1876,15 +1876,6 @@
     border-color var(--duration-normal) var(--ease-ui),
     box-shadow var(--duration-normal) var(--ease-ui),
     background-color var(--duration-normal) var(--ease-ui);
-}
-
-:root:not(.ui-classic) .agent-composer-surface:focus-within {
-  border-color: hsl(var(--ring) / 0.42);
-  box-shadow:
-    0 0 0 1px hsl(var(--ring) / 0.14),
-    0 0 0 4px hsl(var(--ring) / 0.07),
-    0 10px 28px -20px hsl(var(--foreground) / 0.38),
-    inset 0 1px 0 hsl(var(--foreground) / 0.045);
 }
 
 /* 默认现代浅色：参考对话工作台的中性白底与轻灰侧栏；仅作用于这一组合，
@@ -2080,15 +2071,6 @@
 
 :root.ui-modern [data-input-mode] .ProseMirror {
   min-height: 56px;
-}
-
-/* 现代普通输入聚焦保持 20px 圆角；终端主题仍为直角，Plan Mode 保留专用边框。 */
-:root.ui-modern:not(.theme-terminal-dark) .agent-composer-surface:not(.plan-mode-border):focus-within {
-  border-radius: 20px !important;
-  border-color: hsl(var(--ring) / 0.42);
-  box-shadow:
-    0 2px 10px -7px hsl(var(--foreground) / 0.22),
-    inset 0 1px 0 hsl(var(--foreground) / 0.025);
 }
 
 :root:not(.ui-classic) .file-drop-action {
@@ -3302,133 +3284,6 @@
   .theme-ember-dark body::after {
     animation: none;
   }
-  .theme-forest-dark [data-agent-composer-surface="true"]:focus-within {
-    animation: none;
-    box-shadow:
-      inset 0 0 14px hsl(140 55% 38% / 0.22),
-      0 0 10px hsl(140 50% 42% / 0.16) !important;
-  }
-}
-
-/* ===== 特殊主题组件语言 =====
- * 第二层「独特性」：匹配氛围光效的组件级专属视觉——输入框、气泡、Tab 条。
- * 输入框主题质感在聚焦时浮现（:focus-within）：未聚焦回落到默认
- * agent-composer-surface 外观（border-border / bg-background/70 / backdrop-blur），
- * 聚焦时才显示主题渐变/辉光/边框，平时界面统一干净。
- * 选择器基准：输入框容器 [data-agent-composer-surface]（AgentView）、
- * 侧栏 .crt-sidebar、Tab 选中 .tab-item-selected / .app-tab-active。
- * 动画仅 forest-dark（萤光呼吸）与 ember-dark（余烬闪烁），reduced-motion 下关闭。 */
-
-/* 云朵舞者：棉花云输入框 —— 奶油渐变基底 + 云朵顶缘高光 + 大圆角 */
-.theme-slate-light [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 16px !important;
-  background: linear-gradient(180deg, hsl(40 10% 94.5%) 0%, hsl(40 7% 90%) 100%) !important;
-  border: 1px solid hsl(40 8% 80%) !important;
-  box-shadow:
-    inset 0 2px 8px hsl(40 30% 99% / 0.85),
-    inset 0 -2px 10px hsl(40 12% 84% / 0.45),
-    0 2px 12px hsl(40 15% 70% / 0.22) !important;
-}
-
-/* 晴空碧海：海玻璃输入框 —— 半透明浅蓝 + 海面高光 */
-.theme-ocean-light [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 14px !important;
-  background: linear-gradient(180deg, hsl(205 45% 97% / 0.9) 0%, hsl(205 40% 92% / 0.85) 100%) !important;
-  border: 1px solid hsl(205 45% 76%) !important;
-  box-shadow:
-    inset 0 2px 0 hsl(205 60% 99% / 0.9),
-    inset 0 0 14px hsl(205 50% 86% / 0.4),
-    0 2px 10px hsl(205 40% 60% / 0.16) !important;
-}
-
-/* 森息夜语：萤光绿输入框 —— 发光边框 + 内 glow（呼吸动画，聚焦时浮现） */
-.theme-forest-dark [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 12px !important;
-  background: hsl(150 12% 9%) !important;
-  border: 1px solid hsl(140 45% 45% / 0.7) !important;
-  animation: forest-glowbox 5s ease-in-out infinite !important;
-}
-
-@keyframes forest-glowbox {
-  0%, 100% {
-    box-shadow:
-      inset 0 0 14px hsl(140 55% 38% / 0.22),
-      0 0 10px hsl(140 50% 42% / 0.16),
-      0 0 24px hsl(140 55% 38% / 0.10);
-  }
-  50% {
-    box-shadow:
-      inset 0 0 18px hsl(140 55% 42% / 0.30),
-      0 0 16px hsl(140 50% 48% / 0.22),
-      0 0 32px hsl(140 55% 42% / 0.14);
-  }
-}
-
-/* 远山暮霭：深海玻璃输入框 —— 深蓝半透明 + 顶部水底光脉高光 */
-.theme-ocean-dark [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 12px !important;
-  background: linear-gradient(180deg, hsl(210 16% 14% / 0.95) 0%, hsl(210 13% 11% / 0.9) 100%) !important;
-  border: 1px solid hsl(212 25% 30%) !important;
-  box-shadow:
-    inset 0 2px 0 hsl(212 40% 50% / 0.18),
-    inset 0 0 16px hsl(212 30% 20% / 0.35),
-    0 2px 10px hsl(210 30% 5% / 0.4) !important;
-}
-
-/* 石墨余烬：余烬暖边输入框 —— 底部橙红光晕线 + 炭火内阴影 */
-.theme-ember-dark [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 12px !important;
-  background: linear-gradient(180deg, hsl(210 12% 10%) 0%, hsl(210 12% 8.5%) 100%) !important;
-  border: 1px solid hsl(8 40% 22%) !important;
-  box-shadow:
-    inset 0 2px 6px hsl(210 20% 4% / 0.6),
-    0 2px 0 hsl(6 70% 42% / 0.35),
-    0 0 18px hsl(6 65% 35% / 0.18) !important;
-}
-
-/* 莫兰迪夜：柔雾磨砂输入框 —— 低饱和细内阴影，克制高级感 */
-.theme-slate-dark [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 12px !important;
-  background: linear-gradient(180deg, hsl(270 8% 15%) 0%, hsl(268 7% 12%) 100%) !important;
-  border: 1px solid hsl(265 8% 26%) !important;
-  box-shadow:
-    inset 0 1px 3px hsl(265 15% 20% / 0.5),
-    inset 0 -1px 2px hsl(260 8% 8% / 0.5),
-    0 1px 6px hsl(260 10% 4% / 0.35) !important;
-}
-
-/* 森息晨光：晨露玻璃输入框 —— 绿白渐变 + 顶部晨光高光 */
-.theme-forest-light [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 13px !important;
-  background: linear-gradient(180deg, hsl(80 32% 96%) 0%, hsl(82 24% 91%) 100%) !important;
-  border: 1px solid hsl(84 22% 72%) !important;
-  box-shadow:
-    inset 0 2px 0 hsl(76 42% 97% / 0.8),
-    inset 0 0 12px hsl(84 25% 88% / 0.4),
-    0 2px 8px hsl(84 20% 60% / 0.15) !important;
-}
-
-/* 桃岚映水：桃雾玻璃输入框 —— 雾蓝底 + 顶部桃粉高光 */
-.theme-blossom-mist-light [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 14px !important;
-  background: linear-gradient(180deg, hsl(200 40% 98%) 0%, hsl(208 30% 94%) 100%) !important;
-  border: 1px solid hsl(205 24% 78%) !important;
-  box-shadow:
-    inset 0 2px 0 hsl(340 50% 97% / 0.9),
-    inset 0 0 14px hsl(335 40% 92% / 0.5),
-    0 2px 10px hsl(210 25% 60% / 0.15) !important;
-}
-
-/* 云阙新霁：白玉能量输入框 —— 白玉底 + 青玉边框光晕 */
-.theme-cloud-citadel-light [data-agent-composer-surface="true"]:focus-within {
-  border-radius: 13px !important;
-  background: linear-gradient(180deg, hsl(150 28% 98.5%) 0%, hsl(155 22% 94%) 100%) !important;
-  border: 1px solid hsl(158 26% 72%) !important;
-  box-shadow:
-    inset 0 2px 0 hsl(160 50% 98% / 0.95),
-    inset 0 0 14px hsl(158 30% 92% / 0.5),
-    0 0 14px hsl(158 45% 50% / 0.12),
-    0 2px 8px hsl(158 30% 55% / 0.15) !important;
 }
 
 /* ===== CRT 终端视觉特效 ===== */
