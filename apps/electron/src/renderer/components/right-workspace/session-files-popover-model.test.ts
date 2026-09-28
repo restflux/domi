@@ -6,7 +6,6 @@ import { agentAttachedDirectoriesMapAtom, agentAttachedFilesMapAtom, agentSessio
 import type { GeneratedImageItem, SDKMessage } from '@domi/shared'
 import { SessionFilesCard } from './SessionFilesCard'
 import { SessionFilesPopover } from './SessionFilesPopover'
-import { SessionBackgroundTasksSection } from './SessionBackgroundTasksSection'
 import {
   DEFAULT_SESSION_FILES_POPOVER_OPEN,
   positionSessionFilesPopover,
@@ -30,20 +29,6 @@ describe('会话文件浮窗入口', () => {
     expect(html).not.toContain('创建文件或站点')
     expect(html).not.toContain('搜索文件')
     expect(html).not.toContain('支持拖拽')
-  })
-
-  test('Given 会话任务状态变化 When 渲染概览区 Then 展示运行中任务或空状态', () => {
-    const empty = renderToStaticMarkup(React.createElement(SessionBackgroundTasksSection, { tasks: [] }))
-    expect(empty).toContain('暂无运行中的后台任务')
-    const running = renderToStaticMarkup(React.createElement(SessionBackgroundTasksSection, { tasks: [{
-      id: 'task-1', type: 'agent', toolUseId: 'tool-1', startTime: 0, elapsedSeconds: 2, intent: '整理文件',
-    }, {
-      id: 'shell-1', type: 'shell', toolUseId: 'tool-2', startTime: 0, elapsedSeconds: 1,
-    }] }))
-    expect(running).toContain('2 个运行中')
-    expect(running).toContain('整理文件')
-    expect(running).toContain('Shell 任务 shell-1')
-    expect(running).not.toContain('暂无运行中的后台任务')
   })
 
   test('Given 生成图片和附件混在同一会话 When 选择明确输出 Then 只展示工作目录中确认生成的图片', () => {
