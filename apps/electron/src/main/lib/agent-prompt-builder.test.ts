@@ -459,6 +459,7 @@ describe('Session Target 提示词', () => {
     expect(prompt).toContain('释放验收槽位')
     expect(prompt).toContain('不要静默撤回')
     expect(prompt).toContain('完整调整内容放入 `details`')
+    expect(prompt).toContain('不要先发送解释性普通回复')
     expect(prompt).toContain('宿主会把 `details` 确定性渲染为会话正文')
     expect(prompt).toContain('确认卡只显示简短摘要')
     expect(prompt).toContain('不得写绝对本地路径')

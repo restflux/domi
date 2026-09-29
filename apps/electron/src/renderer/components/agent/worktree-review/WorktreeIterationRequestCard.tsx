@@ -18,6 +18,8 @@ function normalizeLegacyWorktreeIterationRedactions(value: string): string {
     .replace(/(^|[\p{Script=Han}])\s*`?\[路径\]`?/gu, '$1当前项目')
     .replace(/`?\[路径\]`?/g, '当前项目')
     .replace(/`?\[内部引用\]`?/g, '内部引用已隐藏')
+    .replace(/当前项目\s+(?=的|最新|中|开始|继续|创建)/gu, '当前项目')
+    .replace(/当前项目的最新\s+/gu, '当前项目的 ')
 }
 
 function buildLegacyWorktreeIterationSummary(task: string): string {
@@ -116,7 +118,8 @@ export function WorktreeIterationRequestCard({
     try {
       if (request.mode === 'preview_revision') {
         const result = await operate({ action: 'rollback_preview', resumeRevision: true })
-        if (result?.status === 'preview_rolled_back') resume()
+        // `operate` 只有在宿主已完成安全事务并返回权威快照时才会返回结果；不要把具体终态名称绑死，避免宿主扩展等价的撤回成功终态后卡住续跑。
+        if (result) resume()
       } else {
         const confirmed = await confirmIteration(request.requestId)
         if (confirmed) {

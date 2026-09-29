@@ -1424,9 +1424,20 @@ function ErrorMessage({ message, onRetry, onRetryInNewSession, onCompact, onReli
 }
 
 /** Worktree 终止工具的说明是交付正文，不是带有历史操作资格的 system 卡。 */
+function normalizeWorktreeReportForComparison(value: string): string {
+  return value
+    .replace(/[`*_>#-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([，。；：、,.!?！？])\s*/g, '$1')
+    .trim()
+}
+
 function WorktreeReportText({ message, existingText = '' }: { message: SDKSystemMessage; existingText?: string }): React.ReactElement | null {
   const details = (message as unknown as Record<string, unknown>).details_markdown
-  if (typeof details !== 'string' || !details.trim() || existingText.includes(details.trim())) return null
+  if (typeof details !== 'string' || !details.trim()) return null
+  const normalizedDetails = normalizeWorktreeReportForComparison(details)
+  const normalizedExistingText = normalizeWorktreeReportForComparison(existingText)
+  if (normalizedDetails && normalizedExistingText.includes(normalizedDetails)) return null
   return <div data-worktree-report="true" className="mt-4 text-sm"><MessageResponse>{details}</MessageResponse></div>
 }
 

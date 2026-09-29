@@ -239,11 +239,12 @@ describe('Work 消息 V2 视图', () => {
     const assistant = { type: 'assistant', uuid: 'answer-1', parent_tool_use_id: null,
       message: { content: [{ type: 'thinking', thinking: '检查布局' }, { type: 'text', text: '修好了，保留完整说明。' }], model: 'test-model' },
     } as SDKAssistantMessage
-    const notice = { type: 'system', subtype: 'worktree_ready_for_review', details_markdown: '修好了，保留完整说明。' } as SDKSystemMessage
+    const notice = { type: 'system', subtype: 'worktree_ready_for_review', details_markdown: '修好了，\n\n- 保留完整说明。' } as SDKSystemMessage
     const messages: SDKMessage[] = [user, assistant, notice]
     const html = renderToStaticMarkup(<>{groupIntoTurns(messages).map((group, index) => <MessageGroupRenderer key={index} group={group} allMessages={messages} />)}</>)
-    expect(html.indexOf('data-work-process-trigger="true"')).toBeLessThan(html.indexOf('修好了，保留完整说明。'))
-    expect(html.split('修好了，保留完整说明。')).toHaveLength(2)
+    expect(html.indexOf('data-work-process-trigger="true"')).toBeLessThan(html.indexOf('保留完整说明'))
+    expect(html).toContain('修好了，保留完整说明。')
+    expect(html).not.toContain('data-worktree-report="true"')
     expect(html).not.toContain('data-worktree-history-event')
     expect(html).not.toContain('预览修改</button>')
   })
