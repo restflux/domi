@@ -102,7 +102,8 @@
     --radius-lg: 10px;
     --radius-xl: 12px;
     --radius-2xl: 16px;
-    /* 现代界面将历史大圆角收敛到面板级，避免同一层级出现 17/22px 等孤立值。 */
+    --radius-input: 20px;
+    /* 现代界面将历史大圆角收敛到面板级；主输入框保留独立的 20px 柔和曲率。 */
     --radius-cap: var(--radius-lg);
     --duration-fast: 100ms;
     --duration-normal: 160ms;
@@ -2062,10 +2063,10 @@
   justify-self: end;
 }
 
-/* 输入框用一层细描边与面板级圆角代替偏硬的方形卡片；保留拖放与 Plan 状态样式。 */
+/* 主输入框使用独立的 20px 圆角；按钮、弹层和其它面板继续遵循通用尺度。 */
 :root.ui-modern .agent-composer-surface:not(.plan-mode-border),
 :root.ui-modern [data-input-mode="chat"] > div:first-child:not(.border-dashed) {
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-input);
   border-color: hsl(var(--border) / 0.8);
   background-color: hsl(var(--input-surface));
   box-shadow: 0 2px 12px hsl(var(--foreground) / 0.035);

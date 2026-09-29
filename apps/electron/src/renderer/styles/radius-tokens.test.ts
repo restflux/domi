@@ -11,6 +11,7 @@ test('圆角 token 保持统一的语义尺度', () => {
   expect(styles).toContain('--radius-lg: 10px;')
   expect(styles).toContain('--radius-xl: 12px;')
   expect(styles).toContain('--radius-2xl: 16px;')
+  expect(styles).toContain('--radius-input: 20px;')
   expect(styles).toContain('--radius-cap: var(--radius-lg);')
 
   expect(tailwind).toContain("sm: 'var(--radius-sm)'")
