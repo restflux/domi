@@ -8,6 +8,9 @@
 
 import * as React from 'react'
 import { useAtom } from 'jotai'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import '@/i18n'
 import {
   SettingsSection,
   SettingsCard,
@@ -24,28 +27,35 @@ import {
 } from '@/atoms/markdown-font-size'
 import type { ThemeMode, MarkdownFontSize } from '../../../types'
 
-/** 主题选项 */
-const THEME_OPTIONS = [
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' },
-  { value: 'system', label: '跟随系统' },
-]
+/** 根据语言生成主题选项 */
+function getThemeOptions(t: TFunction<'settings'>): Array<{ value: string; label: string }> {
+  const translate = t as unknown as (key: string) => string
+  return [
+    { value: 'light', label: translate('light') },
+    { value: 'dark', label: translate('dark') },
+    { value: 'system', label: translate('system') },
+  ]
+}
 
-/** Markdown 字号选项 */
-const MARKDOWN_FONT_SIZE_OPTIONS = [
-  { value: 'small', label: '小' },
-  { value: 'medium', label: '中' },
-  { value: 'large', label: '大' },
-]
+/** 根据语言生成 Markdown 字号选项 */
+function getMarkdownFontSizeOptions(t: TFunction<'settings'>): Array<{ value: string; label: string }> {
+  const translate = t as unknown as (key: string) => string
+  return [
+    { value: 'small', label: translate('small') },
+    { value: 'medium', label: translate('medium') },
+    { value: 'large', label: translate('large') },
+  ]
+}
 
 /** 根据平台返回缩放快捷键提示 */
 const isMac = navigator.userAgent.includes('Mac')
-const ZOOM_HINT = isMac
-  ? '使用 ⌘+ 放大、⌘- 缩小、⌘0 恢复默认大小'
-  : '使用 Ctrl++ 放大、Ctrl+- 缩小、Ctrl+0 恢复默认大小'
+const ZOOM_HINT_KEY: 'zoomHintMac' | 'zoomHintWindows' = isMac ? 'zoomHintMac' : 'zoomHintWindows'
 
 export function AppearanceSettings(): React.ReactElement {
+  const { t } = useTranslation('settings')
   const [themeMode, setThemeMode] = useAtom(themeModeAtom)
+  const themeOptions = getThemeOptions(t)
+  const markdownFontSizeOptions = getMarkdownFontSizeOptions(t)
   const [markdownFontSize, setMarkdownFontSize] = useAtom(markdownFontSizeAtom)
 
   /** 切换主题模式 */
@@ -65,30 +75,30 @@ export function AppearanceSettings(): React.ReactElement {
   return (
     <div className="space-y-6">
       <SettingsSection
-        title="外观设置"
-        description="自定义应用的视觉风格"
+        title={t('appearanceTitle')}
+        description={t('appearanceDescription')}
       >
         <SettingsCard>
           {/* 主题模式 */}
           <SettingsSegmentedControl
-            label="主题模式"
-            description="选择应用的配色方案"
+            label={t('themeMode')}
+            description={t('themeModeDescription')}
             value={themeMode}
             onValueChange={handleThemeChange}
-            options={THEME_OPTIONS}
+            options={themeOptions}
           />
 
           <SettingsRow
-            label="界面缩放"
-            description={ZOOM_HINT}
+            label={t('zoom')}
+            description={t(ZOOM_HINT_KEY)}
           />
 
           <SettingsSegmentedControl
-            label="Markdown 字号"
-            description="调整 AI 回复与 Markdown 编辑器的正文字号"
+            label={t('markdownFontSize')}
+            description={t('markdownFontSizeDescription')}
             value={markdownFontSize}
             onValueChange={handleMarkdownFontSizeChange}
-            options={MARKDOWN_FONT_SIZE_OPTIONS}
+            options={markdownFontSizeOptions}
           />
 
         </SettingsCard>

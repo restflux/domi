@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, existsSync } from 'node:fs'
 import {
+  DEFAULT_APP_LANGUAGE,
   DEFAULT_INTERFACE_VARIANT,
   DEFAULT_THEME_MODE,
   DEFAULT_THEME_STYLE,
@@ -158,6 +159,7 @@ function normalizeWorkSidebarPreferences(
 
 function defaultSettings(): AppSettings {
   return {
+    language: DEFAULT_APP_LANGUAGE,
     themeMode: DEFAULT_THEME_MODE,
     interfaceVariant: DEFAULT_INTERFACE_VARIANT,
     workSidebarPreferences: DEFAULT_WORK_SIDEBAR_PREFERENCES,
@@ -200,6 +202,7 @@ function normalizeSettings(data: PersistedSettings): {
   return {
     settings: {
       ...settings,
+      language: data.language === 'en-US' ? 'en-US' : DEFAULT_APP_LANGUAGE,
       themeMode: legacySpecialTheme ? DEFAULT_THEME_MODE : (data.themeMode || DEFAULT_THEME_MODE),
       themeStyle: legacySpecialTheme ? DEFAULT_THEME_STYLE : settings.themeStyle,
       interfaceVariant: DEFAULT_INTERFACE_VARIANT,
@@ -274,6 +277,7 @@ export function createSettingsService(dependencies: SettingsServiceDependencies)
     const updated: AppSettings = {
       ...current,
       ...supportedUpdates,
+      language: updates.language === 'en-US' ? 'en-US' : (updates.language === 'zh-CN' ? 'zh-CN' : current.language),
       agentRtkEnabled: (updates.agentRtkEnabled ?? current.agentRtkEnabled) === true,
       ...(updates.visionRelay ? { visionRelay: resolveVisionRelayUpdate(current.visionRelay, updates.visionRelay) } : {}),
       ...(updates.workSidebarPreferences

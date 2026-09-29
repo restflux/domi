@@ -2059,6 +2059,13 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
           }
         })
       }
+      if (updates.language !== undefined) {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (win.webContents.id !== event.sender.id) {
+            win.webContents.send(SETTINGS_IPC_CHANNELS.ON_LANGUAGE_CHANGED, result.language)
+          }
+        })
+      }
 
       return result
     }

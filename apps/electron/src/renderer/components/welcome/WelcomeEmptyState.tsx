@@ -10,15 +10,19 @@
 
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { cn } from '@/lib/utils'
 import { userProfileAtom } from '@/atoms/user-profile'
 
-/** 根据小时返回时段问候 */
-function getGreeting(hour: number): string {
-  if (hour < 6) return '夜深了'
-  if (hour < 12) return '早上好'
-  if (hour < 18) return '下午好'
-  return '晚上好'
+/** 根据小时返回时段问候 key */
+type GreetingKey = 'lateNight' | 'morning' | 'afternoon' | 'evening'
+
+function getGreetingKey(hour: number): GreetingKey {
+  if (hour < 6) return 'lateNight'
+  if (hour < 12) return 'morning'
+  if (hour < 18) return 'afternoon'
+  return 'evening'
 }
 
 export interface WelcomeEmptyStateProps {
@@ -27,11 +31,12 @@ export interface WelcomeEmptyStateProps {
 }
 
 export function WelcomeEmptyState({ compact = false }: WelcomeEmptyStateProps): React.ReactElement {
+  const { t } = useTranslation('welcome')
   const userProfile = useAtomValue(userProfileAtom)
 
   const hour = new Date().getHours()
-  const greeting = getGreeting(hour)
-  const displayName = userProfile.userName || '用户'
+  const greeting = t(getGreetingKey(hour))
+  const displayName = userProfile.userName || t('user')
 
   return (
     <div
@@ -48,7 +53,7 @@ export function WelcomeEmptyState({ compact = false }: WelcomeEmptyStateProps): 
           compact ? 'text-[32px]' : 'text-[26px]',
         )}
       >
-        {displayName}，{greeting}
+        {t('greeting', { displayName, greeting })}
       </h1>
     </div>
   )

@@ -177,6 +177,12 @@ export interface ShortcutOverrides {
   }
 }
 
+/** 应用界面语言 */
+export type AppLanguage = 'zh-CN' | 'en-US'
+
+/** 默认应用界面语言 */
+export const DEFAULT_APP_LANGUAGE: AppLanguage = 'zh-CN'
+
 /** 主题模式 */
 export type ThemeMode = 'light' | 'dark' | 'system' | 'special'
 
@@ -270,6 +276,8 @@ export const DEFAULT_WORK_SIDEBAR_PREFERENCES: WorkSidebarPreferences = {
 
 /** 应用设置 */
 export interface AppSettings {
+  /** 应用界面语言 */
+  language: AppLanguage
   /** 各 Chat/Work 会话的生图选择；仅存非敏感参数。 */
   imageGenerationSelections?: Record<string, import('@domi/shared').ImageGenerationSelection | null>
   /** 默认生图选择（不包含凭据）。 */
@@ -409,6 +417,8 @@ export const SETTINGS_IPC_CHANNELS = {
   ON_SYSTEM_THEME_CHANGED: 'settings:system-theme-changed',
   /** 用户手动切换主题时广播给所有窗口 */
   ON_THEME_SETTINGS_CHANGED: 'settings:theme-settings-changed',
+  /** 用户切换语言时广播给所有窗口 */
+  ON_LANGUAGE_CHANGED: 'settings:language-changed',
 } as const
 
 /** Scratch Pad IPC 通道 */

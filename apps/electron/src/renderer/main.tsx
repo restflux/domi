@@ -13,6 +13,8 @@ import React, { useEffect, useMemo, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { useSetAtom, useAtomValue, useStore } from 'jotai'
 import App from './App'
+import i18n, { normalizeLocale } from './i18n'
+import { localeAtom } from './atoms/locale'
 import {
   themeModeAtom,
   themeStyleAtom,
@@ -982,11 +984,46 @@ function ScratchPadPersistence(): null {
   return null
 }
 
+function I18nInitializer(): null {
+  const setLocale = useSetAtom(localeAtom)
+
+  useEffect(() => {
+    let disposed = false
+    const loadLanguage = async (): Promise<void> => {
+      try {
+        const settings = await window.electronAPI.getSettings()
+        if (!disposed) {
+          const locale = normalizeLocale(settings.language)
+          setLocale(locale)
+          await i18n.changeLanguage(locale)
+        }
+      } catch (error) {
+        console.error('[i18n] 加载语言设置失败:', error)
+      }
+    }
+
+    void loadLanguage()
+    const unsubscribe = window.electronAPI.onLanguageChanged((language) => {
+      const locale = normalizeLocale(language)
+      setLocale(locale)
+      void i18n.changeLanguage(locale)
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [setLocale])
+
+  return null
+}
+
 // ===== 快速任务窗口：轻量渲染 =====
 if (isQuickTaskWindow) {
   import('./components/quick-task/QuickTaskApp').then(({ QuickTaskApp }) => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
+        <I18nInitializer />
         <ThemeInitializer />
         <EditableContextMenu />
         <QuickTaskApp />
@@ -997,6 +1034,7 @@ if (isQuickTaskWindow) {
   import('./components/voice-dictation/VoiceDictationIndicatorApp').then(({ VoiceDictationIndicatorApp }) => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
+        <I18nInitializer />
         <ThemeInitializer />
         <EditableContextMenu />
         <VoiceDictationIndicatorApp />
@@ -1007,6 +1045,7 @@ if (isQuickTaskWindow) {
   import('./components/diff/DetachedPreviewApp').then(({ DetachedPreviewApp }) => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
+        <I18nInitializer />
         <ThemeInitializer />
         <EditableContextMenu />
         <MarkdownFontSizeInitializer />
@@ -1019,6 +1058,7 @@ if (isQuickTaskWindow) {
   import('./components/planning/PlanningWindowApp').then(({ PlanningWindowApp }) => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
+        <I18nInitializer />
         <ThemeInitializer />
         <EditableContextMenu />
         <AgentSettingsInitializer />
@@ -1034,6 +1074,7 @@ if (isQuickTaskWindow) {
   import('./components/agent-island/AgentIslandApp').then(({ AgentIslandApp }) => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
+        <I18nInitializer />
         <ThemeInitializer />
         <EditableContextMenu />
         <AgentIslandApp />
@@ -1044,6 +1085,7 @@ if (isQuickTaskWindow) {
   // ===== 主窗口：完整渲染 =====
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
+      <I18nInitializer />
       <ThemeInitializer />
       <EditableContextMenu />
       <AgentSettingsInitializer />

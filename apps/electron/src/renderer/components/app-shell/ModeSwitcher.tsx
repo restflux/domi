@@ -9,6 +9,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { appModeAtom, type AppMode } from '@/atoms/app-mode'
@@ -30,6 +32,7 @@ const modes: { value: AppMode; icon: React.ReactNode }[] = [
 ]
 
 export function ModeSwitcher({ compact = false }: { compact?: boolean } = {}): React.ReactElement {
+  const { t } = useTranslation('common')
   const [mode, setMode] = useAtom(appModeAtom)
   const setActiveView = useSetAtom(activeViewAtom)
   const openSession = useOpenSession()
@@ -125,13 +128,14 @@ export function ModeSwitcher({ compact = false }: { compact?: boolean } = {}): R
           )}
         />
         {modes.map(({ value, icon }) => {
-          const display = APP_MODE_DISPLAY[value]
+          const label = value === 'agent' ? t('work') : t('chat')
+          const description = value === 'agent' ? t('workDescription') : t('chatDescription')
           return (
             <button
               key={value}
               type="button"
-              title={display.description}
-              aria-label={`${display.label}：${display.description}`}
+              title={description}
+              aria-label={`${label}: ${description}`}
               onClick={() => handleModeSwitch(value)}
               className={cn(
                 'mode-btn titlebar-no-drag relative z-[1] h-8 flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-0 text-sm font-medium transition-colors duration-150 select-none',
@@ -141,7 +145,7 @@ export function ModeSwitcher({ compact = false }: { compact?: boolean } = {}): R
               )}
             >
               {icon}
-              {display.label}
+              {label}
             </button>
           )
         })}

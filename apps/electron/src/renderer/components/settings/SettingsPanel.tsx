@@ -7,6 +7,8 @@
 
 import * as React from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { cn } from "@/lib/utils";
 import { detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from "@/lib/platform";
 import {
@@ -72,51 +74,51 @@ import { useOpenSession } from '@/hooks/useOpenSession'
 /** 设置 Tab 定义 */
 interface TabItem {
   id: SettingsTab;
-  label: string;
+  labelKey: string;
   icon: React.ReactNode;
 }
 
 /** 基础 Tabs（所有模式都有） */
 const BASE_TABS: TabItem[] = [
-  { id: "general", label: "通用设置", icon: <Settings size={16} /> },
-  { id: "channels", label: "模型配置", icon: <Radio size={16} /> },
-  { id: "vision-relay", label: "视觉助手", icon: <Eye size={16} /> },
-  { id: "prompts", label: "提示词管理", icon: <BookOpen size={16} /> },
-  { id: "proxy", label: "代理设置", icon: <Globe size={16} /> },
+  { id: "general", labelKey: "generalSettings", icon: <Settings size={16} /> },
+  { id: "channels", labelKey: "modelConfig", icon: <Radio size={16} /> },
+  { id: "vision-relay", labelKey: "visionAssistant", icon: <Eye size={16} /> },
+  { id: "prompts", labelKey: "promptManagement", icon: <BookOpen size={16} /> },
+  { id: "proxy", labelKey: "proxySettings", icon: <Globe size={16} /> },
 ];
 
 const TOOLS_TAB: TabItem = {
   id: "tools",
-  label: "AI 工具",
+  labelKey: "aiTools",
   icon: <Wrench size={16} />,
 };
 const BOTS_TAB: TabItem = {
   id: "bots",
-  label: "远程连接",
+  labelKey: "remoteConnections",
   icon: <Bot size={16} />,
 };
 const TUTORIAL_TAB: TabItem = {
   id: "tutorial",
-  label: "Domi 教程",
+  labelKey: "tutorial",
   icon: <GraduationCap size={16} />,
 };
 const SHORTCUTS_TAB: TabItem = {
   id: "shortcuts",
-  label: "快捷键管理",
+  labelKey: "shortcutManagement",
   icon: <Keyboard size={16} />,
 };
 const VOICE_INPUT_TAB: TabItem = {
   id: "voice-input",
-  label: "语音输入",
+  labelKey: "voiceInput",
   icon: <Mic size={16} />,
 };
 /** 尾部 Tabs */
 const TAIL_TABS: TabItem[] = [
-  { id: "migration", label: "数据迁移", icon: <HardDriveDownload size={16} /> },
-  { id: "storage", label: "磁盘管理", icon: <HardDrive size={16} /> },
-  { id: "usage", label: "用量统计", icon: <BarChart3 size={16} /> },
-  { id: "appearance", label: "外观设置", icon: <Palette size={16} /> },
-  { id: "about", label: "关于/更新", icon: <Info size={16} /> },
+  { id: "migration", labelKey: "dataMigration", icon: <HardDriveDownload size={16} /> },
+  { id: "storage", labelKey: "storageManagement", icon: <HardDrive size={16} /> },
+  { id: "usage", labelKey: "usageStatistics", icon: <BarChart3 size={16} /> },
+  { id: "appearance", labelKey: "appearanceSettings", icon: <Palette size={16} /> },
+  { id: "about", labelKey: "aboutAndUpdates", icon: <Info size={16} /> },
 ];
 
 /** 根据标签页 id 渲染对应内容 */
@@ -163,6 +165,7 @@ interface SettingsPanelProps {
 export function SettingsPanel({
   onClose,
 }: SettingsPanelProps): React.ReactElement {
+  const { t } = useTranslation('common')
   const [activeTab, setActiveTab] = useAtom(settingsTabAtom);
   const channelFormDirty = useAtomValue(channelFormDirtyAtom);
   const [closeRequested, setCloseRequested] = useAtom(settingsCloseRequestedAtom);
@@ -320,7 +323,7 @@ export function SettingsPanel({
                 )}
               >
                 {tab.icon}
-                <span>{tab.label}</span>
+                <span>{t(tab.labelKey, { defaultValue: tab.labelKey })}</span>
                 {tab.id === "about" && hasEnvironmentIssues && (
                   <span className="w-2 h-2 rounded-full bg-red-500" />
                 )}
@@ -333,7 +336,7 @@ export function SettingsPanel({
               className="group flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
             >
               <ArrowLeft size={16} />
-              <span>返回</span>
+              <span>{t('back')}</span>
               <span className="ml-auto hidden group-hover:inline-flex">
                 <ShortcutKeycaps accelerator="Esc" />
               </span>
@@ -353,14 +356,14 @@ export function SettingsPanel({
       <AlertDialog open={showNavDialog} onOpenChange={(open) => { if (!open) cancelPendingAction() }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>放弃未保存的更改？</AlertDialogTitle>
+            <AlertDialogTitle>{t('discardChangesTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              当前渠道配置尚未保存，确定要离开吗？
+              {t('discardChangesDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={cancelPendingAction}>留在当前页</AlertDialogCancel>
-            <AlertDialogAction onClick={executePendingAction}>放弃并离开</AlertDialogAction>
+            <AlertDialogCancel onClick={cancelPendingAction}>{t('stayOnPage')}</AlertDialogCancel>
+            <AlertDialogAction onClick={executePendingAction}>{t('discardAndLeave')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

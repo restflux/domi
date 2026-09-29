@@ -569,6 +569,9 @@ export interface ElectronAPI extends SideChatAPI {
   /** 订阅用户手动切换主题事件（跨窗口同步，返回清理函数） */
   onThemeSettingsChanged: (callback: (payload: { themeMode: string; themeStyle: string; interfaceVariant?: string }) => void) => () => void
 
+  /** 订阅用户切换语言事件（跨窗口同步，返回清理函数） */
+  onLanguageChanged: (callback: (language: string) => void) => () => void
+
   // ===== Scratch Pad =====
 
   /** 从磁盘加载 scratch-pad.md */
@@ -1938,6 +1941,12 @@ const electronAPI: ElectronAPI = {
     const listener = (_: unknown, payload: { themeMode: string; themeStyle: string; interfaceVariant?: string }): void => callback(payload)
     ipcRenderer.on(SETTINGS_IPC_CHANNELS.ON_THEME_SETTINGS_CHANGED, listener)
     return () => { ipcRenderer.removeListener(SETTINGS_IPC_CHANNELS.ON_THEME_SETTINGS_CHANGED, listener) }
+  },
+
+  onLanguageChanged: (callback: (language: string) => void) => {
+    const listener = (_: unknown, language: string): void => callback(language)
+    ipcRenderer.on(SETTINGS_IPC_CHANNELS.ON_LANGUAGE_CHANGED, listener)
+    return () => { ipcRenderer.removeListener(SETTINGS_IPC_CHANNELS.ON_LANGUAGE_CHANGED, listener) }
   },
 
   // Scratch Pad 持久化

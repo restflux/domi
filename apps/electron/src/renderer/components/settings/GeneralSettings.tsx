@@ -7,6 +7,7 @@
 
 import * as React from 'react'
 import { useAtom } from 'jotai'
+import { useTranslation } from 'react-i18next'
 import { Camera, ImagePlus, Volume2 } from 'lucide-react'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
@@ -51,7 +52,9 @@ import {
 } from '@/atoms/ui-preferences'
 import { cn } from '@/lib/utils'
 import { Button } from '../ui/button'
-import type { NotificationSoundId, NotificationSoundType, NotificationSoundSettings } from '@/types/settings'
+import type { AppLanguage, NotificationSoundId, NotificationSoundType, NotificationSoundSettings } from '@/types/settings'
+import { localeAtom } from '@/atoms/locale'
+import i18n, { normalizeLocale } from '@/i18n'
 import { ContextCompactorSettings } from './ContextCompactorSettings'
 import { RtkSettings } from './RtkSettings'
 
@@ -66,6 +69,8 @@ interface EmojiMartEmoji {
 }
 
 export function GeneralSettings(): React.ReactElement {
+  const { t } = useTranslation(['common', 'settings'])
+  const [locale, setLocale] = useAtom(localeAtom)
   const [userProfile, setUserProfile] = useAtom(userProfileAtom)
   const [notificationsEnabled, setNotificationsEnabled] = useAtom(notificationsEnabledAtom)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useAtom(notificationSoundEnabledAtom)
@@ -73,6 +78,13 @@ export function GeneralSettings(): React.ReactElement {
   const [attentionNotificationsEnabled, setAttentionNotificationsEnabled] = useAtom(workActivityAttentionNotificationsEnabledAtom)
   const [completionNotificationsEnabled, setCompletionNotificationsEnabled] = useAtom(workActivityCompletionNotificationsEnabledAtom)
   const [stickyUserMessageEnabled, setStickyUserMessageEnabled] = useAtom(stickyUserMessageEnabledAtom)
+
+  const handleLanguageChange = React.useCallback((value: string): void => {
+    const nextLocale = normalizeLocale(value) as AppLanguage
+    setLocale(nextLocale)
+    void i18n.changeLanguage(nextLocale)
+    void window.electronAPI.updateSettings({ language: nextLocale })
+  }, [setLocale])
   const [longTextPasteAsAttachmentEnabled, setLongTextPasteAsAttachmentEnabled] = useAtom(longTextPasteAsAttachmentEnabledAtom)
   const [richTextRenderingEnabled, setRichTextRenderingEnabled] = useAtom(richTextRenderingEnabledAtom)
   const [isEditingName, setIsEditingName] = React.useState(false)
@@ -165,8 +177,8 @@ export function GeneralSettings(): React.ReactElement {
     <div className="space-y-6">
       {/* 用户档案区域 */}
       <SettingsSection
-        title="用户档案"
-        description="设置你的头像和显示名称"
+        title={t('settings:profileTitle')}
+        description={t('settings:profileDescription')}
       >
         <SettingsCard>
           <div className="flex items-center gap-5 px-4 py-4">
@@ -211,7 +223,7 @@ export function GeneralSettings(): React.ReactElement {
                     )}
                   >
                     <ImagePlus className="size-4" />
-                    上传自定义图片
+                    {t('settings:uploadAvatar')}
                   </button>
                   <input
                     ref={fileInputRef}
@@ -252,7 +264,7 @@ export function GeneralSettings(): React.ReactElement {
                 </button>
               )}
               <p className="text-[12px] text-foreground/40 mt-0.5">
-                点击头像更换，点击名字编辑
+                {t('settings:profileHint')}
               </p>
             </div>
           </div>
@@ -261,19 +273,27 @@ export function GeneralSettings(): React.ReactElement {
 
       {/* 通用设置 */}
       <SettingsSection
-        title="通用设置"
-        description="应用的基本配置"
+        title={t('settings:generalTitle')}
+        description={t('settings:generalDescription')}
       >
         <SettingsCard>
           <SettingsRow
-            label="语言"
-            description="更多语言支持即将推出"
+            label={t('common:language')}
+            description={t('settings:languageDescription')}
           >
-            <span className="text-[13px] text-foreground/40">简体中文</span>
+            <Select value={locale} onValueChange={handleLanguageChange}>
+              <SelectTrigger className="h-8 w-[130px] text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="zh-CN">{t('common:simplifiedChinese')}</SelectItem>
+                <SelectItem value="en-US">{t('common:english')}</SelectItem>
+              </SelectContent>
+            </Select>
           </SettingsRow>
           <SettingsToggle
-            label="桌面通知"
-            description="Agent 完成任务或需要操作时发送通知"
+            label={t('settings:desktopNotifications')}
+            description={t('settings:desktopNotificationsDescription')}
             checked={notificationsEnabled}
             onCheckedChange={(checked) => {
               setNotificationsEnabled(checked)
@@ -281,8 +301,8 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SettingsToggle
-            label="需要关注时通知"
-            description="Agent 等待回答、批准、验收，或发生失败与冲突时立即通知"
+            label={t('settings:attentionNotifications')}
+            description={t('settings:attentionNotificationsDescription')}
             checked={attentionNotificationsEnabled}
             disabled={!notificationsEnabled}
             onCheckedChange={(checked) => {
@@ -291,8 +311,8 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SettingsToggle
-            label="工作完成时通知"
-            description="普通成功完成会在短时间内合并通知，子 Agent 单独完成不会打扰"
+            label={t('settings:completionNotifications')}
+            description={t('settings:completionNotificationsDescription')}
             checked={completionNotificationsEnabled}
             disabled={!notificationsEnabled}
             onCheckedChange={(checked) => {
@@ -301,8 +321,8 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SettingsToggle
-            label="通知提示音"
-            description="需要关注、工作完成和任务/日程提醒触发时播放提示音"
+            label={t('settings:notificationSound')}
+            description={t('settings:notificationSoundDescription')}
             checked={notificationSoundEnabled}
             disabled={!notificationsEnabled}
             onCheckedChange={(checked) => {
@@ -311,7 +331,7 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SoundPicker
-            label="任务完成音效"
+            label={t('settings:taskCompletionSound')}
             type="taskComplete"
             sounds={notificationSounds}
             disabled={!notificationsEnabled || !notificationSoundEnabled}
@@ -321,7 +341,7 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SoundPicker
-            label="权限审批音效"
+            label={t('settings:permissionSound')}
             type="permissionRequest"
             sounds={notificationSounds}
             disabled={!notificationsEnabled || !notificationSoundEnabled}
@@ -331,7 +351,7 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SoundPicker
-            label="计划审批音效"
+            label={t('settings:planApprovalSound')}
             type="exitPlanMode"
             sounds={notificationSounds}
             disabled={!notificationsEnabled || !notificationSoundEnabled}
@@ -341,7 +361,7 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SoundPicker
-            label="任务/日程提醒音效"
+            label={t('settings:reminderSound')}
             type="planningReminder"
             sounds={notificationSounds}
             disabled={!notificationsEnabled || !notificationSoundEnabled}
@@ -351,25 +371,25 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SettingsRow
-            label="自动归档"
-            description="超过指定天数未更新的对话将自动归档（置顶对话除外）"
+            label={t('settings:autoArchive')}
+            description={t('settings:autoArchiveDescription')}
           >
             <Select value={String(archiveAfterDays)} onValueChange={handleArchiveDaysChange}>
               <SelectTrigger className="w-[120px] h-8 text-[13px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="0">禁用</SelectItem>
-                <SelectItem value="7">7 天</SelectItem>
-                <SelectItem value="14">14 天</SelectItem>
-                <SelectItem value="30">30 天</SelectItem>
-                <SelectItem value="60">60 天</SelectItem>
+                <SelectItem value="0">{t('settings:disabled')}</SelectItem>
+                <SelectItem value="7">{t('settings:days', { count: 7 })}</SelectItem>
+                <SelectItem value="14">{t('settings:days', { count: 14 })}</SelectItem>
+                <SelectItem value="30">{t('settings:days', { count: 30 })}</SelectItem>
+                <SelectItem value="60">{t('settings:days', { count: 60 })}</SelectItem>
               </SelectContent>
             </Select>
           </SettingsRow>
           <SettingsToggle
-            label="返回上一条提问按钮"
-            description="向下浏览对话时显示返回上一条提问的按钮"
+            label={t('settings:previousQuestion')}
+            description={t('settings:previousQuestionDescription')}
             checked={stickyUserMessageEnabled}
             onCheckedChange={(checked) => {
               setStickyUserMessageEnabled(checked)
@@ -377,8 +397,8 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SettingsToggle
-            label="长文本粘贴转附件"
-            description="开启后，输入框粘贴超过 2000 字的文本会自动生成可预览编辑的附件"
+            label={t('settings:longTextAttachment')}
+            description={t('settings:longTextAttachmentDescription')}
             checked={longTextPasteAsAttachmentEnabled}
             onCheckedChange={(checked) => {
               setLongTextPasteAsAttachmentEnabled(checked)
@@ -386,8 +406,8 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SettingsToggle
-            label="输入框 Markdown 渲染"
-            description="开启后，输入框中的 Markdown 语法（如 **粗体**、# 标题）会实时渲染为富文本；关闭后为纯文本模式，保留 @ 引用等功能"
+            label={t('settings:markdownInput')}
+            description={t('settings:markdownInputDescription')}
             checked={richTextRenderingEnabled}
             onCheckedChange={(checked) => {
               setRichTextRenderingEnabled(checked)
@@ -395,8 +415,8 @@ export function GeneralSettings(): React.ReactElement {
             }}
           />
           <SettingsToggle
-            label="Agent 灵动岛"
-            description="在 Mac 刘海屏显示需要接手的 Agent 与 1 小时内的待办/日程；外接无刘海屏默认不覆盖菜单栏"
+            label={t('settings:agentIsland')}
+            description={t('settings:agentIslandDescription')}
             checked={agentIslandEnabled}
             onCheckedChange={(checked) => {
               void handleAgentIslandChange(checked)
@@ -423,6 +443,7 @@ interface SoundPickerProps {
 
 /** 单个场景的通知音选择器（下拉 + 试听按钮） */
 function SoundPicker({ label, type, sounds, disabled, onSoundChange }: SoundPickerProps): React.ReactElement {
+  const { t } = useTranslation('settings')
   const currentId = sounds[type] ?? DEFAULT_NOTIFICATION_SOUNDS[type]
 
   return (
@@ -440,7 +461,7 @@ function SoundPicker({ label, type, sounds, disabled, onSoundChange }: SoundPick
             {NOTIFICATION_SOUNDS.map((s) => (
               <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
             ))}
-            <SelectItem value="none">无</SelectItem>
+            <SelectItem value="none">{t('none')}</SelectItem>
           </SelectContent>
         </Select>
         <Button
@@ -449,7 +470,7 @@ function SoundPicker({ label, type, sounds, disabled, onSoundChange }: SoundPick
           className="h-8 w-8 shrink-0"
           disabled={disabled || currentId === 'none'}
           onClick={() => { void playNotificationSound(currentId) }}
-          title="试听"
+          title={t('preview')}
         >
           <Volume2 size={14} />
         </Button>

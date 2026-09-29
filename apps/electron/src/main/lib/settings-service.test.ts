@@ -20,6 +20,25 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+describe('应用语言设置规范化', () => {
+  test('Given no language When reading settings Then default to Simplified Chinese', () => {
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark' }), 'utf-8')
+    expect(getSettings().language).toBe('zh-CN')
+  })
+
+  test('Given an unsupported language When reading settings Then safely fall back to Simplified Chinese', () => {
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark', language: 'fr-FR' }), 'utf-8')
+    expect(getSettings().language).toBe('zh-CN')
+  })
+
+  test('Given English is selected When saving and reloading settings Then preserve English', () => {
+    atomicWrite = (path, data) => writeFileSync(path, JSON.stringify(data), 'utf-8')
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark' }), 'utf-8')
+    expect(updateSettings({ language: 'en-US' }).language).toBe('en-US')
+    expect(getSettings().language).toBe('en-US')
+  })
+})
+
 describe('Work 消息旧视图设置兼容', () => {
   test('新设置或旧配置含 V1/V2 时均忽略废弃偏好，读取不写盘，其他设置保持不变', () => {
     let writes = 0
