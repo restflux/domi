@@ -6,6 +6,8 @@
 
 import * as React from 'react'
 import { useSetAtom } from 'jotai'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { Columns2, Images } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ConversationMeta } from '@domi/shared'
@@ -28,6 +30,7 @@ interface ChatHeaderProps {
 }
 
 export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElement | null {
+  const { t } = useTranslation('chat')
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const setConversations = useSetAtom(conversationsAtom)
   const setTabs = useSetAtom(tabsAtom)
@@ -45,8 +48,8 @@ export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElemen
       setTabs((previous) => updateTabTitle(previous, updated.id, updated.title))
     } catch (error) {
       console.error('[ChatHeader] 更新标题失败:', error)
-      toast.error('重命名失败', {
-        description: error instanceof Error ? error.message : '无法更新对话标题',
+      toast.error(t('renameFailed'), {
+        description: error instanceof Error ? error.message : t('unableUpdateConversationTitle'),
       })
       throw error
     }
@@ -59,9 +62,9 @@ export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElemen
     }
     if (action === 'copyId') {
       void copyTextToClipboard(conversation.id)
-        .then(() => toast.success('已复制会话 ID'))
-        .catch((error) => toast.error('复制失败', {
-          description: error instanceof Error ? error.message : '无法写入剪贴板',
+        .then(() => toast.success(t('copiedConversationId')))
+        .catch((error) => toast.error(t('copyFailed'), {
+          description: error instanceof Error ? error.message : t('unableCopyConversationId'),
         }))
       return
     }
@@ -91,7 +94,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElemen
                 <Images className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom"><p>生成图片</p></TooltipContent>
+            <TooltipContent side="bottom"><p>{t('generateImages')}</p></TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -105,7 +108,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElemen
                 <Columns2 className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom"><p>{parallelMode ? '关闭并排模式' : '并排模式'}</p></TooltipContent>
+            <TooltipContent side="bottom"><p>{parallelMode ? t('closeParallel') : t('parallel')}</p></TooltipContent>
           </Tooltip>
           <SessionHeaderMenu
             entries={buildChatSessionHeaderMenu({
@@ -119,7 +122,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps): React.ReactElemen
       <SessionRenameDialog
         open={renameOpen}
         title={conversation.title}
-        noun="对话"
+        noun={t('conversationNoun')}
         onOpenChange={setRenameOpen}
         onRename={rename}
       />

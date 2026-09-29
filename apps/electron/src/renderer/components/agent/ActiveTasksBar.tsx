@@ -6,6 +6,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { TaskBadge } from './TaskBadge'
 import { cn } from '@/lib/utils'
 import type { BackgroundTask } from '@/atoms/agent-atoms'
@@ -32,6 +34,7 @@ export function ActiveTasksBar({
   onTaskClick,
   className,
 }: ActiveTasksBarProps): React.ReactElement | null {
+  const { t } = useTranslation('work')
   // 无任务时不渲染
   if (tasks.length === 0) return null
 
@@ -44,7 +47,7 @@ export function ActiveTasksBar({
         className
       )}
     >
-      <span className="text-xs text-muted-foreground font-medium">运行中任务:</span>
+      <span className="text-xs text-muted-foreground font-medium">{t('runningTasks')}</span>
       <div className="flex items-center gap-2 flex-wrap">
         {tasks.map((task) => (
           <TaskBadge

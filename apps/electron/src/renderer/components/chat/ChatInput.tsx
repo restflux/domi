@@ -15,6 +15,8 @@ import { imageGenerationSelectionsAtom } from '@/atoms/image-generation-atoms'
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ArrowUp, Square, Brain, Paperclip, ImagePlus } from 'lucide-react'
 import { ModelSelector } from './ModelSelector'
@@ -74,6 +76,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ conversationId, streaming, pendingAttachments, onSetPendingAttachments, onSend, onStop, onClearContext }: ChatInputProps): React.ReactElement {
+  const { t } = useTranslation('chat')
   const imageSelections = useAtomValue(imageGenerationSelectionsAtom)
   const setOpenImageScope = useSetAtom(openImageScopeAtom)
   const sendWithCmdEnter = useAtomValue(sendWithCmdEnterAtom)
@@ -124,7 +127,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
     }
 
     if (oversized.length > 0) {
-      toast.error(`以下文件超过 100MB，Chat 附件暂不支持，已跳过：${formatFileNames(oversized)}`)
+      toast.error(t('oversizedAttachments', { files: formatFileNames(oversized) }))
     }
 
     for (const file of okFiles) {
@@ -157,7 +160,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
         console.error('[ChatInput] 添加附件失败:', error)
       }
     }
-  }, [setPendingAttachments])
+  }, [setPendingAttachments, t])
 
   /** 通过 IPC 打开文件选择对话框 */
   const handleOpenFileDialog = React.useCallback(async (): Promise<void> => {
@@ -168,10 +171,10 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
       if (result.files.length === 0 && largeFiles.length === 0 && skippedFiles.length === 0) return
 
       if (largeFiles.length > 0) {
-        toast.error(`以下文件超过 100MB，Chat 附件暂不支持，已跳过：${formatFileNames(largeFiles.map((f) => f.filename))}`)
+        toast.error(t('oversizedAttachments', { files: formatFileNames(largeFiles.map((f) => f.filename)) }))
       }
       if (skippedFiles.length > 0) {
-        toast.warning(`以下文件无法读取，已跳过：${formatFileNames(skippedFiles.map((f) => f.filename))}`)
+        toast.warning(t('unreadableAttachments', { files: formatFileNames(skippedFiles.map((f) => f.filename)) }))
       }
 
       const oversized: string[] = []
@@ -203,12 +206,12 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
       }
 
       if (oversized.length > 0) {
-        toast.error(`以下文件超过 100MB，Chat 附件暂不支持，已跳过：${formatFileNames(oversized)}`)
+        toast.error(t('oversizedAttachments', { files: formatFileNames(oversized) }))
       }
     } catch (error) {
       console.error('[ChatInput] 文件选择对话框失败:', error)
     }
-  }, [setPendingAttachments])
+  }, [setPendingAttachments, t])
 
   /** 移除待发送附件 */
   const handleRemoveAttachment = React.useCallback((id: string): void => {
@@ -266,13 +269,13 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
     if (!canSend) return
     // 发送前检查网络状态：离线时立即反馈，避免消息发出后静默失败
     if (!navigator.onLine) {
-      toast.error('当前无网络连接，请检查网络后重试')
+      toast.error(t('offlineRetry'))
       return
     }
     onSend(content.trim())
     setContent('')
     // 附件清理由 ChatView 的 handleSend 负责
-  }, [canSend, content, onSend])
+  }, [canSend, content, onSend, t])
 
   /** 粘贴文件回调 */
   const handlePasteFiles = React.useCallback((files: File[]): void => {
@@ -349,7 +352,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p>{thinkingEnabled ? '关闭思考模式' : '开启思考模式'}</p>
+            <p>{thinkingEnabled ? t('disableThinking') : t('enableThinking')}</p>
           </TooltipContent>
         </Tooltip>
       ),
@@ -370,7 +373,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p>添加附件</p>
+            <p>{t('addAttachment')}</p>
           </TooltipContent>
         </Tooltip>
       ),
@@ -378,11 +381,11 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
     { key: 'speech', node: <SpeechButton className={inputToolbarButtonClass} /> },
     ...(imageSelections[`chat:${conversationId}`]
       ? [{ key: 'image-generation', node: <ImageGenerationButton scope={`chat:${conversationId}`} /> }]
-      : [{ key: 'image-generation-menu', menuOnly: true, node: <Button type="button" variant="ghost" size="icon" aria-label="图片生成" className={inputToolbarButtonClass}><ImagePlus className="size-4" /></Button>, onMenuSelect: () => setOpenImageScope(`chat:${conversationId}`) }]),
+      : [{ key: 'image-generation-menu', menuOnly: true, node: <Button type="button" variant="ghost" size="icon" aria-label={t('imageGeneration')} className={inputToolbarButtonClass}><ImagePlus className="size-4" /></Button>, onMenuSelect: () => setOpenImageScope(`chat:${conversationId}`) }]),
     { key: 'tools', node: <ToolSelectorPopover /> },
     { key: 'context', node: <ContextSettingsPopover /> },
     { key: 'clear', node: <ClearContextButton onClick={onClearContext} /> },
-  ], [handleOpenFileDialog, thinkingEnabled, setThinkingEnabled, onClearContext, conversationId, content, imageSelections, setOpenImageScope])
+  ], [handleOpenFileDialog, thinkingEnabled, setThinkingEnabled, onClearContext, conversationId, content, imageSelections, setOpenImageScope, t])
 
   const trailingNode = streaming ? (
     <Tooltip>
@@ -398,7 +401,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p>停止 Agent ({getAcceleratorDisplay(getActiveAccelerator('stop-generation'))})</p>
+        <p>{t('stopAgent', { shortcut: getAcceleratorDisplay(getActiveAccelerator('stop-generation')) })}</p>
       </TooltipContent>
     </Tooltip>
   ) : (
@@ -411,7 +414,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
       )}
       onClick={handleSend}
       disabled={!canSend}
-      aria-label="发送"
+      aria-label={t('send')}
     >
       <ArrowUp className="size-[17px]" strokeWidth={2.25} />
     </Button>
@@ -478,7 +481,7 @@ export function ChatInput({ conversationId, streaming, pendingAttachments, onSet
             onChange={setContent}
             onSubmit={handleSend}
             onPasteFiles={handlePasteFiles}
-            placeholder="输入消息..."
+            placeholder={t('inputMessage')}
             autoFocusTrigger={conversationId}
             sendWithCmdEnter={sendWithCmdEnter}
           />

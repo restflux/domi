@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { cn } from '@/lib/utils'
 import type { AgentFileSourceFilter } from '@/atoms/agent-atoms'
 import type { ScratchPadSaveState } from '@/atoms/tab-atoms'
@@ -19,23 +21,24 @@ export function RightWorkspaceHeader({
   scratchSaveState,
   onFileSourceFilterChange,
 }: RightWorkspaceHeaderProps): React.ReactElement | null {
+  const { t } = useTranslation('workspace')
   // Browser 和 Terminal 自带内容上下文；Changes 与问答也无需重复工具名称。
   if (activeTool === 'browser' || activeTool === 'terminal' || activeTool === 'changes' || activeTool === 'side-chat') return null
 
   const previewContextTitle = activeTool === 'preview'
-    ? previewTitle ?? '预览'
+    ? previewTitle ?? t('preview')
     : null
   const scratchSaveLabel: Record<ScratchPadSaveState, string> = {
-    loading: '正在加载',
-    saving: '正在保存…',
-    saved: '已保存到本地',
-    error: '保存失败',
+    loading: t('loading'),
+    saving: t('saving'),
+    saved: t('savedLocally'),
+    error: t('saveFailed'),
   }
 
   return (
     <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border/50 px-2 titlebar-no-drag">
       {activeTool === 'files' ? (
-        <div className="flex min-w-0 flex-1 items-center gap-1 rounded-lg bg-muted/50 p-0.5" role="group" aria-label="文件来源">
+        <div className="flex min-w-0 flex-1 items-center gap-1 rounded-lg bg-muted/50 p-0.5" role="group" aria-label={t('fileSource')}>
           {(['session', 'project'] as const).map((source) => (
             <button
               key={source}
@@ -48,7 +51,7 @@ export function RightWorkspaceHeader({
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {source === 'session' ? '会话文件' : '项目文件'}
+              {source === 'session' ? t('sessionFiles') : t('projectFiles')}
             </button>
           ))}
         </div>

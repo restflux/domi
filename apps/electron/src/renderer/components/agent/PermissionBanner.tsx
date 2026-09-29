@@ -9,6 +9,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useSetAtom } from 'jotai'
 import { Shield, ShieldAlert, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -44,6 +46,7 @@ interface PermissionBannerProps {
 }
 
 export function PermissionBanner({ sessionId }: PermissionBannerProps): React.ReactElement | null {
+  const { t } = useTranslation('work')
   const [allRequests, setAllRequests] = useAtom(allPendingPermissionRequestsAtom)
   const setStreamingStates = useSetAtom(agentStreamingStatesAtom)
   const requests = allRequests.get(sessionId) ?? []
@@ -134,14 +137,14 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
       if (!result.ok) {
         toast.error(
           isGitPushTrust
-            ? '普通 Git push 会话授权失败'
+            ? t('ordinaryPushTrustFailed')
             : isLocalMaintenance
-              ? 'Local 维修确认已失效或开启失败'
-              : 'Worktree 确认已失效或执行失败',
+              ? t('localMaintenanceFailed')
+              : t('worktreeConfirmationFailed'),
           { description: result.message },
         )
       } else if (isGitPushTrust && behavior === 'allow') {
-        toast.success('已信任当前会话的普通 Git push', {
+        toast.success(t('trustedOrdinaryPush'), {
           description: `${request.sessionCapability!.remoteName}/${request.sessionCapability!.targetBranch}`,
         })
       } else if (request.deferred && behavior === 'allow') {
@@ -157,9 +160,9 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
           dispatchWorktreeApplyConflictResume(createWorktreeApplyConflictResumeFromContinuation(result.sessionId, result.continuation))
         }
         if (result.continuation?.kind === 'worktree_apply_conflict') {
-          toast.warning('检测到 Worktree 冲突，Local 未修改', { description: 'Domi 正在让原 Agent 自动继续解决冲突。' })
+          toast.warning(t('worktreeConflict'), { description: t('conflictContinuing') })
         } else {
-          toast.success(isLocalMaintenance ? 'Local 维修事务已开启，正在自动继续' : isFinishWorktree ? 'Worktree 已提交并完成收口' : 'Worktree 已应用到 Local')
+          toast.success(isLocalMaintenance ? t('localMaintenanceStarted') : isFinishWorktree ? t('worktreeCommitted') : t('worktreeApplied'))
         }
       }
       // 确定性成功/失败会消费 snapshot-bound 请求；短暂 busy 则保留确认卡重试。
@@ -191,7 +194,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
         <div className="flex items-center gap-2">
           <IconComponent className={`size-4 ${iconColor}`} />
           <span className="text-sm font-medium">
-            {isGitPushTrust ? '信任本会话普通 Git push？' : isLocalMaintenance ? '开启 Local 维修事务？' : isFinishWorktree ? finishRetention === 'cleanup' ? '提交并清理？' : '提交并保留运行环境？' : isDangerous ? '危险操作需要确认' : '需要确认'}
+            {isGitPushTrust ? t('trustPushTitle') : isLocalMaintenance ? t('localMaintenanceTitle') : isFinishWorktree ? finishRetention === 'cleanup' ? t('commitAndCleanupTitle') : t('commitAndRetainTitle') : isDangerous ? t('dangerousConfirmation') : t('confirmationRequired')}
           </span>
           {requests.length > 1 && (
             <span className="text-xs text-muted-foreground">
@@ -207,7 +210,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
             type="button"
             className="size-5 flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted/60 transition-colors"
             onClick={handleDismiss}
-            title={request.deferred ? '拒绝并关闭确认卡' : '关闭并终止 Agent'}
+            title={request.deferred ? t('rejectAndCloseCard') : t('closeAndStopAgent')}
           >
             <X className="size-3.5" />
           </button>
@@ -241,21 +244,21 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
         )}
         {request.policy ? (
           <div data-policy-explanation className="space-y-1 rounded-lg bg-muted/35 px-2.5 py-2 text-[11px]">
-            <p><span className="text-muted-foreground">分类：</span><span className="font-mono">{request.policy.category}</span></p>
+            <p><span className="text-muted-foreground">{t('category')}：</span><span className="font-mono">{request.policy.category}</span></p>
             <p className="text-foreground">{request.policy.reason}</p>
             <p className="text-muted-foreground">
               Execution Policy：<span className="font-mono">{request.policy.executionPolicy}</span>
               {' · '}Workflow：<span className="font-mono">{request.policy.workflow}</span>
               {' · '}Scope：<span className="font-mono">{request.policy.scope}</span>
             </p>
-            <p className="text-muted-foreground">判定：<span className="font-mono">{request.policy.decisionCode}</span></p>
+            <p className="text-muted-foreground">{t('decision')}：<span className="font-mono">{request.policy.decisionCode}</span></p>
           </div>
         ) : null}
         {isLocalMaintenance ? (
           <div className="space-y-1.5 rounded bg-amber-500/5 p-2 text-xs text-muted-foreground">
             <p>事务不会切换 Session Target。Domi 会先保存 dirty Local 的 HEAD、branch、index、working tree patch 与 untracked 恢复 artifacts。</p>
             <p>批准后 Domi 会自动续跑当前 Agent，并仅开放 Local 项目内受控写入、测试与普通 git add/commit；reset/clean/restore、删除、项目外写入和后台进程仍被阻止。</p>
-            {typeof request.toolInput.goal === 'string' ? <p className="text-foreground">目标：{request.toolInput.goal}</p> : null}
+            {typeof request.toolInput.goal === 'string' ? <p className="text-foreground">{t('target')}：{request.toolInput.goal}</p> : null}
           </div>
         ) : isFinishWorktree ? (
           <div className="space-y-1.5">
@@ -312,7 +315,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
       {/* 操作按钮 */}
       <div className="flex items-center justify-end gap-1.5 px-3 pb-2.5">
         <span className="text-[10px] text-muted-foreground/40 mr-auto">
-          Enter 允许
+          {t('enterAllow')}
         </span>
         <Button
           variant="ghost"
@@ -322,7 +325,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
           className="h-7 px-3 text-xs text-muted-foreground hover:text-destructive"
         >
           <X className="size-3 mr-1" />
-          拒绝
+          {t('reject')}
         </Button>
 
         {!isGitPushTrust && request.allowAlways !== false && <Button
@@ -332,7 +335,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
           disabled={responding}
           className="h-7 px-3 text-xs"
         >
-          本次会话总是允许
+          {t('alwaysAllowSession')}
         </Button>}
 
         <Button
@@ -343,7 +346,7 @@ export function PermissionBanner({ sessionId }: PermissionBannerProps): React.Re
           className="h-7 px-3 text-xs"
         >
           <Check className="size-3 mr-1" />
-          {isGitPushTrust ? '信任本会话普通 Push' : isLocalMaintenance ? '确认开启维修事务' : isFinishWorktree ? finishRetention === 'cleanup' ? '确认提交并清理' : '确认提交并保留环境' : '允许'}
+          {isGitPushTrust ? t('trustOrdinaryPush') : isLocalMaintenance ? t('confirmMaintenance') : isFinishWorktree ? finishRetention === 'cleanup' ? t('confirmCommitCleanup') : t('confirmCommitRetain') : t('allow')}
         </Button>
       </div>
     </div>

@@ -6,6 +6,9 @@
  */
 
 import { useState } from 'react'
+import type { TFunction } from 'i18next'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -28,10 +31,9 @@ import {
 import { useConversationContextLength } from '@/hooks/useConversationSettings'
 
 /** 上下文长度滑块标签 */
-function getContextLengthLabel(value: ContextLengthValue): string {
-  if (value === 'infinite') return '无限'
-  if (value === 0) return '0 轮'
-  return `${value} 轮`
+function getContextLengthLabel(value: ContextLengthValue, translate: TFunction<'chat'>): string {
+  if (value === 'infinite') return translate('infinite')
+  return translate('turns', { count: value })
 }
 
 /** 将滑块位置转换为实际值 */
@@ -46,6 +48,7 @@ function valueToSliderPosition(value: ContextLengthValue): number {
 }
 
 export function ContextSettingsPopover(): React.ReactElement {
+  const { t } = useTranslation('chat')
   const [open, setOpen] = useState(false)
   const [contextLength, setContextLength] = useConversationContextLength()
 
@@ -68,7 +71,7 @@ export function ContextSettingsPopover(): React.ReactElement {
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top">
-          <p>上下文设置</p>
+          <p>{t('contextSettings')}</p>
         </TooltipContent>
       </Tooltip>
       <PopoverContent className="w-72" side="top" align="center">
@@ -76,9 +79,9 @@ export function ContextSettingsPopover(): React.ReactElement {
           {/* 上下文长度设置 */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium">上下文长度</span>
+              <span className="text-xs font-medium">{t('contextLength')}</span>
               <span className="text-xs text-muted-foreground">
-                {getContextLengthLabel(contextLength)}
+                {getContextLengthLabel(contextLength, t)}
               </span>
             </div>
 

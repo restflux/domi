@@ -9,6 +9,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useStore } from 'jotai'
 import { toast } from 'sonner'
 import { Bot, Loader2 } from 'lucide-react'
@@ -32,6 +34,7 @@ interface MigrateToAgentButtonProps {
 }
 
 export function MigrateToAgentButton({ conversationId }: MigrateToAgentButtonProps): React.ReactElement {
+  const { t } = useTranslation('chat')
   const store = useStore()
   const [migrating, setMigrating] = React.useState(false)
 
@@ -40,7 +43,7 @@ export function MigrateToAgentButton({ conversationId }: MigrateToAgentButtonPro
 
     const agentChannelId = store.get(agentChannelIdAtom)
     if (!agentChannelId) {
-      toast.error('请先在设置中配置 Agent 渠道')
+      toast.error(t('configureAgentChannel'))
       return
     }
 
@@ -78,7 +81,7 @@ export function MigrateToAgentButton({ conversationId }: MigrateToAgentButtonPro
       store.set(activeViewAtom, 'conversations')
 
       // 6. 打开 Agent 会话 Tab 并激活
-      const sessionTitle = session.title ?? '新 Agent 会话'
+      const sessionTitle = session.title ?? t('newAgentSession')
       const tabs = store.get(tabsAtom)
       const result = openTab(tabs, {
         type: 'agent',
@@ -90,12 +93,12 @@ export function MigrateToAgentButton({ conversationId }: MigrateToAgentButtonPro
       store.set(currentAgentSessionIdAtom, session.id)
 
       // 7. 通知用户
-      toast.success('已切换到 Work 模式', {
-        description: '对话历史已迁移到新的 Agent 会话',
+      toast.success(t('switchedToWork'), {
+        description: t('migratedConversation'),
       })
     } catch (error) {
       console.error('[MigrateToAgentButton] 迁移失败:', error)
-      toast.error('切换到 Work 模式失败')
+      toast.error(t('switchToWorkFailed'))
     } finally {
       setMigrating(false)
     }
@@ -103,7 +106,7 @@ export function MigrateToAgentButton({ conversationId }: MigrateToAgentButtonPro
 
   return (
     <MessageAction
-      tooltip={migrating ? '切换中...' : '切换到 Work 模式'}
+      tooltip={migrating ? t('switching') : t('switchToWork')}
       onClick={() => { void handleMigrate() }}
       disabled={migrating}
     >

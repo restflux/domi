@@ -6,6 +6,8 @@
  */
 
 import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { CopyIcon, CheckIcon } from 'lucide-react'
 import { MessageAction } from '@/components/ai-elements/message'
 import { copyTextToClipboard } from '@/lib/clipboard'
@@ -16,6 +18,7 @@ interface CopyButtonProps {
 }
 
 export function CopyButton({ content }: CopyButtonProps): React.ReactElement {
+  const { t } = useTranslation('chat')
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(async () => {
@@ -30,7 +33,7 @@ export function CopyButton({ content }: CopyButtonProps): React.ReactElement {
 
   return (
     <MessageAction
-      tooltip={copied ? '已复制' : '复制'}
+      tooltip={copied ? t('copied') : t('copy')}
       onClick={handleCopy}
     >
       {copied ? (

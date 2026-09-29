@@ -7,6 +7,8 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,6 +45,7 @@ function getToolIcon(iconName?: string): React.ReactElement {
 }
 
 export function ToolSelectorPopover(): React.ReactElement {
+  const { t } = useTranslation('chat')
   const [open, setOpen] = useState(false)
   const tools = useAtomValue(chatToolsAtom)
   const setChatTools = useSetAtom(chatToolsAtom)
@@ -93,18 +96,18 @@ export function ToolSelectorPopover(): React.ReactElement {
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top">
-          <p>工具</p>
+          <p>{t('tools')}</p>
         </TooltipContent>
       </Tooltip>
       <PopoverContent className="w-64" side="top" align="center">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium">工具</span>
+            <span className="text-xs font-medium">{t('tools')}</span>
           </div>
 
           {/* 工具列表 */}
           {tools.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">加载中...</p>
+            <p className="text-xs text-muted-foreground py-2">{t('loading')}</p>
           ) : (
             <div className="space-y-1">
               {tools.map((tool) => {
@@ -131,7 +134,7 @@ export function ToolSelectorPopover(): React.ReactElement {
                       </span>
                       {!canToggle && (
                         <span className="text-[10px] text-muted-foreground shrink-0">
-                          需配置
+                          {t('needsConfiguration')}
                         </span>
                       )}
                     </div>
@@ -154,7 +157,7 @@ export function ToolSelectorPopover(): React.ReactElement {
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full pt-1 border-t border-border/50"
           >
             <Settings className="size-3" />
-            <span>管理工具</span>
+            <span>{t('manageTools')}</span>
           </button>
         </div>
       </PopoverContent>

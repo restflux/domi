@@ -6,6 +6,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Plus, Trash2, Star, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -27,6 +29,7 @@ import type { SystemPrompt, SystemPromptCreateInput, SystemPromptUpdateInput } f
 const DEBOUNCE_DELAY = 500
 
 export function PromptEditorSidebar(): React.ReactElement {
+  const { t } = useTranslation('chat')
   const [config, setConfig] = useAtom(promptConfigAtom)
   const [selectedId, setSelectedId] = useAtom(selectedPromptIdAtom)
   const defaultPromptId = useAtomValue(defaultPromptIdAtom)
@@ -58,7 +61,7 @@ export function PromptEditorSidebar(): React.ReactElement {
   /** 新建提示词 */
   const handleCreate = async (): Promise<void> => {
     const input: SystemPromptCreateInput = {
-      name: '新提示词',
+      name: t('newPrompt'),
       content: '',
       scope: 'chat',
     }
@@ -150,12 +153,12 @@ export function PromptEditorSidebar(): React.ReactElement {
     <div className="flex flex-col h-full bg-background">
       {/* 头部 */}
       <div className="flex items-center justify-between h-12 px-3 border-b shrink-0">
-        <span className="text-sm font-medium">提示词</span>
+        <span className="text-sm font-medium">{t('prompts')}</span>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCreate} title="新建提示词">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCreate} title={t('createPrompt')}>
             <Plus className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPromptSidebarOpen(false)} title="关闭">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPromptSidebarOpen(false)} title={t('close')}>
             <X className="size-4" />
           </Button>
         </div>
@@ -186,7 +189,7 @@ export function PromptEditorSidebar(): React.ReactElement {
       {selectedPrompt && (
         <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-thin p-3 gap-3">
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">名称</label>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('name')}</label>
             <Input
               value={editName}
               onChange={(e) => handleNameChange(e.target.value)}
@@ -196,7 +199,7 @@ export function PromptEditorSidebar(): React.ReactElement {
             />
           </div>
           <div className="flex-1 min-h-0 flex flex-col">
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">内容</label>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t('content')}</label>
             <Textarea
               value={editContent}
               onChange={(e) => handleContentChange(e.target.value)}
@@ -205,7 +208,7 @@ export function PromptEditorSidebar(): React.ReactElement {
                 'flex-1 min-h-[120px] resize-none text-sm',
                 selectedPrompt.isBuiltin && 'opacity-60 cursor-not-allowed'
               )}
-              placeholder="输入系统提示词内容..."
+              placeholder={t('promptContent')}
             />
           </div>
         </div>
@@ -214,7 +217,7 @@ export function PromptEditorSidebar(): React.ReactElement {
       {/* 底部追加设置 */}
       <div className="border-t px-3 py-2.5 shrink-0">
         <label className="flex items-center justify-between gap-2 cursor-pointer">
-          <span className="text-xs text-muted-foreground">追加日期时间和用户名</span>
+          <span className="text-xs text-muted-foreground">{t('appendDateAndUser')}</span>
           <Switch
             checked={config.appendDateTimeAndUserName}
             onCheckedChange={handleAppendChange}
@@ -247,6 +250,8 @@ function SidebarPromptItem({
   onSetDefault,
   onHoverChange,
 }: SidebarPromptItemProps): React.ReactElement {
+  const { t } = useTranslation('chat')
+
   return (
     <div
       className={cn(
@@ -261,7 +266,7 @@ function SidebarPromptItem({
       <div className="flex-1 min-w-0 flex items-center gap-1">
         <span className="text-sm truncate">{prompt.name}</span>
         {prompt.isBuiltin && (
-          <span className="text-[10px] text-muted-foreground shrink-0">(内置)</span>
+          <span className="text-[10px] text-muted-foreground shrink-0">{t('builtIn')}</span>
         )}
         {isDefault && (
           <Star className="size-3 text-amber-500 fill-amber-500 shrink-0" />
@@ -282,7 +287,7 @@ function SidebarPromptItem({
               e.stopPropagation()
               onSetDefault(prompt.id)
             }}
-            title="设为默认"
+            title={t('setDefault')}
           >
             <Star className="size-3 text-muted-foreground" />
           </Button>
@@ -296,7 +301,7 @@ function SidebarPromptItem({
               e.stopPropagation()
               onDelete(prompt.id)
             }}
-            title="删除"
+            title={t('delete')}
           >
             <Trash2 className="size-3" />
           </Button>

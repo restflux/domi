@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import {
   Eye,
   Files,
@@ -74,6 +76,7 @@ function TabButton({
   onTabChange: (tabId: RightWorkspaceTabId) => void
   onCloseTab: (tabId: RightWorkspaceTabId) => void
 }): React.ReactElement {
+  const { t } = useTranslation('workspace')
   const Icon = TOOL_ICONS[tab.tool]
   return (
     <div
@@ -97,7 +100,7 @@ function TabButton({
             <Icon className="size-4 shrink-0" />
             <span className="min-w-0 truncate">{tab.label}</span>
             {tab.tool === 'changes' && hasUnseenChanges && (
-              <span className="absolute right-1 top-1 size-1.5 rounded-full bg-primary" aria-label="有未查看的改动" />
+              <span className="absolute right-1 top-1 size-1.5 rounded-full bg-primary" aria-label={t('unseenChanges')} />
             )}
           </button>
         </TooltipTrigger>
@@ -108,7 +111,7 @@ function TabButton({
           <TooltipTrigger asChild>
             <button
               type="button"
-              aria-label={`关闭${tab.label}`}
+              aria-label={`${t('close')}${tab.label}`}
               className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={(event) => {
                 event.stopPropagation()
@@ -118,7 +121,7 @@ function TabButton({
               <X className="size-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">关闭{tab.label}</TooltipContent>
+          <TooltipContent side="bottom">{t('close')}{tab.label}</TooltipContent>
         </Tooltip>
       )}
     </div>
@@ -140,6 +143,7 @@ export function RightWorkspaceToolbar({
   onShowScratch,
   onToggleExpand,
 }: RightWorkspaceToolbarProps): React.ReactElement {
+  const { t } = useTranslation('workspace')
   const toolsAreaRef = React.useRef<HTMLDivElement>(null)
   const toolsRef = React.useRef<HTMLDivElement>(null)
   const tabRefs = React.useRef(new Map<RightWorkspaceTabId, HTMLDivElement>())
@@ -176,7 +180,7 @@ export function RightWorkspaceToolbar({
   }
 
   return (
-    <nav className="titlebar-no-drag flex h-10 shrink-0 items-center gap-1 border-b border-border/50 bg-muted/20 px-1.5" aria-label="工作区标签">
+    <nav className="titlebar-no-drag flex h-10 shrink-0 items-center gap-1 border-b border-border/50 bg-muted/20 px-1.5" aria-label={t('workspaceTabs')}>
       <div ref={toolsAreaRef} className="flex min-w-0 flex-1 items-center gap-1">
         <div
           ref={toolsRef}
@@ -207,8 +211,8 @@ export function RightWorkspaceToolbar({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label="添加工具"
-              title="添加工具"
+              aria-label={t('addTool')}
+              title={t('addTool')}
               data-placement={menuPinned ? 'pinned' : 'inline'}
               aria-expanded={menuOpen}
               className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -216,18 +220,18 @@ export function RightWorkspaceToolbar({
               <Plus className="size-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={6} className="min-w-44" aria-label="添加工具菜单" onEscapeKeyDown={() => setMenuOpen(false)}>
+          <DropdownMenuContent align="end" sideOffset={6} className="min-w-44" aria-label={t('addToolMenu')} onEscapeKeyDown={() => setMenuOpen(false)}>
             <DropdownMenuItem onSelect={() => { setMenuOpen(false); onAddBrowser() }} className="gap-2">
               <Globe2 className="size-4" />
-              <span>新建浏览器</span>
+              <span>{t('newBrowser')}</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { setMenuOpen(false); onOpenTerminal() }} className="gap-2">
               <SquareTerminal className="size-4" />
-              <span>打开终端</span>
+              <span>{t('openTerminal')}</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { setMenuOpen(false); onShowScratch() }} className="gap-2">
               <NotebookPen className="size-4" />
-              <span>{scratchVisible ? '打开草稿' : '显示草稿'}</span>
+              <span>{scratchVisible ? t('openDraft') : t('showDraft')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -236,11 +240,11 @@ export function RightWorkspaceToolbar({
       {expandAvailable && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <button type="button" aria-label={expanded ? '恢复分栏' : '展开到主区域'} aria-pressed={expanded} onClick={onToggleExpand} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <button type="button" aria-label={expanded ? t('restoreSplit') : t('expandMain')} aria-pressed={expanded} onClick={onToggleExpand} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{expanded ? '恢复分栏' : '展开到主区域'}</TooltipContent>
+          <TooltipContent side="bottom">{expanded ? t('restoreSplit') : t('expandMain')}</TooltipContent>
         </Tooltip>
       )}
     </nav>

@@ -5,6 +5,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { BookOpen, Check, Star, Pencil } from 'lucide-react'
 import {
@@ -22,6 +24,7 @@ import { useConversationPromptId } from '@/hooks/useConversationSettings'
 import { cn } from '@/lib/utils'
 
 export function SystemPromptSelector(): React.ReactElement {
+  const { t } = useTranslation('chat')
   const [config, setConfig] = useAtom(promptConfigAtom)
   const [selectedId, setSelectedId] = useConversationPromptId()
   const defaultPromptId = useAtomValue(defaultPromptIdAtom)
@@ -37,7 +40,7 @@ export function SystemPromptSelector(): React.ReactElement {
 
   const chatPrompts = config.prompts.filter((prompt) => prompt.scope === 'chat')
   const selectedPrompt = chatPrompts.find((prompt) => prompt.id === selectedId)
-  const tooltipText = selectedPrompt ? `提示词: ${selectedPrompt.name}` : '选择提示词'
+  const tooltipText = selectedPrompt ? t('promptLabel', { name: selectedPrompt.name }) : t('selectPrompt')
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -72,7 +75,7 @@ export function SystemPromptSelector(): React.ReactElement {
 
             {/* 标记 */}
             {prompt.isBuiltin && (
-              <span className="text-xs text-muted-foreground shrink-0">(内置)</span>
+              <span className="text-xs text-muted-foreground shrink-0">{t('builtIn')}</span>
             )}
             {prompt.id === defaultPromptId && (
               <Star className="size-3 text-amber-500 fill-amber-500 shrink-0" />
@@ -88,7 +91,7 @@ export function SystemPromptSelector(): React.ReactElement {
           className="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <Pencil className="size-4" />
-          <span>编辑提示词</span>
+          <span>{t('editPrompt')}</span>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

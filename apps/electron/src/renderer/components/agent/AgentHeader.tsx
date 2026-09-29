@@ -6,6 +6,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { createPortal } from 'react-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Images, Share2 } from 'lucide-react'
@@ -44,6 +46,7 @@ export function AgentHeader({
   sessionTreeOpen = false,
   currentIterationRequest = null,
 }: AgentHeaderProps): React.ReactElement | null {
+  const { t } = useTranslation('work')
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const isModern = useAtomValue(interfaceVariantAtom) !== 'classic'
   const [tabBarSlot, setTabBarSlot] = React.useState<HTMLElement | null>(null)
@@ -89,8 +92,8 @@ export function AgentHeader({
       setAgentSessions((previous) => replaceAgentSessionInFreshnessOrder(previous, updated))
     } catch (error) {
       console.error('[AgentHeader] 更新标题失败:', error)
-      toast.error('重命名失败', {
-        description: error instanceof Error ? error.message : '无法更新会话标题',
+      toast.error(t('renameFailed'), {
+        description: error instanceof Error ? error.message : t('unableUpdateSessionTitle'),
       })
       throw error
     }
@@ -101,8 +104,8 @@ export function AgentHeader({
       await copyTextToClipboard(value)
       toast.success(success)
     } catch (error) {
-      toast.error('复制失败', {
-        description: error instanceof Error ? error.message : '无法写入剪贴板',
+      toast.error(t('copyFailed'), {
+        description: error instanceof Error ? error.message : t('unableWriteClipboard'),
       })
     }
   }
@@ -113,17 +116,17 @@ export function AgentHeader({
       return
     }
     if (action === 'copyId') {
-      void copy(session.id, '已复制会话 ID')
+      void copy(session.id, t('copiedSessionId'))
       return
     }
     if (action === 'copyPath' && sessionPath) {
-      void copy(sessionPath, '已复制会话目录')
+      void copy(sessionPath, t('copiedSessionDirectory'))
       return
     }
     if (action === 'openProject' && workspace) {
       void window.electronAPI.openAgentWorkspaceProjectFolder(workspace.id)
         .catch((error) => {
-          toast.error('无法打开项目文件夹', {
+          toast.error(t('unableOpenProjectFolder'), {
             description: error instanceof Error ? error.message : undefined,
           })
         })
@@ -152,8 +155,8 @@ export function AgentHeader({
             type="button"
             onClick={() => setGalleryOpen(true)}
             className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-            aria-label="打开生成图片画廊"
-            title="生成图片"
+            aria-label={t('openImageGallery')}
+            title={t('generateImages')}
           >
             <Images className="size-3.5" />
           </button>
@@ -164,8 +167,8 @@ export function AgentHeader({
               'flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
               sessionTreeOpen && 'bg-primary/10 text-primary',
             )}
-            aria-label={branchCount > 1 ? `打开会话树（${branchCount} 条分支）` : '打开会话树'}
-            title={branchCount > 1 ? `会话树（${branchCount} 条分支）` : '会话树'}
+            aria-label={branchCount > 1 ? `${t('openSessionTree')} (${t('branches', { count: branchCount })})` : t('openSessionTree')}
+            title={branchCount > 1 ? `${t('sessionTree')} (${t('branches', { count: branchCount })})` : t('sessionTree')}
           >
             <Share2 className="size-3.5" />
           </button>
@@ -173,7 +176,7 @@ export function AgentHeader({
       )}
       <AgentSessionTargetBadge
         sessionId={session.id}
-        projectName={workspace?.name ?? '当前项目'}
+        projectName={workspace?.name ?? t('currentProject')}
         hideProjectName={isModern}
         currentIterationRequest={currentIterationRequest}
       />

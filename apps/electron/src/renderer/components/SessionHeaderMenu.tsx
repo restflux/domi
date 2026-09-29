@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import {
   Archive,
   ArchiveRestore,
@@ -119,7 +121,7 @@ export function SessionHeaderMenu({ entries, onAction }: SessionHeaderMenuProps)
 interface SessionRenameDialogProps {
   open: boolean
   title: string
-  noun: '会话' | '对话'
+  noun: string
   onOpenChange: (open: boolean) => void
   onRename: (title: string) => Promise<void>
 }
@@ -131,6 +133,7 @@ export function SessionRenameDialog({
   onOpenChange,
   onRename,
 }: SessionRenameDialogProps): React.ReactElement {
+  const { t } = useTranslation('chat')
   const [draft, setDraft] = React.useState(title)
   const [saving, setSaving] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -167,14 +170,14 @@ export function SessionRenameDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving) onOpenChange(nextOpen) }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>重命名{noun}</DialogTitle>
-          <DialogDescription>标题会同步更新到标签页和侧边栏。</DialogDescription>
+          <DialogTitle>{t('rename', { noun })}</DialogTitle>
+          <DialogDescription>{t('titleSyncDescription')}</DialogDescription>
         </DialogHeader>
         <Input
           ref={inputRef}
           value={draft}
           maxLength={100}
-          aria-label={`${noun}标题`}
+          aria-label={t('titleLabel', { noun })}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
@@ -185,10 +188,10 @@ export function SessionRenameDialog({
         />
         <DialogFooter>
           <Button type="button" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>
-            取消
+            {t('cancel')}
           </Button>
           <Button type="button" disabled={!draft.trim() || saving} onClick={() => { void save() }}>
-            {saving ? '保存中...' : '保存'}
+            {saving ? t('saving') : t('save')}
           </Button>
         </DialogFooter>
       </DialogContent>

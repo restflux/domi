@@ -1,4 +1,6 @@
 import { RotateCcw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import type { RewindUndoState } from '@domi/shared'
 
 interface RewindUndoBannerProps {
@@ -8,6 +10,7 @@ interface RewindUndoBannerProps {
 }
 
 export function RewindUndoBanner({ state, inProgress, onUndo }: RewindUndoBannerProps): React.ReactElement | null {
+  const { t } = useTranslation('work')
   if (!state?.exists) return null
   const fileCount = state.filesChanged.length
   const unavailable = !state.available
@@ -20,8 +23,8 @@ export function RewindUndoBanner({ state, inProgress, onUndo }: RewindUndoBanner
       <RotateCcw className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
       <span className="min-w-0 flex-1">
         {unavailable
-          ? `已回退到历史状态，但当前无法撤销：${state.error ?? '状态已变化'}`
-          : `已回退到历史状态${fileCount > 0 ? `，涉及 ${fileCount} 个文件` : ''}。发送下一条消息或切换分支后将无法撤销。`}
+          ? t('rewindUnavailable', { error: state.error ?? t('stateChanged') })
+          : t('rewindSuccess', { files: fileCount > 0 ? t('affectedFiles', { count: fileCount }) : '' })}
       </span>
       <button
         type="button"
@@ -29,7 +32,7 @@ export function RewindUndoBanner({ state, inProgress, onUndo }: RewindUndoBanner
         disabled={inProgress || unavailable}
         onClick={onUndo}
       >
-        {inProgress ? '撤销中…' : '撤销回退'}
+        {inProgress ? t('undoing') : t('undoRewind')}
       </button>
     </div>
   )

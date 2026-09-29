@@ -6,6 +6,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useSetAtom } from 'jotai'
 import { Send, X } from 'lucide-react'
 import Markdown, { defaultUrlTransform, type Components } from 'react-markdown'
@@ -145,6 +147,7 @@ interface AskUserBannerProps {
 }
 
 export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactElement | null {
+  const { t } = useTranslation('work')
   const [allRequests, setAllRequests] = useAtom(allPendingAskUserRequestsAtom)
   const [drafts, setDrafts] = useAtom(askUserDraftsAtom)
   const setStreamingStates = useSetAtom(agentStreamingStatesAtom)
@@ -419,14 +422,14 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
     <div
       ref={bannerRef}
       tabIndex={0}
-      aria-label={isDirectWorkflowApproval ? '实施方向待确认' : 'Domi Agent 等待输入'}
+      aria-label={isDirectWorkflowApproval ? t('approvalPending') : t('agentInputPending')}
       className="ask-user-banner mx-4 mb-3 rounded-xl bg-card shadow-lg overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-primary/40 animate-in slide-in-from-bottom-2 duration-200"
     >
       {/* 头部 + Tab 栏 */}
       <div className="px-4 pt-3 pb-2">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-foreground">
-            {isDirectWorkflowApproval ? '实施方向待确认' : 'Domi Agent 需要你的输入'}
+            {isDirectWorkflowApproval ? t('approvalPending') : t('agentInputPending')}
           </span>
           <div className="flex items-center gap-1.5">
             {requests.length > 1 && (
@@ -436,7 +439,7 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
               type="button"
               className="size-5 flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted/60 transition-colors"
               onClick={handleDismiss}
-              title="关闭并终止 Agent"
+              title={t('closeStopAgent')}
             >
               <X className="size-3.5" />
             </button>
@@ -465,7 +468,7 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
                   `}
                   onClick={() => setActiveTabByState(idx)}
                 >
-                  {`${idx + 1}-${q.multiSelect ? '多选' : '单选'}：${q.header || `问题 ${idx + 1}`}`}
+                  {`${idx + 1}-${q.multiSelect ? t('multiSelect') : t('singleSelect')}：${q.header || t('question', { index: idx + 1 })}`}
                 </button>
               )
             })}
@@ -481,8 +484,8 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
           answer={getAnswer(activeTab)}
           focusedIndex={focusedOptIdx}
           showBadge={questions.length === 1}
-          customOptionLabel={isDirectWorkflowApproval ? '调整后再确认' : '其他...'}
-          customInputPlaceholder={isDirectWorkflowApproval ? '写下希望调整的内容；提交后 Agent 会修订方向并重新请求确认' : '输入自定义答案...'}
+          customOptionLabel={isDirectWorkflowApproval ? t('adjustBeforeConfirm') : t('other')}
+          customInputPlaceholder={isDirectWorkflowApproval ? t('adjustmentPlaceholder') : t('customAnswerPlaceholder')}
           customInputMultiline={isDirectWorkflowApproval}
           onToggleOption={(label) => {
             toggleOptionByState(activeTab, currentQuestion, label)
@@ -523,8 +526,8 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
       <div className="flex items-center justify-end gap-1.5 px-4 pb-3">
         <span className="text-[10px] text-muted-foreground/40 mr-auto">
           {isDirectWorkflowApproval && getAnswer(activeTab).showCustom
-            ? 'Shift+Enter 换行 · Enter 提交调整'
-            : `${currentQuestion.multiSelect ? '↑↓ 移动 · 空格 选择 · Enter ' : '↑↓ 选择 · Enter '}${isLastTab ? '确认' : '下一个'}`}
+            ? t('lineBreakSubmitAdjustment')
+            : `${currentQuestion.multiSelect ? t('moveSelectConfirm') : t('selectConfirm')}${isLastTab ? t('confirm') : t('next')}`}
         </span>
         {!isLastTab && (
           <Button
@@ -533,7 +536,7 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
             onClick={goNextTab}
             className="h-7 px-3 text-xs"
           >
-            下一个
+            {t('next')}
           </Button>
         )}
         {isLastTab && (
@@ -545,7 +548,7 @@ export function AskUserBanner({ sessionId }: AskUserBannerProps): React.ReactEle
             className="h-7 px-3 text-xs"
           >
             <Send className="size-3 mr-1" />
-            {isDirectWorkflowApproval && getAnswer(activeTab).showCustom ? '提交调整' : '确认'}
+            {isDirectWorkflowApproval && getAnswer(activeTab).showCustom ? t('submitAdjustment') : t('confirm')}
           </Button>
         )}
       </div>
@@ -612,6 +615,7 @@ function QuestionCard({
   onRemoveImage: (id: string) => void
   onSubmit: () => void
 }): React.ReactElement {
+  const { t } = useTranslation('work')
   const customInputRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const voiceInputIdRef = React.useRef(`ask-user-custom-${Math.random().toString(36).slice(2)}`)
   const customTextRef = React.useRef(answer.customText)
@@ -720,7 +724,7 @@ function QuestionCard({
       <div className="space-y-1">
         {showBadge && (
           <span className="shrink-0 inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-primary text-primary-foreground shadow-sm">
-            {`${questionIndex + 1}-${question.multiSelect ? '多选' : '单选'}${question.header ? `：${question.header}` : ''}`}
+            {`${questionIndex + 1}-${question.multiSelect ? t('multiSelect') : t('singleSelect')}${question.header ? `：${question.header}` : ''}`}
           </span>
         )}
         <AskUserMarkdown className="max-h-60 overflow-y-auto pr-1 text-sm">

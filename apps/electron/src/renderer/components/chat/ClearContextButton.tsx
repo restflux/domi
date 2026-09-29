@@ -5,6 +5,8 @@
  * 移植自 domi-frontend 的 chat-view/clear-context-button.tsx。
  */
 
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -27,6 +29,7 @@ export function ClearContextButton({
   className,
   ...props
 }: ClearContextButtonProps): React.ReactElement {
+  const { t } = useTranslation('chat')
   // 检测平台以显示正确的快捷键
   const isMac =
     typeof navigator !== 'undefined' &&
@@ -42,14 +45,14 @@ export function ClearContextButton({
           size="icon"
           className={cn(inputToolbarButtonClass, className)}
           onClick={onClick}
-          aria-label="清除上下文"
+          aria-label={t('clearContext')}
           {...props}
         >
           <Eraser className="size-4" />
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p>清除上下文 ({shortcutKey})</p>
+        <p>{t('clearContextWithShortcut', { shortcut: shortcutKey })}</p>
       </TooltipContent>
     </Tooltip>
   )

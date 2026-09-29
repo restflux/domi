@@ -1,5 +1,7 @@
 /** 按渠道分组的紧凑模型列表；主聊天、Work 与侧聊共享展示，选择状态由调用方管理。 */
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Check, ChevronDown, Cpu, Search } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -65,6 +67,7 @@ export function ModelSelector({
   align = 'end',
   restoreFocusOnClose,
 }: ModelSelectorProps = {}): React.ReactElement {
+  const { t } = useTranslation('chat')
   const [conversationModel, setConversationModel] = useConversationModelOptional()
   const conversationId = useConversationIdOptional()
   const setConversations = useSetAtom(conversationsAtom)
@@ -206,7 +209,7 @@ export function ModelSelector({
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2 py-1">
         <Cpu className="size-3.5" />
-        <span>暂无可用模型</span>
+        <span>{t('noAvailableModels')}</span>
       </div>
     )
   }
@@ -219,7 +222,7 @@ export function ModelSelector({
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>{trigger}</PopoverTrigger>
           </TooltipTrigger>
-          <TooltipContent side="top">渠道：{displayModelInfo?.channelName}</TooltipContent>
+          <TooltipContent side="top">{t('channel')}：{displayModelInfo?.channelName}</TooltipContent>
         </Tooltip>
       ) : (
         <Tooltip open={open || !displayModelInfo ? false : undefined}>
@@ -231,12 +234,12 @@ export function ModelSelector({
               <span className="max-w-[200px] truncate">
                 {displayModelInfo
                   ? (showChannelInTrigger ? `${displayModelInfo.channelName} · ${getModelDisplayName(displayModelInfo.modelName, displayModelInfo.modelId)}` : getModelDisplayName(displayModelInfo.modelName, displayModelInfo.modelId))
-                  : '选择模型'}
+                  : t('selectModel')}
               </span>
               <ChevronDown className="size-3" />
             </button>
           </PopoverTrigger></TooltipTrigger>
-          <TooltipContent side="top">渠道：{displayModelInfo?.channelName}</TooltipContent>
+          <TooltipContent side="top">{t('channel')}：{displayModelInfo?.channelName}</TooltipContent>
         </Tooltip>
       )}
 
@@ -246,7 +249,7 @@ export function ModelSelector({
           align={align}
           sideOffset={8}
           collisionPadding={12}
-          aria-label="选择模型"
+          aria-label={t('selectModel')}
           onOpenAutoFocus={(event) => {
             event.preventDefault()
             searchRef.current?.focus()
@@ -262,12 +265,12 @@ export function ModelSelector({
             <Search className="size-3.5 text-muted-foreground/60 flex-shrink-0" />
             <input
               ref={searchRef}
-              aria-label="搜索模型"
+              aria-label={t('searchModel')}
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              placeholder="搜索模型..."
+              placeholder={t('searchModel')}
               className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
               autoFocus
             />
@@ -277,7 +280,7 @@ export function ModelSelector({
           <div className="min-h-0 max-h-[360px] overflow-y-auto scrollbar-thin">
             {filteredGrouped.size === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
-                未找到模型
+                {t('modelNotFound')}
               </div>
             ) : (
               (() => {

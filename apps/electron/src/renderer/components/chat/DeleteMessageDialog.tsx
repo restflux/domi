@@ -5,6 +5,9 @@
  * 移植自 domi-frontend 的 chat-view/delete-message-dialog.tsx。
  */
 
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,28 +36,30 @@ export function DeleteMessageDialog({
   onConfirm,
   isDeleting = false,
 }: DeleteMessageDialogProps): React.ReactElement {
+  const { t } = useTranslation('chat')
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>确认删除</AlertDialogTitle>
+          <AlertDialogTitle>{t('confirmDelete')}</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
-              <p>删除后无法恢复。</p>
+              <p>{t('cannotUndo')}</p>
               <p className="text-yellow-600 dark:text-yellow-500">
-                提示：建议同时删除对话对（用户消息和对应的助手回复），否则可能因数据结构变化导致模型无法正常返回对话。
+                {t('deletePairTip')}
               </p>
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>取消</AlertDialogCancel>
+          <AlertDialogCancel disabled={isDeleting}>{t('cancel')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             disabled={isDeleting}
             className="bg-destructive text-white hover:bg-destructive/90"
           >
-            {isDeleting ? '删除中...' : '删除'}
+            {isDeleting ? t('deleting') : t('delete')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
