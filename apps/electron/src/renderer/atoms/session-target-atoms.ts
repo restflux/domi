@@ -405,6 +405,32 @@ export type OperateSessionTargetAtomInput =
   | { action: 'release_collaborator'; collaboratorSessionId: string }
   | { action: 'release_collaborators' }
 
+function preflightFromPreviewConflict(
+  conflict: SessionCheckoutConflictResult,
+  previousSnapshot: SessionTargetView,
+  previous: WorktreeApplyPreflightView | null | undefined,
+): Extract<WorktreeApplyPreflightView, { status: 'conflict' }> {
+  const previousFacts = previous && previous.status !== 'blocked' ? previous : null
+  const delivery = conflict.target.delivery ?? previousSnapshot.delivery
+  const reviewId = previousFacts?.reviewId ?? (delivery && 'review' in delivery ? delivery.review.reviewId : '')
+  const changedFiles = previousFacts?.changedFiles ?? (delivery && 'review' in delivery ? delivery.review.changedFiles : conflict.conflictingFiles)
+  return {
+    status: 'conflict',
+    localModified: false,
+    checkoutId: conflict.target.checkout.id,
+    reviewId,
+    revision: conflict.target.revision,
+    configuredBaseOid: previousFacts?.configuredBaseOid ?? conflict.effectiveBaseOid,
+    effectiveBaseOid: conflict.effectiveBaseOid,
+    baseStrategy: conflict.baseStrategy,
+    localBranch: previousFacts?.localBranch ?? conflict.target.current.branch,
+    localHeadOid: conflict.localHeadOid,
+    isolatedHeadOid: conflict.isolatedHeadOid,
+    changedFiles,
+    conflictingFiles: conflict.conflictingFiles,
+  }
+}
+
 function getOperationError(result: SessionCheckoutOperationResult): SessionCheckoutIpcError | null {
   if (result.status === 'error') return { code: result.code, message: result.message }
   if (result.status === 'conflict') {
@@ -532,6 +558,11 @@ export const operateSessionTargetAtomFamily = atomFamily((sessionId: string) => 
     const operationResult = result.ok ? result.value : null
     const operationError = result.ok ? getOperationError(result.value) : result.error
     const operationConflict = result.ok && result.value.status === 'conflict' ? result.value : null
+    // 预览操作可能在主进程的最终 apply 阶段才发现冲突。立即把这份结构化结果
+    // 投影到 preflight，令输入区 rail 消费同一份 conflict，而不是等详情卡片挂载后才刷新。
+    const postOperationPreflight = operationConflict && input.action === 'preview'
+      ? preflightFromPreviewConflict(operationConflict, before.snapshot, before.preflight)
+      : undefined
 
     // Operation result 只表达动作结果；完成后始终重新 inspect 获取权威 SessionTargetView。
     let refreshed: Awaited<ReturnType<typeof window.electronAPI.sessionCheckout.inspect>> | null = null
@@ -548,6 +579,11 @@ export const operateSessionTargetAtomFamily = atomFamily((sessionId: string) => 
         pendingAction: null,
         error: operationError,
         ...(operationConflict && { conflict: operationConflict }),
+        ...(postOperationPreflight !== undefined ? {
+          preflight: postOperationPreflight,
+          preflightLoading: false,
+          preflightError: null,
+        } : {}),
       })
       return operationResult
     }
@@ -558,6 +594,11 @@ export const operateSessionTargetAtomFamily = atomFamily((sessionId: string) => 
       pendingAction: null,
       error: operationError ?? (refreshed?.error ?? { code: 'inspect_failed', message: 'Session Target 刷新失败，请重试' }),
       ...(operationConflict && { conflict: operationConflict }),
+      ...(postOperationPreflight !== undefined ? {
+        preflight: postOperationPreflight,
+        preflightLoading: false,
+        preflightError: null,
+      } : {}),
     })
     return operationResult
   })

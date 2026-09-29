@@ -559,6 +559,32 @@ describe('session target atoms', () => {
     })
   })
 
+  test('Given 预览操作返回 conflict When atoms 完成动作 Then 立即补充预检结果供 rail 切换冲突入口', async () => {
+    const refreshed = view('checkout-a', 5)
+    refreshed.delivery = {
+      state: 'ready_for_review',
+      review: { reviewId: 'review-1', iteration: 1, preparedAt: 1, summary: 'ready', validationStatus: 'passed', tests: [], changedFiles: ['src/a.ts'], suggestedCommitMessage: 'fix: ready' },
+    }
+    installApi({
+      inspect: async () => ({ ok: true, value: refreshed }),
+      bind: async () => ({ ok: true, value: refreshed }),
+      operate: async () => ({
+        ok: true,
+        value: {
+          status: 'conflict', code: 'apply_conflict', reason: 'content_conflict', target: view('checkout-a', 4),
+          baseStrategy: 'recorded_base', effectiveBaseOid: 'a'.repeat(40), localHeadOid: 'c'.repeat(40), isolatedHeadOid: 'd'.repeat(40),
+          canRetryAfterRefresh: false, conflictingFiles: ['src/conflict.ts'],
+        },
+      }),
+    })
+    const store = createStore()
+    store.set(sessionTargetStateAtomFamily('a'), { snapshot: refreshed, selectionRequired: false, loading: false, pendingAction: null, error: null })
+
+    await store.set(operateSessionTargetAtomFamily('a'), { action: 'preview' })
+
+    expect(store.get(sessionTargetStateAtomFamily('a')).preflight).toMatchObject({ status: 'conflict', conflictingFiles: ['src/conflict.ts'] })
+  })
+
   test('Given 操作返回领域 error When atoms 完成动作 Then 保留稳定 code 并重新 inspect', async () => {
     const refreshed = view('checkout-a', 6)
     installApi({

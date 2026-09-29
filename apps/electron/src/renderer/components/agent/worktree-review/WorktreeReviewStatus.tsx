@@ -240,6 +240,15 @@ export function WorktreeReviewStatus({
     void beginIteration('isolated').finally(() => setStarting(false))
   }
 
+  const runPreview = async (): Promise<void> => {
+    const result = await operate({ action: 'preview' })
+    if (result?.status === 'conflict') {
+      toast.warning('预览检测到冲突', { description: '已切换为“让 Agent 解决冲突”，请点击该按钮继续。' })
+      return
+    }
+    if (result?.status === 'error') toast.error('预览未完成', { description: result.message })
+  }
+
   const primaryAction = (): void => {
     if (delivery.state === 'ready_for_review') {
       if (staleIsolatedPreflight) {
@@ -251,7 +260,7 @@ export function WorktreeReviewStatus({
       } else if (waitingForSlot) {
         openReviewSlotOwner()
       } else {
-        void operate({ action: 'preview' })
+        void runPreview()
       }
       return
     }
