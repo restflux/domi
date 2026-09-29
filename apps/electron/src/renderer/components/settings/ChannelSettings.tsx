@@ -6,6 +6,8 @@ import { BrandLogo } from '@/components/ui/brand-logo'
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useSetAtom } from 'jotai'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -33,6 +35,7 @@ import { ChannelForm } from './ChannelForm'
 type ViewMode = 'list' | 'create' | 'edit'
 
 export function ChannelSettings(): React.ReactElement {
+  const { t } = useTranslation('settings')
   const [channels, setChannels] = React.useState<Channel[]>([])
   const [viewMode, setViewMode] = React.useState<ViewMode>('list')
   const [editingChannel, setEditingChannel] = React.useState<Channel | null>(null)
@@ -135,21 +138,21 @@ export function ChannelSettings(): React.ReactElement {
     <div className="space-y-8">
       {/* 区块一：模型配置 */}
       <SettingsSection
-        title="模型配置"
-        description="管理 AI 供应商连接，配置 API Key 和可用模型。每个渠道会标注可用的 Agent Core。"
+        title={t('modelConfigTitle')}
+        description={t('modelConfigDescription')}
         action={
           <Button size="sm" onClick={() => setViewMode('create')}>
             <Plus size={16} />
-            <span>添加配置</span>
+            <span>{t('addConfig')}</span>
           </Button>
         }
       >
         {loading ? (
-          <div className="text-sm text-muted-foreground py-8 text-center">加载中...</div>
+          <div className="text-sm text-muted-foreground py-8 text-center">{t('loading')}</div>
         ) : channels.length === 0 ? (
           <SettingsCard divided={false}>
             <div className="text-sm text-muted-foreground py-12 text-center">
-              还没有配置任何模型，点击上方"添加配置"开始
+              {t('noChannels')}
             </div>
           </SettingsCard>
         ) : (
@@ -174,14 +177,14 @@ export function ChannelSettings(): React.ReactElement {
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确定删除渠道？</AlertDialogTitle>
+            <AlertDialogTitle>{t('deleteChannelTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              确定删除渠道「{deleteTarget?.name}」？此操作不可恢复。
+              {t('deleteChannelDescription', { name: deleteTarget?.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm}>确认删除</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>{t('cancel', { ns: 'common' })}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm}>{t('deleteConfirm')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -199,10 +202,11 @@ interface ChannelRowProps {
 }
 
 function ChannelRow({ channel, onEdit, onDelete, onToggle }: ChannelRowProps): React.ReactElement {
+  const { t } = useTranslation('settings')
   const enabledCount = channel.models.filter((m) => m.enabled).length
   const description = [
     PROVIDER_LABELS[channel.provider],
-    enabledCount > 0 ? `${enabledCount} 个模型已启用` : undefined,
+    enabledCount > 0 ? t('enabledModels', { count: enabledCount }) : undefined,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -224,14 +228,14 @@ function ChannelRow({ channel, onEdit, onDelete, onToggle }: ChannelRowProps): R
         <button
           onClick={onEdit}
           className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors opacity-0 group-hover:opacity-100"
-          title="编辑"
+          title={t('edit')}
         >
           <Pencil size={14} />
         </button>
         <button
           onClick={onDelete}
           className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
-          title="删除"
+          title={t('delete')}
         >
           <Trash2 size={14} />
         </button>
@@ -251,7 +255,7 @@ function AgentCoreChips(): React.ReactElement {
     <Badge
       variant="outline"
       className="px-1.5 py-0 text-[10px] font-medium leading-5"
-      title="Domi Agent 由 Pi runtime 驱动"
+      title="Domi Agent is powered by the Pi runtime"
     >
       Pi
     </Badge>

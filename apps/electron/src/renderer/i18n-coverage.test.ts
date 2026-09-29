@@ -23,6 +23,13 @@ const migratedChatFiles = [
   'components/right-workspace/RightWorkspaceToolbar.tsx',
 ] as const
 
+const migratedSettingsFiles = [
+  'components/settings/ChannelSettings.tsx',
+  'components/settings/ChannelForm.tsx',
+  'components/settings/McpServerForm.tsx',
+  'components/settings/ProxySettings.tsx',
+] as const
+
 const knownUntranslatedUiLiterals = [
   '重命名失败',
   '输入消息...',
@@ -37,6 +44,28 @@ const knownUntranslatedUiLiterals = [
   '添加工具',
 ]
 
+const knownUntranslatedSettingsLiterals = [
+  '模型配置',
+  '添加配置',
+  '确定删除渠道？',
+  '代理配置',
+  '启用代理',
+  '系统代理（推荐）',
+  '手动配置',
+  '创建服务器',
+  '编辑 MCP 服务器',
+  '测试中...',
+  '测试成功',
+  '测试失败',
+  '测试连接',
+  '编辑模型配置',
+  '添加模型配置',
+  '高级设置',
+  '可用模型',
+  '保存并关闭',
+  '放弃编辑',
+]
+
 describe('Chat UI i18n coverage', () => {
   test('migrated Chat components do not retain known product UI literals', () => {
     const source = migratedChatFiles
@@ -48,6 +77,31 @@ describe('Chat UI i18n coverage', () => {
     for (const literal of knownUntranslatedUiLiterals) {
       expect(source).not.toContain(literal)
     }
+  })
+
+  test('migrated settings components do not retain known product UI literals', () => {
+    const source = migratedSettingsFiles
+      .map((file) => readFileSync(resolve(import.meta.dir, file), 'utf8'))
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      .replace(/^\s*console\.(?:error|warn|log)\(.*$/gm, '')
+
+    for (const literal of knownUntranslatedSettingsLiterals) {
+      expect(source).not.toContain(literal)
+    }
+  })
+
+  test('settings batch provides English resources for core configuration pages', async () => {
+    await i18n.changeLanguage('en-US')
+    expect(i18n.t('settings:modelConfigTitle')).toBe('Model configuration')
+    expect(i18n.t('settings:proxyConfigTitle')).toBe('Proxy configuration')
+    expect(i18n.t('settings:mcpCreate')).toBe('Create server')
+    expect(i18n.t('settings:thirdPartyWarningTitle')).toBe('Use a third-party relay?')
+
+    await i18n.changeLanguage('zh-CN')
+    expect(i18n.t('settings:modelConfigTitle')).toBe('模型配置')
+    expect(i18n.t('settings:mcpCreate')).toBe('创建服务器')
   })
 
   test('context length uses locale-aware singular and plural resources', async () => {

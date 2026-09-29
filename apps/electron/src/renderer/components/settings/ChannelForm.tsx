@@ -10,6 +10,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import type { ImageGenerationChannelConfig } from '@domi/shared'
 import { ChannelImageGenerationConfig } from './ChannelImageGenerationConfig'
 import {
@@ -261,6 +263,7 @@ function createModelAdaptationDraft(model: ChannelModel): ModelAdaptationDraft {
 }
 
 export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): React.ReactElement {
+  const { t } = useTranslation('settings')
   const isEdit = channel !== null
 
   // 表单状态
@@ -932,7 +935,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
           <ArrowLeft size={18} />
         </Button>
         <h3 className="text-lg font-medium text-foreground flex-1">
-          {isEdit ? '编辑模型配置' : '添加模型配置'}
+          {isEdit ? t('channelFormEdit') : t('channelFormCreate')}
         </h3>
         {/* 新建模式：创建按钮 */}
         {!isEdit && (
@@ -942,7 +945,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             disabled={saving || !name.trim() || !hasRequiredSecret}
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
-            <span>创建</span>
+            <span>{t('create')}</span>
           </Button>
         )}
       </div>
@@ -951,11 +954,11 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       <SettingsSection title="基本信息">
         <SettingsCard>
           <SettingsSelect
-            label="供应商类型"
+            label={t('providerType')}
             value={provider}
             onValueChange={handleProviderChange}
             options={PROVIDER_SELECT_OPTIONS}
-            placeholder="选择供应商"
+            placeholder={t('providerSelect')}
           />
           {provider === 'custom' && (
             <div className="px-4 pb-3 text-xs text-muted-foreground">
@@ -963,7 +966,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             </div>
           )}
           <SettingsInput
-            label="供应商名称"
+            label={t('providerName')}
             value={name}
             onChange={setName}
             placeholder="例如: My Anthropic"
@@ -984,7 +987,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
           <div className="px-4 py-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium text-foreground">
-                {isCodexProvider ? 'ChatGPT 登录' : isZhipuTeamProvider ? '智谱团队版凭证' : 'API Key'}
+                {isCodexProvider ? t('chatGptLogin') : isZhipuTeamProvider ? '智谱团队版凭证' : t('apiKey')}
               </div>
               {/* codex 无 baseUrl/apiKey，测试连接不适用，隐藏测试按钮 */}
               {!isCodexProvider && (
@@ -1001,7 +1004,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
                   ) : (
                     <Zap size={12} />
                   )}
-                  <span>测试连接</span>
+                  <span>{t('testConnection')}</span>
                 </Button>
               )}
             </div>
@@ -1022,23 +1025,23 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
                   )}
                   <span>
                     {codexLoggingIn
-                      ? '等待浏览器授权…'
+                      ? t('chatGptLoggingIn')
                       : hasRequiredSecret
-                        ? '重新登录 ChatGPT'
-                        : '用 ChatGPT 登录'}
+                        ? t('chatGptRelogin')
+                        : t('chatGptUseLogin')}
                   </span>
                 </Button>
                 {hasRequiredSecret ? (
                   <div className="flex items-center gap-1.5 text-xs text-emerald-600">
                     <CheckCircle2 size={12} className="shrink-0" />
                     <span>
-                      已登录 ChatGPT 订阅
+                      {t('chatGptLoggedIn')}
                       {codexCredentials?.accountId ? `（账号 ${codexCredentials.accountId.slice(0, 8)}…）` : ''}
                     </span>
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground">
-                    使用 ChatGPT Plus/Pro 订阅登录，通过 OAuth 授权，无需 API Key。授权将在系统浏览器中打开。
+                    {t('chatGptLoginDescription')}
                   </div>
                 )}
               </div>
@@ -1058,7 +1061,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
                     onClick={() => setShowApiKey(!showApiKey)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
                     tabIndex={-1}
-                    title={showApiKey ? '隐藏凭证' : '显示凭证'}
+                    title={showApiKey ? 'Hide credential' : 'Show credential'}
                   >
                     {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -1067,12 +1070,12 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
                   <Input
                     value={zhipuTeamSecret.organization}
                     onChange={(e) => updateZhipuTeamSecret({ organization: e.target.value })}
-                    placeholder="组织 ID（可选）"
+                    placeholder="Organization ID (optional)"
                   />
                   <Input
                     value={zhipuTeamSecret.project}
                     onChange={(e) => updateZhipuTeamSecret({ project: e.target.value })}
-                    placeholder="项目 ID（可选）"
+                    placeholder="Project ID (optional)"
                   />
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -1121,8 +1124,8 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             )}
           </div>
           <SettingsToggle
-            label="启用此配置"
-            description="关闭后该配置的模型不会在选择列表中出现"
+            label={t('channelEnabled')}
+            description={t('channelEnabledDescription')}
             checked={enabled}
             onCheckedChange={setEnabled}
           />
@@ -1130,7 +1133,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       </SettingsSection>
 
       {OPENAI_COMPLETIONS_PROVIDERS.has(provider) && (
-        <SettingsSection title="高级设置">
+        <SettingsSection title={t('advancedSettings')}>
           <SettingsCard>
             <SettingsSelect
               label="finish_reason 兼容模式"
@@ -1151,13 +1154,13 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
 
       {/* 已启用模型 */}
       <SettingsSection
-        title="已启用模型"
+        title={t('enabledModelsTitle')}
         description={enabledModels.length > 0 ? `${enabledModels.length} 个模型` : undefined}
       >
         <SettingsCard divided={false}>
           {enabledModels.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              还没有启用任何模型，从下方可用模型中选择
+              {t('enabledModelsEmpty')}
             </div>
           ) : (
             <div className="divide-y divide-border/50">
@@ -1205,7 +1208,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
 
       {/* 可用模型 */}
       <SettingsSection
-        title="可用模型"
+        title={t('availableModelsTitle')}
         action={
           <Button
             variant="outline"
@@ -1220,7 +1223,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             ) : (
               <Download size={12} />
             )}
-            <span>从供应商获取</span>
+            <span>{t('fetchFromProvider')}</span>
           </Button>
         }
       >
@@ -1244,7 +1247,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
                 <Input
                   value={modelFilter}
                   onChange={(e) => setModelFilter(e.target.value)}
-                  placeholder="搜索可用模型..."
+                  placeholder={t('searchAvailableModels')}
                   className="h-8 text-sm pl-8"
                 />
               </div>
@@ -1255,8 +1258,8 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
           {models.filter((m) => !m.enabled).length > 0 && (
             <div className="px-4 pt-2 pb-1 text-xs text-muted-foreground">
               {modelFilter.trim()
-                ? `${availableModels.length} / ${models.filter((m) => !m.enabled).length} 个可用模型`
-                : `${models.filter((m) => !m.enabled).length} 个可用模型`}
+                ? t('availableModelsFiltered', { shown: availableModels.length, total: models.filter((m) => !m.enabled).length })
+                : t('availableModelsCount', { count: models.filter((m) => !m.enabled).length })}
             </div>
           )}
 
@@ -1322,7 +1325,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             <Input
               value={newModelId}
               onChange={(e) => setNewModelId(e.target.value)}
-              placeholder="模型 ID（如 claude-opus-4-6）"
+              placeholder={t('modelId')}
               className="flex-1 h-8 text-sm"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -1334,7 +1337,7 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
             <Input
               value={newModelName}
               onChange={(e) => setNewModelName(e.target.value)}
-              placeholder="显示名称（可选）"
+              placeholder={t('displayName')}
               className="flex-1 h-8 text-sm"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -1392,20 +1395,20 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认使用第三方中转站？</AlertDialogTitle>
+            <AlertDialogTitle>{t('thirdPartyWarningTitle')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
-                <p>该地址并非当前供应商的官方默认 Base URL。中转站可能存在篡改对话内容和模型响应，存在中间人攻击、凭据泄露与隐私风险。</p>
-                <p>其协议适配也可能导致上下文窗口、工具调用、多模态或流式内容显示异常。请仅使用你信赖的服务，并先用非敏感内容测试。</p>
-                <p>Domi 仅作为本地 Agent 执行环境：配置、会话等本地数据均存储在你的设备上，Domi 本身不会额外构成数据风险。</p>
-                <p>请只使用你信赖的渠道，先用非敏感内容验证后再用于正式工作。</p>
+                <p>{t('thirdPartyWarningBody1')}</p>
+                <p>{t('thirdPartyWarningBody2')}</p>
+                <p>{t('thirdPartyWarningBody3')}</p>
+                <p>{t('thirdPartyWarningBody4')}</p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('cancel', { ns: 'common' })}</AlertDialogCancel>
             <AlertDialogAction onClick={handleBaseUrlRiskAcknowledgement}>
-              知晓并愿意承担风险
+              {t('thirdPartyWarningConfirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1415,20 +1418,20 @@ export function ChannelForm({ channel, onSaved, onCancel }: ChannelFormProps): R
       <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>放弃未保存的更改？</AlertDialogTitle>
+            <AlertDialogTitle>{t('discardChangesTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
               {hasNoModels
-                ? '当前尚未配置模型，建议先配置模型再保存。'
-                : '您填写的内容尚未保存，确定要放弃编辑吗？'}
+                ? t('noModelsBeforeSave')
+                : t('discardChangesDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleDiscard}>放弃编辑</AlertDialogCancel>
+            <AlertDialogCancel onClick={handleDiscard}>{t('discardEdit')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleSaveAndClose}
               disabled={saving || !name.trim() || !hasRequiredSecret}
             >
-              {saving ? <><Loader2 size={14} className="animate-spin" /> 保存中...</> : '保存并关闭'}
+              {saving ? <><Loader2 size={14} className="animate-spin" /> {t('saving')}</> : t('saveAndClose')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

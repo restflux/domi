@@ -6,6 +6,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { ArrowLeft, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -123,6 +125,7 @@ function buildEntryFromValues(values: McpFormValues, includeTestResult = false):
 }
 
 export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCancel }: McpServerFormProps): React.ReactElement {
+  const { t } = useTranslation('settings')
   const isEdit = server !== null
   const isBuiltin = server?.entry.isBuiltin === true
 
@@ -241,7 +244,7 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
     } catch (error) {
       console.error('[MCP 表单] 自动保存失败:', error)
       if (generation === saveGenerationRef.current && mountedRef.current) {
-        toast.error('自动保存失败')
+        toast.error(t('mcpSaveFailed'))
         setSaveStatus('error')
       }
     }
@@ -328,7 +331,7 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
     } catch (error) {
       setTestResult({
         success: false,
-        message: error instanceof Error ? error.message : '测试失败',
+        message: error instanceof Error ? error.message : t('connectionFailed'),
         timestamp: Date.now(),
       })
     } finally {
@@ -412,7 +415,7 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
           <ArrowLeft size={18} />
         </Button>
         <h3 className="text-lg font-medium text-foreground flex-1">
-          {isEdit ? '编辑 MCP 服务器' : '添加 MCP 服务器'}
+          {isEdit ? t('mcpEdit') : t('mcpCreate')}
         </h3>
         {isEdit && (saveStatus === 'saved' || saveStatus === 'error') && (
           <div className={cn(
@@ -422,36 +425,36 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
             {saveStatus === 'saved' && <CheckCircle2 size={12} className="text-emerald-600" />}
             {saveStatus === 'error' && <XCircle size={12} />}
             <span>
-              {saveStatus === 'saved' && '已保存'}
-              {saveStatus === 'error' && '保存失败'}
+              {saveStatus === 'saved' && t('saved')}
+              {saveStatus === 'error' && t('mcpSaveFailed')}
             </span>
           </div>
         )}
         {!isEdit && (
           <Button size="sm" type="submit" disabled={saving || !canSubmit()}>
             {saving && <Loader2 size={14} className="animate-spin" />}
-            <span>创建服务器</span>
+            <span>{t('mcpCreate')}</span>
           </Button>
         )}
       </div>
 
       {/* 基本信息 */}
-      <SettingsSection title="基本信息">
+      <SettingsSection title={t('mcpBasicInfo')}>
         <SettingsCard>
           <SettingsInput
-            label="服务器名称"
+            label={t('mcpServerName')}
             value={name}
             onChange={setName}
-            placeholder="例如: github-mcp"
+            placeholder="e.g. github-mcp"
             required
             disabled={isEdit}
           />
           <SettingsSelect
-            label="传输类型"
+            label={t('mcpTransport')}
             value={transportType}
             onValueChange={(v) => setTransportType(v as McpTransportType)}
             options={TRANSPORT_OPTIONS}
-            placeholder="选择传输类型"
+            placeholder={t('mcpTransport')}
             disabled={isBuiltin}
           />
 
@@ -459,26 +462,26 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
           {transportType === 'stdio' && (
             <>
               <SettingsInput
-                label="命令"
+                label={t('mcpCommand')}
                 value={command}
                 onChange={setCommand}
-                placeholder="例如: npx"
+                placeholder="e.g. npx"
                 required
                 disabled={isBuiltin}
               />
               <SettingsInput
-                label="参数"
+                label={t('mcpArguments')}
                 value={argsText}
                 onChange={setArgsText}
-                placeholder="逗号分隔，例如: -y, @modelcontextprotocol/server-github"
-                description="多个参数用逗号分隔"
+                placeholder="Comma-separated, e.g. -y, @modelcontextprotocol/server-github"
+                description={t('mcpArgumentsDescription')}
                 disabled={isBuiltin}
               />
               {/* 环境变量多行输入 */}
               <div className="px-4 py-3 space-y-2">
                 <div>
-                  <div className="text-sm font-medium text-foreground">环境变量</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">每行一个，格式: KEY=VALUE</div>
+                  <div className="text-sm font-medium text-foreground">{t('mcpEnvironment')}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{t('mcpEnvironmentDescription')}</div>
                 </div>
                 <textarea
                   value={envText}
@@ -489,8 +492,8 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
                 />
               </div>
               <SettingsInput
-                label="启动超时（秒）"
-                description="MCP 服务器启动的最大等待时间，默认 30 秒"
+                label={t('mcpTimeout')}
+                description={t('mcpTimeoutDescription')}
                 value={timeoutStr}
                 onChange={setTimeoutStr}
                 placeholder="30"
@@ -506,14 +509,14 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
                 label="URL"
                 value={url}
                 onChange={setUrl}
-                placeholder="例如: http://localhost:3000/mcp"
+                placeholder="e.g. http://localhost:3000/mcp"
                 required
               />
               {/* 请求头多行输入 */}
               <div className="px-4 py-3 space-y-2">
                 <div>
-                  <div className="text-sm font-medium text-foreground">请求头</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">每行一个，格式: Key: Value</div>
+                  <div className="text-sm font-medium text-foreground">{t('mcpHeaders')}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{t('mcpHeadersDescription')}</div>
                 </div>
                 <textarea
                   value={headersText}
@@ -530,9 +533,9 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
           <div className="px-4 py-3 space-y-3 border-t border-border">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-foreground">连接测试</div>
+                <div className="text-sm font-medium text-foreground">{t('mcpConnectionTest')}</div>
                 <div className="text-xs text-muted-foreground mt-0.5">
-                  可选的诊断工具；测试结果不会影响 MCP 是否启用
+                  Optional diagnostic tool; test results do not affect whether MCP is enabled
                 </div>
               </div>
               <Button
@@ -543,7 +546,7 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
                 disabled={testing || !canTest()}
               >
                 {testing && <Loader2 size={14} className="animate-spin" />}
-                <span>{testing ? '测试中...' : '测试连接'}</span>
+                <span>{testing ? t('testing') : t('testConnection')}</span>
               </Button>
             </div>
 
@@ -564,7 +567,7 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
                 )}
                 <div className="flex-1">
                   <div className="font-medium">
-                    {testResult.success ? '测试成功' : '测试失败'}
+                    {testResult.success ? t('connectionPassed') : t('connectionFailed')}
                   </div>
                   <div className="text-xs mt-0.5 opacity-90">{testResult.message}</div>
                 </div>
@@ -576,26 +579,26 @@ export function McpServerForm({ server, workspaceSlug, onSaved, onChanged, onCan
               <div className="flex items-start gap-2 px-3 py-2 rounded-md text-sm bg-amber-500/10 text-amber-700 dark:text-amber-400">
                 <AlertCircle size={16} className="mt-0.5 shrink-0" />
                 <div className="text-xs">
-                  尚未测试连接。如需排查配置，可以点击"测试连接"。
+                  {t('mcpNotTested')}
                 </div>
               </div>
             )}
           </div>
 
           <SettingsToggle
-            label="信任只读能力声明"
-            description="仅对可信服务器开启。开启后，Read Only / Plan First 会自动放行服务器声明 readOnlyHint=true 且非破坏性的工具。"
+            label={t('mcpTrustReadOnly')}
+            description={t('mcpTrustReadOnlyDescription')}
             checked={trustReadOnlyAnnotations}
             onCheckedChange={setTrustReadOnlyAnnotations}
           />
 
           {/* 启用开关 */}
           <SettingsToggle
-            label="启用此服务器"
+            label={t('mcpEnable')}
             description={
               testResult?.success
-                ? '开启后该 MCP 服务器将在 Agent 会话中加载'
-                : '开启后该 MCP 服务器将在 Agent 会话中加载；如配置有误，Agent 会按运行时错误提示处理'
+                ? t('mcpEnabledDescription')
+                : t('mcpEnabledWarning')
             }
             checked={enabled}
             onCheckedChange={setEnabled}
