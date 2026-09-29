@@ -24,7 +24,11 @@ export function isCurrentIterationRequest(message: SDKSystemMessage, sessionId: 
   if (typeof message.expected_revision === 'number' && message.expected_revision !== target.revision) return false
   const delivery = target.delivery
   if (request.mode === 'preview_revision') {
-    return delivery?.state === 'preview_active' && delivery.review.iteration === request.iteration
+    // 预览修订不更换 Checkout、不递增 iteration，确认续改后产生的新验收卡只能靠时间戳区分：
+    // 请求早于当前验收卡，说明该请求已在上一轮续改中被消费，重新预览不得复活它。
+    if (delivery?.state !== 'preview_active' || delivery.review.iteration !== request.iteration) return false
+    return !(typeof message._createdAt === 'number'
+      && message._createdAt < delivery.review.preparedAt)
   }
   return (delivery?.state === 'delivered' && target.checkout.phase === 'discarded' && delivery.iteration === request.iteration - 1)
     || (delivery?.state === 'finalized' && target.checkout.phase === 'finalized' && delivery.review.iteration === request.iteration - 1)
@@ -36,6 +40,9 @@ export function findCurrentIterationRequest(messages: SDKMessage[], sessionId: s
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
     if (message?.type === 'system' && message.subtype === 'task_notification') break
+    // 更新的验收卡证明其下方所有续跑/续改请求已被确认或取代；越过它复活旧请求会把
+    // 新预览误判成“待确认继续修改”，遮住撤回预览/确认保存的正常操作。
+    if (message?.type === 'system' && message.subtype === 'worktree_ready_for_review') break
     if (message?.type === 'system' && (message.subtype === 'worktree_next_iteration_requested' || message.subtype === 'worktree_preview_revision_requested')) {
       // 新请求覆盖旧请求；即便它的 Checkout 已失效，也不能退回更早的任务。
       return isCurrentIterationRequest(message as SDKSystemMessage, sessionId, target) ? message as SDKSystemMessage : null

@@ -53,6 +53,28 @@ describe('Worktree 当前详情选择', () => {
     expect(isCurrentIterationRequest(revision, 'session-2', preview)).toBe(false)
   })
 
+  test('续改确认后的新验收卡使旧续改请求失效，重新预览不再复活', () => {
+    // 同一 Checkout、同一 iteration：旧请求早于当前验收卡（preparedAt 150）。
+    const supersededRequest = { ...revision, request_id: 'revision-old', _createdAt: 90 } as SDKSystemMessage
+    const freshRequest = { ...revision, request_id: 'revision-fresh', _createdAt: 180 } as SDKSystemMessage
+    const repreviewed: SessionTargetView = {
+      ...base,
+      delivery: { state: 'preview_active', review: { ...review, reviewId: 'review-4', preparedAt: 150 }, previewedAt: 200 },
+    }
+    const newerCard = {
+      type: 'system', subtype: 'worktree_ready_for_review', session_id: 'session-1',
+      checkout_id: 'checkout-1', review_id: 'review-4', iteration: 3,
+    } as SDKMessage
+    expect(isCurrentIterationRequest(supersededRequest, 'session-1', repreviewed)).toBe(false)
+    expect(isCurrentIterationRequest(freshRequest, 'session-1', repreviewed)).toBe(true)
+    // 更新的验收卡位于请求之后：旧请求已消费，不得越过卡片复活。
+    expect(findCurrentIterationRequest([supersededRequest, newerCard], 'session-1', repreviewed)).toBeNull()
+    // 真正待确认的请求晚于当前验收卡：仍然返回。
+    expect(findCurrentIterationRequest([newerCard, freshRequest], 'session-1', repreviewed)?.request_id).toBe('revision-fresh')
+    // 缺少时间戳的历史请求保持旧兼容行为，由验收卡边界兑底。
+    expect(findCurrentIterationRequest([newerCard, revision], 'session-1', repreviewed)?.request_id).toBe('revision-3')
+  })
+
   test('持久化与 live 混合消息只挑最后一个有效请求，不把无关用户或另一轮的请求作为当前操作', () => {
     const delivered: SessionTargetView = { ...base, checkout: { ...base.checkout, phase: 'discarded' }, delivery: { state: 'delivered', iteration: 3, commitOid: null, deliveredAt: 20 } }
     const userMessage = { type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'text', text: '继续' }] } } as SDKMessage
