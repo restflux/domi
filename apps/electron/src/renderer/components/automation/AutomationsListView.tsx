@@ -13,6 +13,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import { Clock, Pause, Play, Power, Plus, Trash2 } from 'lucide-react'
@@ -32,32 +34,32 @@ function formatSchedule(a: Automation): string {
   if (a.scheduleType === 'once') {
     const when = a.scheduledAt
       ? new Date(a.scheduledAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-      : '指定时间'
-    return `仅一次 ${when}`
+      : i18n.t('automation:specifiedTime')
+    return i18n.t('automation:once', { when })
   }
-  if (a.scheduleType === 'daily') return `每天 ${a.timeOfDay ?? '09:00'}`
+  if (a.scheduleType === 'daily') return i18n.t('automation:daily', { time: a.timeOfDay ?? '09:00' })
   if (a.scheduleType === 'weekly') {
-    const names = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-    return `每${names[a.dayOfWeek ?? 1]} ${a.timeOfDay ?? '09:00'}`
+    const names = i18n.t('automation:weekdays').split(',')
+    return i18n.t('automation:weekly', { day: names[a.dayOfWeek ?? 1], time: a.timeOfDay ?? '09:00' })
   }
   if (a.scheduleType === 'monthly') {
     const dom = a.dayOfMonth ?? 1
     // 29-31 号在短月会自动落在当月最后一天，列表里追加提示避免用户误以为漏跑
-    const suffix = dom >= 29 ? '（短月落在最后一天）' : ''
-    return `每月 ${dom} 号 ${a.timeOfDay ?? '09:00'}${suffix}`
+    const suffix = dom >= 29 ? i18n.t('automation:shortMonthSuffix') : ''
+    return i18n.t('automation:monthly', { day: dom, time: a.timeOfDay ?? '09:00', suffix })
   }
   const min = a.intervalMinutes
   let label: string
-  if (min < 60) label = `每 ${min} 分钟`
-  else if (min < 1440) label = `每 ${min / 60} 小时`
-  else label = `每 ${min / 1440} 天`
+  if (min < 60) label = i18n.t('automation:everyMinutes', { count: min })
+  else if (min < 1440) label = i18n.t('automation:everyHours', { count: min / 60 })
+  else label = i18n.t('automation:everyDays', { count: min / 1440 })
   // 叠加了运行次数上限时在末尾标注，让列表能看出"跑 N 次就停"
-  return a.maxRuns !== undefined ? `${label}·限 ${a.maxRuns} 次` : label
+  return a.maxRuns !== undefined ? `${label}${i18n.t('automation:limitedRuns', { count: a.maxRuns })}` : label
 }
 
 function formatNextRun(a: Automation): string {
-  if (!a.active) return a.completedAt ? '已完成' : '已暂停'
-  return `下次 ${new Date(a.nextRunAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}`
+  if (!a.active) return a.completedAt ? i18n.t('automation:done') : i18n.t('automation:paused')
+  return i18n.t('automation:nextRun', { time: new Date(a.nextRunAt).toLocaleString(i18n.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) })
 }
 
 /** 定时任务列表嵌入统一的任务/日程页，页头由父级提供。 */
@@ -66,6 +68,7 @@ export function AutomationsListView(): React.ReactElement {
   const [pendingDeletion, setPendingDeletion] = React.useState<Automation | null>(null)
   const setAutomations = useSetAtom(automationsAtom)
   const setForm = useSetAtom(automationFormAtom)
+  const { t } = useTranslation('automation')
 
   const refreshList = React.useCallback(async () => {
     const list = await window.electronAPI.listAutomations()
@@ -85,7 +88,7 @@ export function AutomationsListView(): React.ReactElement {
       if (m) maxN = Math.max(maxN, Number(m[1]))
     }
     const draft = createEmptyDraft()
-    draft.name = `定时任务 ${maxN + 1}`
+    draft.name = t('defaultName', { count: maxN + 1 })
     setForm({ open: true, draft })
   }
 
@@ -99,10 +102,10 @@ export function AutomationsListView(): React.ReactElement {
       await window.electronAPI.deleteAutomation(automation.id)
       await refreshList()
       setPendingDeletion(null)
-      toast.success('已删除')
+      toast.success(t('deleted'))
     } catch (error) {
       console.error('[定时任务] 删除失败:', error)
-      toast.error('删除失败')
+      toast.error(t('deleteFailed'))
     }
   }
 
@@ -115,21 +118,21 @@ export function AutomationsListView(): React.ReactElement {
         ) : (
           <div className="flex w-full flex-col gap-8 pb-8">
             {current.length > 0 && (
-              <Section title="启用中" automations={current} onEdit={handleEdit} onRefresh={refreshList} onDelete={setPendingDeletion} />
+              <Section title={t('current')} automations={current} onEdit={handleEdit} onRefresh={refreshList} onDelete={setPendingDeletion} />
             )}
             {paused.length > 0 && (
-              <Section title="已暂停" automations={paused} onEdit={handleEdit} onRefresh={refreshList} onDelete={setPendingDeletion} />
+              <Section title={t('paused')} automations={paused} onEdit={handleEdit} onRefresh={refreshList} onDelete={setPendingDeletion} />
             )}
             {completed.length > 0 && (
-              <Section title="已完成" automations={completed} onEdit={handleEdit} onRefresh={refreshList} onDelete={setPendingDeletion} />
+              <Section title={t('completed')} automations={completed} onEdit={handleEdit} onRefresh={refreshList} onDelete={setPendingDeletion} />
             )}
           </div>
         )}
       </div>
       <AlertDialog open={pendingDeletion !== null} onOpenChange={(open) => { if (!open) setPendingDeletion(null) }}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>确认删除定时任务</AlertDialogTitle><AlertDialogDescription>删除「{pendingDeletion?.name}」后无法恢复。</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => void confirmDelete()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">删除</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>{t('deleteTitle')}</AlertDialogTitle><AlertDialogDescription>{t('deleteDescription', { name: pendingDeletion?.name })}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>{t('cancel', { ns: 'common' })}</AlertDialogCancel><AlertDialogAction onClick={() => void confirmDelete()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{t('deleteTask')}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
@@ -145,23 +148,24 @@ interface SectionProps {
 }
 
 function Section({ title, automations, onEdit, onRefresh, onDelete }: SectionProps): React.ReactElement {
+  const { t } = useTranslation('automation')
   /** 列表上的任务是否具备运行 / 启用所需的最小完整度 */
   const isRunnable = (a: Automation): boolean => !!a.channelId && !!a.workspaceId
 
   const handleRunNow = async (e: React.MouseEvent, a: Automation): Promise<void> => {
     e.stopPropagation()
     if (!isRunnable(a)) {
-      toast.error('请先为该任务配置模型与项目')
+      toast.error(t('missingModelProject'))
       onEdit(a)
       return
     }
-    toast.success(`已开始运行「${a.name}」`, {
-      description: '本次任务会创建新的 Agent 会话，可在左侧会话列表查看',
+    toast.success(t('runStarted', { name: a.name }), {
+      description: t('runStartedDescription'),
     })
     try {
       await window.electronAPI.runAutomationNow(a.id)
     } catch (err) {
-      toast.error('运行失败')
+      toast.error(t('runFailed'))
       console.error('[定时任务] 立即运行失败:', err)
     }
   }
@@ -170,16 +174,16 @@ function Section({ title, automations, onEdit, onRefresh, onDelete }: SectionPro
     e.stopPropagation()
     // 启用前必须配齐模型与项目，否则打开编辑面板让用户补全
     if (!a.active && !isRunnable(a)) {
-      toast.error('请先为该任务配置模型与项目')
+      toast.error(t('missingModelProject'))
       onEdit(a)
       return
     }
     try {
       await window.electronAPI.toggleAutomation(a.id, !a.active)
       await onRefresh()
-      toast.success(a.active ? '已暂停' : '已启用')
+      toast.success(a.active ? t('paused') : t('enabled'))
     } catch (err) {
-      toast.error('操作失败')
+      toast.error(t('actionFailed'))
       console.error('[定时任务] 切换状态失败:', err)
     }
   }
@@ -231,27 +235,27 @@ function Section({ title, automations, onEdit, onRefresh, onDelete }: SectionPro
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      aria-label={`立即运行 ${a.name}`}
+                      aria-label={`${t('runNow')} ${a.name}`}
                       onClick={(e) => { void handleRunNow(e, a) }}
                       className="p-1.5 rounded-md text-foreground/50 hover:text-foreground/85 hover:bg-foreground/[0.08] transition-colors"
                     >
                       <Play className="size-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">立即运行一次</TooltipContent>
+                  <TooltipContent side="top">{t('runNow')}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      aria-label={`删除 ${a.name}`}
+                      aria-label={`${t('deleteTask')} ${a.name}`}
                       onClick={(e) => handleDelete(e, a)}
                       className="p-1.5 rounded-md text-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
                     >
                       <Trash2 className="size-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">删除任务</TooltipContent>
+                  <TooltipContent side="top">{t('deleteTask')}</TooltipContent>
                 </Tooltip>
               </div>
             </div>
@@ -259,7 +263,7 @@ function Section({ title, automations, onEdit, onRefresh, onDelete }: SectionPro
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  aria-label={a.active ? `暂停 ${a.name}` : `启用 ${a.name}`}
+                  aria-label={a.active ? `${t('paused')} ${a.name}` : `${t('enabled')} ${a.name}`}
                   onClick={(e) => { void handleToggle(e, a) }}
                   className={cn(
                     'p-1.5 -m-1.5 shrink-0 flex items-center justify-center rounded-md transition-colors',
@@ -272,7 +276,7 @@ function Section({ title, automations, onEdit, onRefresh, onDelete }: SectionPro
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top">
-                {a.active ? '暂停任务：从当前开始不再继续后续自动处理' : '启用任务'}
+                {a.active ? t('pauseTask') : t('enableTask')}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -283,16 +287,16 @@ function Section({ title, automations, onEdit, onRefresh, onDelete }: SectionPro
 }
 
 function EmptyState({ onCreate }: { onCreate: () => void }): React.ReactElement {
+  const { t } = useTranslation('automation')
   return (
     <div className="max-w-2xl mx-auto pt-24 flex flex-col items-center text-center gap-4">
       <div className="size-16 rounded-2xl bg-foreground/[0.04] flex items-center justify-center">
         <Clock className="size-8 text-foreground/30" />
       </div>
       <div className="flex flex-col gap-1.5">
-        <div className="text-[16px] font-medium text-foreground/85">暂无定时任务</div>
+        <div className="text-[16px] font-medium text-foreground/85">{t('emptyTitle')}</div>
         <div className="text-[13px] text-foreground/50 leading-relaxed max-w-md">
-          定时任务可以让 AI 周期性地执行某项任务，如每天总结新邮件、每小时检查 GitHub 仓库等。
-          也可以在对话中用「以后每隔 X 分钟…」让 Domi 自动识别并创建。
+          {t('emptyDescription')}
         </div>
       </div>
       <button
@@ -301,7 +305,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }): React.ReactElement 
 	        className="mt-2 flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
       >
         <Plus size={14} />
-        <span>新建定时任务</span>
+        <span>{t('create')}</span>
       </button>
     </div>
   )

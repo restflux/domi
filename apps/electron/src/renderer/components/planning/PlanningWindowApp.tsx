@@ -1,4 +1,6 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtomValue } from 'jotai'
 import { AutomationFormView } from '@/components/automation/AutomationFormView'
 import { automationFormAtom } from '@/atoms/automation-atoms'
@@ -8,11 +10,12 @@ import { PlanningView } from './PlanningView'
 
 /** 独立窗口模式：复用规划中心，不挂载聊天与 Agent 工作区。 */
 export function PlanningWindowApp(): React.ReactElement {
+  const { t } = useTranslation('planning')
   const automationFormOpen = useAtomValue(automationFormAtom).open
 
   useEffect(() => {
-    document.title = 'Domi · 规划中心'
-  }, [])
+    document.title = `Domi · ${t('title')}`
+  }, [t])
 
   return <TooltipProvider delayDuration={200}><div className="relative h-screen overflow-hidden bg-content-area"><WindowControls />{automationFormOpen ? <AutomationFormView standalone /> : <PlanningView standalone />}</div></TooltipProvider>
 }

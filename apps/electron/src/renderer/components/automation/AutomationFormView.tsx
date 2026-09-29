@@ -9,6 +9,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import { AlertTriangle, ArrowLeft, Bell, Check, Clock, Loader2, Pencil, Play, Settings, X } from 'lucide-react'
@@ -55,7 +57,7 @@ const NO_FEISHU_BINDING = '__none__'
 
 function formatTime(ts?: number): string {
   if (!ts) return '—'
-  return new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return new Date(ts).toLocaleString(i18n.language, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 /** 毫秒时间戳 → <input type="datetime-local"> 需要的本地 "YYYY-MM-DDTHH:MM" 字符串（无时区后缀） */
@@ -74,9 +76,9 @@ function datetimeLocalToTs(value: string): number | undefined {
 }
 
 function formatRunStatus(status: AutomationRun['status']): string {
-  if (status === 'success') return '完成'
-  if (status === 'error') return '失败'
-  return '跳过'
+  if (status === 'success') return i18n.t('automation:statusDone')
+  if (status === 'error') return i18n.t('automation:statusFailed')
+  return i18n.t('automation:statusSkipped')
 }
 
 function canPersistDraft(draft: AutomationDraft): boolean {
@@ -92,10 +94,10 @@ function isReadyToRun(draft: AutomationDraft): boolean {
 /** 列出当前还缺哪些必填项（用于"运行一次" Tooltip 与关闭时的 toast 提示） */
 function listMissingFields(draft: AutomationDraft): string[] {
   const missing: string[] = []
-  if (!draft.name.trim()) missing.push('任务名称')
-  if (!draft.prompt.trim()) missing.push('任务描述')
-  if (!draft.channelId) missing.push('模型')
-  if (!draft.workspaceId) missing.push('项目')
+  if (!draft.name.trim()) missing.push(i18n.t('automation:missingName'))
+  if (!draft.prompt.trim()) missing.push(i18n.t('automation:missingDescription'))
+  if (!draft.channelId) missing.push(i18n.t('automation:model'))
+  if (!draft.workspaceId) missing.push(i18n.t('automation:project'))
   return missing
 }
 
@@ -175,8 +177,8 @@ function getFeishuBindingValue(binding: FeishuChatBinding): string {
 
 function formatFeishuBinding(binding: FeishuChatBinding): string {
   const name = binding.chatType === 'group'
-    ? binding.groupName || '未命名群聊'
-    : '飞书单聊'
+    ? binding.groupName || i18n.t('automation:unnamedChat')
+    : i18n.t('automation:feishuDirectChat')
   return `${name} · ${binding.botId.slice(0, 8)}`
 }
 
@@ -191,20 +193,21 @@ function createFeishuTarget(binding: FeishuChatBinding): AutomationFeishuNotific
 }
 
 function AutomationPromptEmptyGuide(): React.ReactElement {
+  const { t } = useTranslation('automation')
   return (
     <div className="rounded-xl bg-foreground/[0.035] p-4 shadow-inner">
       <div className="flex flex-col gap-3">
         <div>
-          <div className="text-[13px] font-semibold text-foreground">推荐：让 Domi Agent 创建</div>
+          <div className="text-[13px] font-semibold text-foreground">{t('recommendationTitle')}</div>
           <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            在左侧会话里说清目标，并明确表示要求创建定时任务，Domi Agent 会生成任务描述，并补全周期、项目和模型等配置，手动编辑更适合微调任务描述。
+            {t('recommendationDescription')}
           </div>
         </div>
         <div className="h-px bg-border/50" />
         <div>
-          <div className="text-[13px] font-medium text-foreground/85">手动编写时，只写任务本身</div>
+          <div className="text-[13px] font-medium text-foreground/85">{t('manualTitle')}</div>
           <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            例：检查目标仓库新增 issue，主动回复问答类问题，不清楚的部分整理到项目级 Context 的 .context/issue-faq.md 文档；真正的 Bug 或请求罗列后发给我，不要记录任何重复的信息。
+            {t('manualExample')}
           </div>
         </div>
       </div>
@@ -229,21 +232,21 @@ function SaveStatusBadge({
 
   if (status === 'dirty') {
     icon = <span className="size-1.5 rounded-full bg-muted-foreground/50" />
-    text = '未保存'
+    text = i18n.t('automation:unsaved')
   } else if (status === 'saving') {
     icon = <Loader2 className="size-3 animate-spin" />
-    text = '保存中…'
+    text = i18n.t('automation:savingNow')
   } else if (status === 'saved') {
     icon = <Check className="size-3 text-emerald-500" />
-    text = '已保存 · 刚刚'
+    text = i18n.t('automation:savedJustNow')
     tone = 'text-foreground/70'
   } else if (status === 'error') {
     icon = <AlertTriangle className="size-3" />
-    text = '保存失败'
+    text = i18n.t('automation:saveFailedStatus')
     tone = 'text-red-500'
   } else {
     icon = <Check className="size-3 text-muted-foreground/50" />
-    text = '已保存'
+    text = i18n.t('settings:saved')
   }
 
   return (
@@ -262,6 +265,7 @@ function SaveStatusBadge({
 }
 
 export function AutomationFormView({ standalone = false }: { standalone?: boolean } = {}): React.ReactElement | null {
+  const { t } = useTranslation('automation')
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const [formState, setFormState] = useAtom(automationFormAtom)
   const setAutomations = useSetAtom(automationsAtom)
@@ -397,7 +401,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
         console.error('[定时任务] 自动保存失败:', err)
         if (isMountedRef.current) {
           setSaveStatus('error')
-          toast.error('自动保存失败')
+          toast.error(t('autoSaveFailed'))
         }
         return null
       }
@@ -487,14 +491,19 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
   const handleRunNow = async (): Promise<void> => {
     const latest = latestFormRef.current
     if (!latest || !isReadyToRun(latest)) {
-      const missing = latest ? listMissingFields(latest) : ['任务名称', '任务描述', '模型', '项目']
-      toast.error(`请先补全：${missing.join('、')}`)
+      const missing = latest ? listMissingFields(latest) : [
+        i18n.t('automation:missingName'),
+        i18n.t('automation:missingDescription'),
+        i18n.t('automation:model'),
+        i18n.t('automation:project'),
+      ]
+      toast.error(t('completeBeforeRun', { fields: missing.join('、') }))
       return
     }
 
     setRunningNow(true)
-    toast.success('已开始运行定时任务', {
-      description: '本次任务会创建新的 Agent 会话，可在左侧会话列表查看',
+    toast.success(t('startedTask'), {
+      description: t('startedTaskDescription'),
     })
     try {
       const automationId = await persistDraft(latest)
@@ -505,7 +514,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
       setAgentSessions(sessions)
     } catch (err) {
       console.error('[定时任务] 立即运行失败:', err)
-      toast.error('立即运行失败')
+      toast.error(t('runNowFailed'))
     } finally {
       if (isMountedRef.current) setRunningNow(false)
     }
@@ -587,7 +596,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
             aria-label="返回任务列表"
           >
             <ArrowLeft className="size-3.5" />
-            <span>自动任务</span>
+            <span>{t('autoTask')}</span>
           </button>
           <Clock className="size-4 text-primary flex-shrink-0" />
           {editingName ? (
@@ -598,7 +607,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                 onChange={(e) => update({ name: e.target.value })}
                 onKeyDown={handleNameKeyDown}
                 onBlur={() => { void commitName() }}
-                placeholder="未命名任务"
+                placeholder={t('unnamedTask')}
                 className="flex-1 bg-transparent text-sm font-semibold text-foreground border-b border-primary/50 outline-none px-0 py-0.5 min-w-0"
                 maxLength={100}
               />
@@ -676,9 +685,9 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {/* 启用开关（最上）：模型 / 工作区缺失时禁用，避免 UI 状态与持久化结果不一致 */}
           <div className="flex items-center justify-between">
             <div className="flex flex-col gap-0.5">
-              <Label htmlFor="auto-active">启用</Label>
+              <Label htmlFor="auto-active">{t('enable')}</Label>
               <span className="text-xs text-muted-foreground">
-                {isReadyToRun(form) ? '关闭后任务暂停调度' : `补全${listMissingFields(form).join('、')}后方可启用`}
+                {isReadyToRun(form) ? t('pauseAfterDisable') : t('completeFieldsToEnable', { fields: listMissingFields(form).join('、') })}
               </span>
             </div>
             <Switch
@@ -693,11 +702,11 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {isEdit && (
             <div className="rounded-lg bg-foreground/[0.03] p-3 flex flex-col gap-1.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">上次运行</span>
+                <span className="text-muted-foreground">{t('lastRun')}</span>
                 <span className="text-foreground/80 tabular-nums">{formatTime(live?.lastRunAt)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">下次运行</span>
+                <span className="text-muted-foreground">{t('nextRunLabel')}</span>
                 <span className="text-foreground/80 tabular-nums">
                   {live?.completedAt
                     ? '已完成'
@@ -723,7 +732,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
               {live?.completedAt && (
                 <div className="flex items-center gap-1.5 pt-0.5 text-emerald-600 dark:text-emerald-400">
                   <Check className="size-3" />
-                  <span>任务已完成（重新启用可再跑一轮）</span>
+                  <span>{t('completedRerun')}</span>
                 </div>
               )}
             </div>
@@ -731,7 +740,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
 
           {/* 调度模式 */}
           <div className="flex flex-col gap-2">
-            <Label>运行频率</Label>
+            <Label>{t('frequency')}</Label>
             <Select
               value={form.scheduleType}
               onValueChange={(v) => {
@@ -750,7 +759,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                 <SelectItem value="daily">每天定点</SelectItem>
                 <SelectItem value="weekly">每周定点</SelectItem>
                 <SelectItem value="monthly">每月定点</SelectItem>
-                <SelectItem value="once">仅运行一次</SelectItem>
+                <SelectItem value="once">{t('onceOnly')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -758,7 +767,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {/* interval 模式：自定义分钟 */}
           {form.scheduleType === 'interval' && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="auto-interval">运行间隔（分钟）</Label>
+              <Label htmlFor="auto-interval">{t('intervalMinutesLabel')}</Label>
               <div className="flex items-center gap-2">
                 <input
                   id="auto-interval"
@@ -768,7 +777,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                   onChange={(e) => update({ intervalMinutes: Math.max(1, Number(e.target.value) || 1) })}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
-                <span className="text-xs text-muted-foreground shrink-0">分钟一次</span>
+                <span className="text-xs text-muted-foreground shrink-0">{t('minuteOnce')}</span>
               </div>
             </div>
           )}
@@ -776,7 +785,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {/* daily 模式：时刻 */}
           {form.scheduleType === 'daily' && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="auto-time">时刻</Label>
+              <Label htmlFor="auto-time">{t('time')}</Label>
               <input
                 id="auto-time"
                 type="time"
@@ -790,7 +799,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {/* weekly 模式：星期 + 时刻 同一行 */}
           {form.scheduleType === 'weekly' && (
             <div className="flex flex-col gap-2">
-              <Label>每周</Label>
+              <Label>{t('week')}</Label>
               <div className="flex items-center gap-2">
                 <Select
                   value={String(form.dayOfWeek ?? 1)}
@@ -816,7 +825,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {/* monthly 模式：日期网格 + 时刻 */}
           {form.scheduleType === 'monthly' && (
             <div className="flex flex-col gap-2">
-              <Label>每月</Label>
+              <Label>{t('month')}</Label>
               <div className="flex items-center gap-2">
                 <Popover open={dayPopoverOpen} onOpenChange={setDayPopoverOpen}>
                   <PopoverTrigger asChild>
@@ -824,7 +833,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                       type="button"
                       className="flex h-9 flex-1 items-center justify-between rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
-                      <span>{form.dayOfMonth ?? 1} 号</span>
+                      <span>{form.dayOfMonth ?? 1} {t('daySuffix')}</span>
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-56 p-2" align="start">
@@ -874,7 +883,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {/* once 模式：绝对日期 + 时刻（datetime-local） */}
           {form.scheduleType === 'once' && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="auto-once-at">运行时间</Label>
+              <Label htmlFor="auto-once-at">{t('runTime')}</Label>
               <input
                 id="auto-once-at"
                 type="datetime-local"
@@ -883,7 +892,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
               <span className="pl-2.5 text-xs text-muted-foreground leading-relaxed">
-                任务将在该时刻运行一次后自动完成。适合"X 小时/天后跑一次"或某个具体时间点的一次性任务。
+                {t('onceDescription')}
               </span>
             </div>
           )}
@@ -891,13 +900,13 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
           {/* 运行次数上限（once 模式天然为 1 次，故不显示；其余循环模式可选叠加） */}
           {form.scheduleType !== 'once' && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="auto-max-runs">运行次数上限</Label>
+              <Label htmlFor="auto-max-runs">{t('maxRuns')}</Label>
               <div className="flex items-center gap-2">
                 <input
                   id="auto-max-runs"
                   type="number"
                   min={1}
-                  placeholder="不限"
+                  placeholder={t('unlimited')}
                   value={form.maxRuns ?? ''}
                   onChange={(e) => {
                     const v = Number(e.target.value)
@@ -915,7 +924,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
 
           {/* 选择模型：Pi 支持所有已启用且有可用模型的渠道。 */}
           <div className="flex flex-col gap-2">
-            <Label>选择模型</Label>
+            <Label>{t('selectModel')}</Label>
             <ModelSelector
               externalSelectedModel={selectedModel}
               showChannelInTrigger
@@ -929,7 +938,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
             {workspaces.length === 0 ? (
               <div className="flex items-center gap-2 rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                 <Settings size={14} className="shrink-0" />
-                <span>尚未创建任何项目</span>
+                <span>{t('noProjects')}</span>
                 <button
                   type="button"
                   className="ml-auto text-xs underline underline-offset-2 hover:text-foreground transition-colors"
@@ -946,7 +955,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                 value={form.workspaceId ?? ''}
                 onValueChange={(v) => update({ workspaceId: v })}
               >
-                <SelectTrigger><SelectValue placeholder="选择项目" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('selectProject')} /></SelectTrigger>
                 <SelectContent>
                   {workspaces.map((ws) => (
                     <SelectItem key={ws.id} value={ws.id}>
@@ -970,7 +979,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
               <div className="flex items-start gap-2">
                 <Bell className="size-4 shrink-0 mt-0.5 text-primary" />
                 <div className="flex flex-col gap-0.5">
-                  <Label htmlFor="auto-feishu-notify">飞书通知</Label>
+                  <Label htmlFor="auto-feishu-notify">{t('feishuNotification')}</Label>
                   <span className="text-xs text-muted-foreground leading-relaxed">
                     任务结束后把结果推送到已有飞书绑定
                   </span>
@@ -1009,7 +1018,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                     })
                   }}
                 >
-                  <SelectTrigger><SelectValue placeholder="选择飞书聊天" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('selectFeishuChat')} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NO_FEISHU_BINDING} disabled>
                       {feishuBindings.length === 0 ? '暂无飞书绑定' : '选择飞书聊天'}
@@ -1046,15 +1055,15 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
 
           <div className="flex gap-2 rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-            <span>此任务将以「完全权限」无人值守运行，可自主读写文件、执行命令。请确认任务内容安全可信。</span>
+            <span>{t('unattendedWarning')}</span>
           </div>
 
           {/* 运行历史（编辑模式） */}
           {isEdit && live && (
             <div className="flex flex-col gap-1.5">
-              <Label>运行历史</Label>
+              <Label>{t('runHistory')}</Label>
               {live.runHistory.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-1">暂无运行记录</div>
+                <div className="text-xs text-muted-foreground py-1">{t('noRunHistory')}</div>
               ) : (
                 <div className="flex flex-col gap-1">
                   {live.runHistory.slice(0, 10).map((run, i) => {
@@ -1066,7 +1075,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                             type="button"
                             onClick={() => { void handleOpenRunSession(run) }}
                             disabled={!hasSessionId}
-                            title={hasSessionId ? undefined : '这条记录没有可打开的会话'}
+                            title={hasSessionId ? undefined : t('noSession')}
                             className="flex items-center gap-2 px-1.5 py-1 -mx-1.5 rounded-md text-[11px] text-foreground/60 text-left transition-colors enabled:hover:bg-foreground/[0.04] enabled:hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <span className="tabular-nums">{formatTime(run.runAt)}</span>
@@ -1079,7 +1088,7 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="left">
-                          {hasSessionId ? '点击以跳转到该次会话' : '这条记录没有可打开的会话'}
+                          {hasSessionId ? t('jumpToSession') : t('noSession')}
                         </TooltipContent>
                       </Tooltip>
                     )
@@ -1101,13 +1110,13 @@ export function AutomationFormView({ standalone = false }: { standalone?: boolea
                   className="titlebar-no-drag w-full h-9 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                 >
                   {runningNow ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-                  <span>{runningNow ? '运行中' : '运行一次'}</span>
+                  <span>{runningNow ? t('running') : t('runOnce')}</span>
                 </button>
               </span>
             </TooltipTrigger>
             {!isReadyToRun(form) && !runningNow && (
               <TooltipContent side="top">
-                请先补全：{listMissingFields(form).join('、')}
+                {t('completeBeforeRun', { fields: listMissingFields(form).join('、') })}
               </TooltipContent>
             )}
           </Tooltip>

@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { BellRing, Check, ListTodo, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -22,6 +24,7 @@ function mergeReminders(current: ActivePlanningReminder[], incoming: ActivePlann
 
 /** 全局常驻提醒条。未确认提醒从 SQLite 恢复，不依赖一次性 toast 生命周期。 */
 export function PlanningReminderRail({ playSound = true }: { playSound?: boolean } = {}): React.ReactElement | null {
+  const { t } = useTranslation('planning')
   const [reminders, setReminders] = useAtom(activePlanningRemindersAtom)
   const setActiveView = useSetAtom(activeViewAtom)
   const setPlanningTab = useSetAtom(planningTabAtom)
@@ -57,7 +60,7 @@ export function PlanningReminderRail({ playSound = true }: { playSound?: boolean
       await window.electronAPI.acknowledgePlanningReminder(id)
     } catch (error) {
       console.error('[任务/日程] 确认提醒失败:', error)
-      toast.error('确认提醒失败')
+      toast.error(t('acknowledgeReminderFailed'))
     }
   }
   const completeTodo = async (reminder: ActivePlanningReminder) => {
@@ -65,7 +68,7 @@ export function PlanningReminderRail({ playSound = true }: { playSound?: boolean
       await window.electronAPI.updateTodo({ id: reminder.targetId, status: 'completed' })
     } catch (error) {
       console.error('[任务/日程] 完成 Todo 失败:', error)
-      toast.error('完成 Todo 失败')
+      toast.error(t('completeTodoFailed'))
     }
   }
   const openTodo = (reminder: ActivePlanningReminder): void => {
@@ -78,7 +81,7 @@ export function PlanningReminderRail({ playSound = true }: { playSound?: boolean
       await window.electronAPI.snoozePlanningReminder({ id, minutes })
     } catch (error) {
       console.error('[任务/日程] 推迟提醒失败:', error)
-      toast.error('推迟提醒失败')
+      toast.error(t('snoozeReminderFailed'))
     }
   }
 
@@ -97,12 +100,12 @@ export function PlanningReminderRail({ playSound = true }: { playSound?: boolean
                   <span className="shrink-0 text-xs text-muted-foreground">{formatTriggerTime(reminder.snoozedUntil ?? reminder.triggerAt)}</span>
                 </div>
                 <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-                  <span>{reminder.targetType === 'todo' ? 'Todo' : '日程'}</span>
+                  <span>{reminder.targetType === 'todo' ? 'Todo' : t('calendarItem')}</span>
                   {reminder.group && <span>{reminder.group.name}</span>}
                   {reminder.tags.map((tag) => <span key={tag.id}>#{tag.name}</span>)}
                 </div>
               </div>
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => void acknowledge(reminder.id)} aria-label="关闭提醒" title="关闭提醒">
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => void acknowledge(reminder.id)} aria-label={t('closeReminder')} title={t('closeReminder')}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -110,23 +113,23 @@ export function PlanningReminderRail({ playSound = true }: { playSound?: boolean
               {reminder.targetType === 'todo' && (
                 <>
                   <Button variant="secondary" size="sm" className="h-7" onClick={() => openTodo(reminder)}>
-                    <ListTodo className="mr-1 h-3.5 w-3.5" />查看 Todo
+                    <ListTodo className="mr-1 h-3.5 w-3.5" />{t('viewTodo')}
                   </Button>
                   <Button variant="secondary" size="sm" className="h-7" onClick={() => void completeTodo(reminder)}>
-                    <Check className="mr-1 h-3.5 w-3.5" />完成
+                    <Check className="mr-1 h-3.5 w-3.5" />{t('complete')}
                   </Button>
                 </>
               )}
               {[5, 10, 30, 60].map((minutes) => (
                 <Button key={minutes} variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void snooze(reminder.id, minutes)}>
-                  {minutes} 分钟
+                  {t('minutes', { count: minutes })}
                 </Button>
               ))}
             </div>
           </section>
         )
       })}
-      {reminders.length > 3 && <p className="px-2 text-right text-xs text-muted-foreground">另有 {reminders.length - 3} 条待处理提醒</p>}
+      {reminders.length > 3 && <p className="px-2 text-right text-xs text-muted-foreground">{t('morePendingReminders', { count: reminders.length - 3 })}</p>}
     </aside>
   )
 }

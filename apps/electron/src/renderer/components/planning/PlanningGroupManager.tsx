@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { Check, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { PlanningGroup, PlanningGroupScope } from '@domi/shared'
 import { Button } from '@/components/ui/button'
@@ -27,6 +29,7 @@ interface PlanningGroupManagerProps {
  * 删除操作仅解除关联，目标 Todo 或日程本身不会被删除。
  */
 export function PlanningGroupManager({ scope, groups, trigger, itemLabel, getUsageCount, hasAssociatedItems, showDeletionCount = true, onCreate, onRename, onDelete, onCreated }: PlanningGroupManagerProps): React.ReactElement {
+  const { t } = useTranslation('planning')
   const [open, setOpen] = React.useState(false)
   const [creating, setCreating] = React.useState(false)
   const [newName, setNewName] = React.useState('')
@@ -35,7 +38,7 @@ export function PlanningGroupManager({ scope, groups, trigger, itemLabel, getUsa
   const [pendingDeletion, setPendingDeletion] = React.useState<PlanningGroup | null>(null)
   const [savingAction, setSavingAction] = React.useState<'create' | 'rename' | 'delete' | null>(null)
   const renameInputRef = React.useRef<HTMLInputElement>(null)
-  const title = scope === 'todo' ? 'Todo 分组' : '日程分组'
+  const title = scope === 'todo' ? t('todoGroups') : t('calendarGroups')
 
   React.useEffect(() => {
     if (!renamingId) return
@@ -113,14 +116,14 @@ export function PlanningGroupManager({ scope, groups, trigger, itemLabel, getUsa
         <div className="flex items-start justify-between gap-3 border-b border-border/60 pb-3">
           <div>
             <p className="text-sm font-semibold">{title}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">新建、重命名或删除分组</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('groupHelp')}</p>
           </div>
-          <Button type="button" variant="ghost" size="icon" className="size-10 -mr-1 -mt-1" aria-label="新建分组" title="新建分组" onClick={() => setCreating(true)}><Plus size={16} /></Button>
+          <Button type="button" variant="ghost" size="icon" className="size-10 -mr-1 -mt-1" aria-label={t('newGroup')} title={t('newGroup')} onClick={() => setCreating(true)}><Plus size={16} /></Button>
         </div>
 
         {creating && <div className="mt-3 flex items-center gap-1.5 rounded-md bg-muted/45 p-1.5">
-          <Input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void createGroup() } else if (event.key === 'Escape') { setCreating(false); setNewName('') } }} placeholder="分组名称" className="h-9 border-0 bg-background px-2 text-sm shadow-none focus-visible:ring-1" />
-          <Button type="button" size="icon" className="size-10" aria-label="确认新建分组" disabled={!newName.trim() || savingAction === 'create'} onClick={() => void createGroup()}><Check size={16} /></Button>
+          <Input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void createGroup() } else if (event.key === 'Escape') { setCreating(false); setNewName('') } }} placeholder={t('groupName')} className="h-9 border-0 bg-background px-2 text-sm shadow-none focus-visible:ring-1" />
+          <Button type="button" size="icon" className="size-10" aria-label={t('confirmNewGroup')} disabled={!newName.trim() || savingAction === 'create'} onClick={() => void createGroup()}><Check size={16} /></Button>
         </div>}
 
         <div className="mt-2 max-h-72 space-y-1 overflow-y-auto scrollbar-thin">
@@ -130,23 +133,23 @@ export function PlanningGroupManager({ scope, groups, trigger, itemLabel, getUsa
             return <div key={group.id} className="group flex min-h-10 items-center gap-1 rounded-md px-1.5 hover:bg-muted/55 focus-within:bg-muted/55">
               {renaming ? <>
                 <span className="ml-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: group.color ?? 'currentColor' }} />
-                <Input ref={renameInputRef} value={renameName} onChange={(event) => setRenameName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void renameGroup(group) } else if (event.key === 'Escape') { setRenamingId(null); setRenameName('') } }} aria-label={`重命名 ${group.name}`} className="h-9 min-w-0 flex-1 border-0 bg-background px-2 text-sm shadow-none focus-visible:ring-1" />
-                <Button type="button" variant="ghost" size="icon" className="size-10" aria-label="确认重命名" disabled={savingAction === 'rename' || !renameName.trim()} onClick={() => void renameGroup(group)}><Check size={15} /></Button>
-                <Button type="button" variant="ghost" size="icon" className="size-10" aria-label="取消重命名" disabled={savingAction === 'rename'} onClick={() => { setRenamingId(null); setRenameName('') }}><X size={15} /></Button>
+                <Input ref={renameInputRef} value={renameName} onChange={(event) => setRenameName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void renameGroup(group) } else if (event.key === 'Escape') { setRenamingId(null); setRenameName('') } }} aria-label={`${t('rename')} ${group.name}`} className="h-9 min-w-0 flex-1 border-0 bg-background px-2 text-sm shadow-none focus-visible:ring-1" />
+                <Button type="button" variant="ghost" size="icon" className="size-10" aria-label={t('confirmRename')} disabled={savingAction === 'rename' || !renameName.trim()} onClick={() => void renameGroup(group)}><Check size={15} /></Button>
+                <Button type="button" variant="ghost" size="icon" className="size-10" aria-label={t('cancelRename')} disabled={savingAction === 'rename'} onClick={() => { setRenamingId(null); setRenameName('') }}><X size={15} /></Button>
               </> : <>
                 <span className="ml-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: group.color ?? 'currentColor' }} />
                 <span className="min-w-0 flex-1 truncate px-1 text-sm">{group.name}</span>
                 <span className="tabular-nums text-xs text-muted-foreground">{usageCount}</span>
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="size-10 text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground" aria-label={`管理分组 ${group.name}`}><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
+                  <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="size-10 text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground" aria-label={`${t('manageGroup')} ${group.name}`}><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="z-[110] min-w-32">
-                    <DropdownMenuItem onSelect={() => startRenaming(group)}><Pencil />重命名</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => { setPendingDeletion(group); setOpen(false) }}><Trash2 />删除</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => startRenaming(group)}><Pencil />{t('rename')}</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => { setPendingDeletion(group); setOpen(false) }}><Trash2 />{t('deleteGroup')}</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </>}
             </div>
-          }) : <p className="px-2 py-6 text-center text-sm text-muted-foreground">还没有分组</p>}
+          }) : <p className="px-2 py-6 text-center text-sm text-muted-foreground">{t('noGroups')}</p>}
         </div>
       </PopoverContent>
     </Popover>
@@ -154,12 +157,16 @@ export function PlanningGroupManager({ scope, groups, trigger, itemLabel, getUsa
     <AlertDialog open={pendingDeletion !== null} onOpenChange={(nextOpen) => { if (!nextOpen && savingAction !== 'delete') setPendingDeletion(null) }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>确认删除分组</AlertDialogTitle>
-          <AlertDialogDescription>{deletionHasAssociatedItems ? `删除「${pendingDeletion?.name}」后，${showDeletionCount ? `${deletionCount} 个` : '关联的'}${itemLabel}会变为未分组，内容不会删除。` : `删除「${pendingDeletion?.name}」后无法恢复。`}</AlertDialogDescription>
+          <AlertDialogTitle>{t('confirmDeleteGroup')}</AlertDialogTitle>
+          <AlertDialogDescription>{deletionHasAssociatedItems
+            ? showDeletionCount
+              ? t('deleteGroupWithCount', { name: pendingDeletion?.name, count: deletionCount, itemLabel })
+              : t('deleteGroupAssociated', { name: pendingDeletion?.name, itemLabel })
+            : t('deleteGroupDescription', { name: pendingDeletion?.name })}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={savingAction === 'delete'}>取消</AlertDialogCancel>
-          <AlertDialogAction disabled={savingAction === 'delete'} onClick={(event) => { event.preventDefault(); void deleteGroup() }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{savingAction === 'delete' ? '删除中…' : '删除'}</AlertDialogAction>
+          <AlertDialogCancel disabled={savingAction === 'delete'}>{t('close', { ns: 'planning' })}</AlertDialogCancel>
+          <AlertDialogAction disabled={savingAction === 'delete'} onClick={(event) => { event.preventDefault(); void deleteGroup() }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{savingAction === 'delete' ? t('deleting') : t('deleteGroup')}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

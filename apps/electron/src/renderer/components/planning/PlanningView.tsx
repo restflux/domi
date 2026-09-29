@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Bot, CalendarDays, Check, ChevronRight, ExternalLink, Flag, ListTodo, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -38,10 +40,10 @@ import { TodoDatePicker, formatTodoDueDate } from '@/components/ui/todo-date-pic
 import { ShortcutKeycaps } from '@/components/shortcuts/ShortcutKeycaps'
 import { detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
 
-const TABS: Array<{ id: PlanningTab; label: string }> = [
-  { id: 'todos', label: 'Todo' },
-  { id: 'calendar', label: '日程' },
-  { id: 'automations', label: '定时任务' },
+const TABS: Array<{ id: PlanningTab; labelKey: 'tabTodo' | 'tabCalendar' | 'tabAutomations' }> = [
+  { id: 'todos', labelKey: 'tabTodo' },
+  { id: 'calendar', labelKey: 'tabCalendar' },
+  { id: 'automations', labelKey: 'tabAutomations' },
 ]
 
 function CreateShortcutHint(): React.ReactElement | null {
@@ -56,6 +58,7 @@ function CreateShortcutHint(): React.ReactElement | null {
 }
 
 export function PlanningView({ standalone = false }: { standalone?: boolean } = {}): React.ReactElement {
+  const { t } = useTranslation('planning')
   const [tab, setTab] = useAtom(planningTabAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const automations = useAtomValue(automationsAtom)
@@ -82,7 +85,7 @@ export function PlanningView({ standalone = false }: { standalone?: boolean } = 
   const openPlanningWindow = React.useCallback((): void => {
     void window.electronAPI.openPlanningWindow().catch((error) => {
       console.error('[任务/日程] 打开独立窗口失败:', error)
-      toast.error('打开独立窗口失败')
+      toast.error(t('standaloneWindowFailed'))
     })
   }, [])
   useShortcut('new-session', React.useCallback(() => {
@@ -95,8 +98,8 @@ export function PlanningView({ standalone = false }: { standalone?: boolean } = 
       <header className={cn('relative flex w-full items-center justify-between titlebar-no-drag', standalone ? 'px-5 pb-4 pt-8' : 'px-6 pb-5 pt-8 sm:px-8 xl:px-10')}>
         <div className={cn('absolute inset-y-0 left-0 z-0 titlebar-drag-region', isWindows ? WINDOW_CONTROLS_INSET_RIGHT : 'right-0')} />
         <div className="relative z-[1]">
-          <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">任务/日程</h1>
-          <p className="mt-1 text-sm text-muted-foreground">安排待办、日程与定时任务</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">{t('planningTitle')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('planningDescription')}</p>
         </div>
         <div className="relative z-[1] titlebar-no-drag flex items-center gap-2">
           {!standalone && (
@@ -105,7 +108,7 @@ export function PlanningView({ standalone = false }: { standalone?: boolean } = 
               onClick={openPlanningWindow}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border/60 bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/60 active:scale-[0.96]"
             >
-              <ExternalLink size={16} /> 独立窗口
+              <ExternalLink size={16} /> {t('standaloneWindow')}
             </button>
           )}
           {tab === 'todos' && (
@@ -115,7 +118,7 @@ export function PlanningView({ standalone = false }: { standalone?: boolean } = 
               aria-keyshortcuts="Meta+N Control+N"
               className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 active:scale-[0.96]"
             >
-              <Plus size={16} /> 新建 Todo<CreateShortcutHint />
+              <Plus size={16} /> {t('createTodo')}<CreateShortcutHint />
             </button>
           )}
           {tab === 'calendar' && (
@@ -125,7 +128,7 @@ export function PlanningView({ standalone = false }: { standalone?: boolean } = 
               aria-keyshortcuts="Meta+N Control+N"
               className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 active:scale-[0.96]"
             >
-              <Plus size={16} /> 新建日程<CreateShortcutHint />
+              <Plus size={16} /> {t('createCalendarItem')}<CreateShortcutHint />
             </button>
           )}
           {tab === 'automations' && automations.length > 0 && (
@@ -135,14 +138,14 @@ export function PlanningView({ standalone = false }: { standalone?: boolean } = 
               aria-keyshortcuts="Meta+N Control+N"
               className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 active:scale-[0.96]"
             >
-              <Plus size={16} /> 新建定时任务<CreateShortcutHint />
+              <Plus size={16} /> {t('createAutomation')}<CreateShortcutHint />
             </button>
           )}
         </div>
       </header>
       <div className={cn('titlebar-no-drag w-full', standalone ? 'px-5' : 'px-6 sm:px-8 xl:px-10')}>
-        <nav className="inline-flex rounded-xl bg-muted/60 p-1 shadow-inner" aria-label="任务日程视图">
-          {TABS.map((item) => <button key={item.id} type="button" onClick={() => setTab(item.id)} className={cn('min-h-9 rounded-lg px-3 text-sm transition-colors', tab === item.id ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{item.label}</button>)}
+        <nav className="inline-flex rounded-xl bg-muted/60 p-1 shadow-inner" aria-label={t('planningTabs')}>
+          {TABS.map((item) => <button key={item.id} type="button" onClick={() => setTab(item.id)} className={cn('min-h-9 rounded-lg px-3 text-sm transition-colors', tab === item.id ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{t(item.labelKey)}</button>)}
         </nav>
       </div>
       <main className={cn('min-h-0 flex-1 titlebar-no-drag', standalone ? 'px-5 pb-5 pt-4' : 'px-6 pb-8 pt-6 sm:px-8 xl:px-10', tab === 'calendar' || tab === 'todos' ? 'overflow-hidden' : 'overflow-y-auto scrollbar-thin')}>

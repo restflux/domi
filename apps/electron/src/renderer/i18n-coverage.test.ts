@@ -44,6 +44,40 @@ const knownUntranslatedUiLiterals = [
   '添加工具',
 ]
 
+const migratedPlanningAutomationFiles = [
+  'components/automation/AutomationsListView.tsx',
+  'components/planning/PlanningWindowApp.tsx',
+  'components/planning/PlanningGroupManager.tsx',
+  'components/planning/PlanningReminderRail.tsx',
+  'components/planning/PlanningFloatingInspector.tsx',
+  'components/planning/PlanningView.tsx',
+  'components/automation/AutomationFormView.tsx',
+] as const
+
+const knownUntranslatedPlanningAutomationLiterals = [
+  '启用中',
+  '日程分组',
+  '新建分组',
+  '确认删除分组',
+  '还没有分组',
+  '关闭提醒',
+  '查看 Todo',
+  '另有',
+  '确认删除定时任务',
+  '立即运行一次',
+  '删除任务',
+  '暂无定时任务',
+  '规划中心',
+  '任务/日程',
+  '安排待办、日程与定时任务',
+  '独立窗口',
+  '推荐：让 Domi Agent 创建',
+  '自动任务',
+  '运行频率',
+  '运行历史',
+  '运行一次',
+]
+
 const knownUntranslatedSettingsLiterals = [
   '模型配置',
   '添加配置',
@@ -92,6 +126,19 @@ describe('Chat UI i18n coverage', () => {
     }
   })
 
+  test('migrated planning and automation components do not retain known product UI literals', () => {
+    const source = migratedPlanningAutomationFiles
+      .map((file) => readFileSync(resolve(import.meta.dir, file), 'utf8'))
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      .replace(/^\s*console\.(?:error|warn|log)\(.*$/gm, '')
+
+    for (const literal of knownUntranslatedPlanningAutomationLiterals) {
+      expect(source).not.toContain(literal)
+    }
+  })
+
   test('settings batch provides English resources for core configuration pages', async () => {
     await i18n.changeLanguage('en-US')
     expect(i18n.t('settings:modelConfigTitle')).toBe('Model configuration')
@@ -102,6 +149,17 @@ describe('Chat UI i18n coverage', () => {
     await i18n.changeLanguage('zh-CN')
     expect(i18n.t('settings:modelConfigTitle')).toBe('模型配置')
     expect(i18n.t('settings:mcpCreate')).toBe('创建服务器')
+  })
+
+  test('planning and automation resources switch with the locale', async () => {
+    await i18n.changeLanguage('en-US')
+    expect(i18n.t('planning:title')).toBe('Planning')
+    expect(i18n.t('automation:create')).toBe('New scheduled task')
+    expect(i18n.t('automation:everyMinutes', { count: 5 })).toBe('Every 5 minutes')
+
+    await i18n.changeLanguage('zh-CN')
+    expect(i18n.t('planning:title')).toBe('规划中心')
+    expect(i18n.t('automation:create')).toBe('新建定时任务')
   })
 
   test('context length uses locale-aware singular and plural resources', async () => {
