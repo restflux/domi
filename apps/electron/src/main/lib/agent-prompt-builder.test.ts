@@ -210,6 +210,8 @@ describe('Coding Fast Lane 提示词', () => {
     expect(prompt).toContain('`RequestNextWorktreeIteration`')
     expect(prompt).toContain('创建全新的下一轮 Worktree')
     expect(prompt).toContain('已放弃迭代的修改不得恢复或带入新环境')
+    expect(prompt).toContain('确认卡在用户确认前持续有效')
+    expect(prompt).toContain('最新请求会自动取代旧确认卡')
   })
 })
 
@@ -464,6 +466,8 @@ describe('Session Target 提示词', () => {
     expect(prompt).toContain('确认卡只显示简短摘要')
     expect(prompt).toContain('不得写绝对本地路径')
     expect(prompt).toContain('当前项目的 Local Checkout')
+    expect(prompt).toContain('确认卡在用户确认前持续有效')
+    expect(prompt).toContain('最新请求会自动取代旧确认卡')
   })
 
   test('Given delivered follow-up When 新请求需要修改 Then 使用结构化工具并在确认后自动续跑', () => {
@@ -488,6 +492,9 @@ describe('Session Target 提示词', () => {
     expect(prompt).toContain('不得写绝对本地路径')
     expect(prompt).toContain('[路径]')
     expect(prompt).toContain('当前项目的 Local Checkout')
+    expect(prompt).toContain('确认卡在用户确认前持续有效')
+    expect(prompt).toContain('必须再次调用 `RequestNextWorktreeIteration` 提交更新后的完整任务')
+    expect(prompt).toContain('最新请求会自动取代旧确认卡')
   })
 
   test('Given Pi inherited Isolated Target When 构建提示词 Then 告知已处于 Domi Worktree 且继承自父会话', () => {
