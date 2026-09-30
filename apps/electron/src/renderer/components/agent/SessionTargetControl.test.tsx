@@ -87,12 +87,12 @@ describe('SessionTargetControl compact header', () => {
     expect(modernCopy.location).toBe('本地项目（直接修改）')
     expect(modernCopy.status).toBe('直接修改')
     expect(modernCopy.branch).toBe('当前分支')
-    expect(modernCopy.description).toContain('直接写入本地项目文件夹')
+    expect(modernCopy.description).toContain('修改会直接写入本地项目')
     expect(getCompactLocalCopy(false).description).toBe('当前会话直接使用本地项目。')
     expect(renderCompact('local')).toContain('本地项目')
   })
 
-  test('Worktree 勾选项提供问号使用说明，解释隔离修改与预览流程', () => {
+  test('Worktree 勾选项提供问号使用说明，解释隔离修改与预览流程', async () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <SessionTargetControl
@@ -105,8 +105,9 @@ describe('SessionTargetControl compact header', () => {
     )
 
     expect(html).toContain('aria-label="Worktree 使用说明"')
-    expect(html).toContain('Worktree 会在独立工作区中修改代码，不会直接影响本地项目。')
-    expect(html).toContain('完成后可以预览修改，确认无误后再保存，也可以随时撤回。')
+    // Radix Tooltip 内容通过 Portal 渲染，静态 HTML 不包含 TooltipContent；源码断言覆盖实际产品文案。
+    const source = await Bun.file(new URL('./SessionTargetControl.tsx', import.meta.url)).text()
+    expect(source).toContain('Worktree 会在独立工作区中修改代码，不会直接影响本地项目。适合尝试新功能、修复问题或并行处理任务；完成后可以预览修改，确认无误后再应用修改，也可以随时撤回。')
   })
 
   test('当前 Worktree 弹层提供验收详情入口，关闭弹层后打开对话框', async () => {

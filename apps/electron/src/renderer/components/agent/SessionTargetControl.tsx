@@ -88,7 +88,7 @@ export function getCompactTargetDescription(target: SessionTargetDisplayInput, m
     : '工作位置需要恢复；请按交付详情中的指引处理。'
   if (delivery?.state === 'preview_detached') return '预览与当前项目状态已变化；请先核对改动，再决定保存或撤回。'
   if (target.checkout.kind !== 'isolated') return getCompactLocalCopy(modern).description
-  if (modern && delivery?.state === 'preview_active') return '修改已预览到本地项目，可撤回；确认保存后才正式保留。'
+  if (modern && delivery?.state === 'preview_active') return '修改已预览到本地项目，可撤回；应用修改后才正式保留。'
   const checkpointCount = target.checkpoints?.length ?? 0
   if (checkpointCount > 0) return modern
     ? `当前 Worktree（独立工作区）已保存 ${checkpointCount} 个未交付阶段；后续验收会包含这些阶段。`
@@ -157,7 +157,7 @@ export function SessionTargetControl({
         <p>
           {worktreeUnavailable
             ? '当前项目不是 Git 仓库，无法使用 Worktree'
-            : 'Worktree 会在独立工作区中修改代码，不会直接影响本地项目。适合尝试新功能、修复问题或并行处理任务；完成后可以预览修改，确认无误后再保存，也可以随时撤回。'}
+            : 'Worktree 会在独立工作区中修改代码，不会直接影响本地项目。适合尝试新功能、修复问题或并行处理任务；完成后可以预览修改，确认无误后再应用修改，也可以随时撤回。'}
         </p>
       </TooltipContent>
     </Tooltip>

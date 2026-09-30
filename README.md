@@ -2,7 +2,7 @@
 
 [![基于 Pi Agent Runtime](https://img.shields.io/badge/Agent_Runtime-Pi-7C3AED)](https://github.com/earendil-works/pi)
 
-Domi 是一个基于开源 [Pi](https://github.com/earendil-works/pi) 的桌面工作台。它把 AI 编程助手、项目文件、终端、Git、内置浏览器、任务与日程放进同一个应用，让你不用在多个工具之间来回切换。Pi 驱动 Work 会话中的智能助手，Domi 则提供桌面界面、项目管理、安全控制，以及从修改代码到确认保存的完整流程。
+Domi 是一个基于开源 [Pi](https://github.com/earendil-works/pi) 的桌面工作台。它把 AI 编程助手、项目文件、终端、Git、内置浏览器、任务与日程放进同一个应用，让你不用在多个工具之间来回切换。Pi 驱动 Work 会话中的智能助手，Domi 则提供桌面界面、项目管理、安全控制，以及从修改代码到应用修改的完整流程。
 
 > Domi 正在快速迭代，首个公开版本线从 **0.20.0** 开始。Windows 与 Linux 安装包通过 GitHub Releases 提供；Domi 不提供自动更新或自动安装，也不会连接第三方产品的发布通道。
 

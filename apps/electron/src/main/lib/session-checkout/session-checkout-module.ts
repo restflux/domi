@@ -1928,7 +1928,7 @@ export function createSessionCheckoutModule(
           reviewId: operationId,
           iteration,
           preparedAt: startedAt,
-          summary: '修改已应用到当前项目供预览，可撤回；检查通过后可“确认保存”',
+          summary: '修改已应用到当前项目供预览，可撤回；检查通过后可“应用修改”',
           validationStatus: 'not_run' as const,
           tests: [],
           changedFiles: [...planResult.plan.changedFiles],

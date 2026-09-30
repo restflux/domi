@@ -77,7 +77,7 @@ export function createWorktreeReviewNotice(sessionId: string, target: SessionTar
     changed_files: review.changedFiles,
     suggested_commit_message: review.suggestedCommitMessage,
     message: target.delivery.state === 'preview_active'
-      ? '修改已应用到当前项目供预览，可撤回；检查通过后可“确认保存”。'
+      ? '修改已应用到当前项目供预览，可撤回；检查通过后可“应用修改”。'
       : '修改已准备好，可点击“预览修改”在当前项目中检查。',
     _createdAt: Date.now(),
   } as unknown as SDKMessage

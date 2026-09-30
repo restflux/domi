@@ -47,7 +47,7 @@ describe('Pi builtin tool capability metadata', () => {
     for (const text of [guidance.description, guidance.promptSnippet]) {
       expect(text).toContain('预览修改')
       expect(text).toContain('撤回预览')
-      expect(text).toContain('确认保存')
+      expect(text).toContain('应用修改')
     }
     expect(guidance.description).toContain('effective review baseline')
     expect(guidance.description).toContain('only the remaining delivery delta')
