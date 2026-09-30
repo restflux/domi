@@ -28,6 +28,7 @@ test('Given 用户按需打开文件与改动 When 渲染 v2 标签 Then 它们�
         onOpenChanges={noop}
         onShowScratch={noop}
         onToggleExpand={noop}
+        onCloseWorkspace={noop}
       />
     </TooltipProvider>,
   )
@@ -37,4 +38,5 @@ test('Given 用户按需打开文件与改动 When 渲染 v2 标签 Then 它们�
   expect(html).toContain('aria-label="关闭改动"')
   expect(html).toContain('aria-label="添加工具"')
   expect(html).toContain('aria-label="展开到主区域"')
+  expect(html).toContain('aria-label="关闭右侧工作区"')
 })

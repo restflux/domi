@@ -229,7 +229,7 @@ function TabBarInner({
   const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
   const insetForWindowControls = shouldInsetMacCollapsedTabs(isMac, isModern, sidebarCollapsed)
 
-  // Right Workspace 开关固定在中间主区域的右上角。
+  // 右侧工作区关闭时由主区域提供打开入口；打开后由侧栏最右侧提供关闭入口。
   const [isPanelOpen, setSidePanelOpen] = useAtom(rightWorkspaceOpenAtom)
   const setRightWorkspaceSessionStateMap = useSetAtom(rightWorkspaceSessionStateMapAtom)
   const setShortcutGuideOpen = useSetAtom(shortcutGuideOpenAtom)
@@ -515,7 +515,7 @@ function TabBarActions({
         />
       )}
 
-      {showPanelButton && (
+      {showPanelButton && !isPanelOpen && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

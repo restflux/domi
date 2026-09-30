@@ -80,6 +80,7 @@ root.render(
         onOpenTerminal={() => { window.__selectedTool = 'terminal' }}
         onShowScratch={() => { window.__selectedTool = 'scratch' }}
         onToggleExpand={() => {}}
+        onCloseWorkspace={() => {}}
       />
     </div>
   </TooltipProvider>,

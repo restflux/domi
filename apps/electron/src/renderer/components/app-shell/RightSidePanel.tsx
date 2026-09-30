@@ -28,6 +28,7 @@ import {
   resolveBrowserFocusEscape,
   resolveRightWorkspaceFocus,
   rightWorkspaceFocusAtom,
+  rightWorkspaceOpenAtom,
   rightWorkspaceSessionStateMapAtom,
   toggleRightWorkspaceFocus,
 } from '@/atoms/right-workspace-atoms'
@@ -101,6 +102,7 @@ function ActiveRightSidePanel({
   const setUnseenChangesMap = useSetAtom(agentDiffUnseenChangesAtom)
   const workspaceStateMap = useAtomValue(rightWorkspaceSessionStateMapAtom)
   const setWorkspaceStateMap = useSetAtom(rightWorkspaceSessionStateMapAtom)
+  const setRightWorkspaceOpen = useSetAtom(rightWorkspaceOpenAtom)
   const previewFileMap = useAtomValue(previewFileMapAtom)
   const setPreviewFileMap = useSetAtom(previewFileMapAtom)
   const browserStateMap = useAtomValue(browserStateMapAtom)
@@ -342,6 +344,7 @@ function ActiveRightSidePanel({
           onOpenChanges={() => openOptionalTool('changes')}
           onShowScratch={showScratch}
           onToggleExpand={() => setWorkspaceFocus((current) => toggleRightWorkspaceFocus(current, currentSessionId, activeTabId))}
+          onCloseWorkspace={() => setRightWorkspaceOpen(false)}
         />
         {(!isWorkbenchV2 || (!showV2Launcher && !['browser', 'terminal'].includes(activeTool))) && <RightWorkspaceHeader activeTool={activeTool} previewTitle={getPreviewTitle(previewFile?.filePath)} fileSourceFilter={fileSourceFilter} scratchSaveState={scratchSaveState} onFileSourceFilterChange={setFileSourceFilter} />}
         <div className="min-h-0 flex-1 overflow-hidden titlebar-no-drag">

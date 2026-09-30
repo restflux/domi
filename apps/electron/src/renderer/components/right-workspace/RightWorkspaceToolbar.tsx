@@ -10,6 +10,7 @@ import {
   MessagesSquare,
   Minimize2,
   NotebookPen,
+  PanelRightClose,
   Plus,
   SquareTerminal,
   X,
@@ -61,6 +62,7 @@ interface RightWorkspaceToolbarProps {
   onOpenTerminal: () => void
   onShowScratch: () => void
   onToggleExpand: () => void
+  onCloseWorkspace: () => void
 }
 
 function TabButton({
@@ -142,6 +144,7 @@ export function RightWorkspaceToolbar({
   onOpenTerminal,
   onShowScratch,
   onToggleExpand,
+  onCloseWorkspace,
 }: RightWorkspaceToolbarProps): React.ReactElement {
   const { t } = useTranslation('workspace')
   const toolsAreaRef = React.useRef<HTMLDivElement>(null)
@@ -247,6 +250,14 @@ export function RightWorkspaceToolbar({
           <TooltipContent side="bottom">{expanded ? t('restoreSplit') : t('expandMain')}</TooltipContent>
         </Tooltip>
       )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" aria-label="关闭右侧工作区" onClick={onCloseWorkspace} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <PanelRightClose className="size-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">关闭右侧工作区</TooltipContent>
+      </Tooltip>
     </nav>
   )
 }

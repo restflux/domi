@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable'
-import { FolderClosed, GitCompareArrows, Globe2, Maximize2, Minimize2, NotebookPen, Plus, SquareTerminal } from 'lucide-react'
+import { FolderClosed, GitCompareArrows, Globe2, Maximize2, Minimize2, NotebookPen, PanelRightClose, Plus, SquareTerminal } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.tsx'
 import type { RightWorkspaceTabId, RightWorkspaceTool } from '@/lib/right-workspace-model.ts'
@@ -29,6 +29,7 @@ interface RightWorkspaceToolbarProps {
   onOpenChanges?: () => void
   onShowScratch: () => void
   onToggleExpand: () => void
+  onCloseWorkspace: () => void
 }
 
 export function getHorizontalTabWheelDelta(deltaX: number, deltaY: number): number {
@@ -36,7 +37,7 @@ export function getHorizontalTabWheelDelta(deltaX: number, deltaY: number): numb
 }
 
 /** ZCode AnimatedSidePanePanel 的可排序等宽 tab 带；Domi 只提供 tab 身份与宿主操作。 */
-export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, hasUnseenChanges, expandAvailable, expanded, onTabChange, onCloseTab, onAddBrowser, onOpenTerminal, onOpenFiles, onOpenChanges, onShowScratch, onToggleExpand }: RightWorkspaceToolbarProps): React.ReactElement {
+export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, hasUnseenChanges, expandAvailable, expanded, onTabChange, onCloseTab, onAddBrowser, onOpenTerminal, onOpenFiles, onOpenChanges, onShowScratch, onToggleExpand, onCloseWorkspace }: RightWorkspaceToolbarProps): React.ReactElement {
   const [order, setOrder] = React.useState<string[]>([])
   const [menuOpen, setMenuOpen] = React.useState(false)
   const viewport = React.useRef<HTMLDivElement>(null)
@@ -84,7 +85,8 @@ export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, has
           <DropdownMenuItem onSelect={onShowScratch} className="gap-2"><NotebookPen className="size-4" />{scratchVisible ? '打开草稿' : '显示草稿'}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {expandAvailable && <Tooltip><TooltipTrigger asChild><button type="button" aria-label={expanded ? '恢复分栏' : '展开到主区域'} aria-pressed={expanded} onClick={onToggleExpand} className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">{expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</button></TooltipTrigger><TooltipContent side="bottom">{expanded ? '恢复分栏' : '展开到主区域'}</TooltipContent></Tooltip>}
+      {expandAvailable && <Tooltip><TooltipTrigger asChild><button type="button" aria-label={expanded ? '恢复分栏' : '展开到主区域'} aria-pressed={expanded} onClick={onToggleExpand} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">{expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</button></TooltipTrigger><TooltipContent side="bottom">{expanded ? '恢复分栏' : '展开到主区域'}</TooltipContent></Tooltip>}
+      <Tooltip><TooltipTrigger asChild><button type="button" aria-label="关闭右侧工作区" onClick={onCloseWorkspace} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><PanelRightClose className="size-4" /></button></TooltipTrigger><TooltipContent side="bottom">关闭右侧工作区</TooltipContent></Tooltip>
     </nav>
   )
 }

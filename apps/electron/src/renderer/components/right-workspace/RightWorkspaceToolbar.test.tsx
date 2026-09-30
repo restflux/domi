@@ -34,6 +34,7 @@ function renderToolbar(
         onOpenTerminal={noop}
         onShowScratch={noop}
         onToggleExpand={noop}
+        onCloseWorkspace={noop}
       />
     </TooltipProvider>,
   )
@@ -67,6 +68,12 @@ describe('RightWorkspaceToolbar 标签入口', () => {
     expect(html).toContain('aria-label="添加工具"')
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('data-placement="inline"')
+  })
+
+  test('打开状态提供固定在右侧栏最右侧的关闭入口', () => {
+    const html = renderToolbar('files', false)
+
+    expect(html).toContain('aria-label="关闭右侧工作区"')
   })
 
   test('展开入口使用面向用户的展开与恢复分栏文案', () => {
