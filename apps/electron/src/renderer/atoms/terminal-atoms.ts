@@ -1,5 +1,5 @@
 import { atom } from 'jotai'
-import type { TerminalSessionView, TerminalStateChange } from '@domi/shared'
+import type { TerminalProfile, TerminalSessionView, TerminalStateChange } from '@domi/shared'
 import { currentAgentSessionIdAtom } from './agent-atoms.ts'
 
 export const terminalStateMapAtom = atom<Map<string, TerminalSessionView>>(new Map())
@@ -7,6 +7,10 @@ export const terminalStateMapAtom = atom<Map<string, TerminalSessionView>>(new M
 export const terminalServiceUrlsMapAtom = atom<Map<string, string[]>>(new Map())
 export const terminalDockOpenMapAtom = atom<Map<string, boolean>>(new Map())
 export const terminalActiveIdMapAtom = atom<Map<string, string>>(new Map())
+/** ZCode Terminal panelState 中按 workspace 持久化的面板尺寸。 */
+export const terminalDockHeightMapAtom = atom<Map<string, number>>(new Map())
+/** ZCode Terminal panelState 中按 workspace 记忆的下次创建 profile。 */
+export const terminalDockProfileMapAtom = atom<Map<string, TerminalProfile>>(new Map())
 
 export const currentSessionTerminalsAtom = atom<TerminalSessionView[]>((get) => {
   const sessionId = get(currentAgentSessionIdAtom)

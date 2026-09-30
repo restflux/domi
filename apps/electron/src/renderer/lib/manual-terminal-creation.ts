@@ -12,6 +12,7 @@ export interface ManualTerminalCreationDependencies {
 export interface CreateManualTerminalOptions {
   ownerSessionId: string
   presentation: NonNullable<TerminalCreateInput['presentation']>
+  engine?: TerminalCreateInput['engine']
   cols: number
   rows: number
 }
@@ -31,6 +32,7 @@ export async function createManualTerminal(
     return await dependencies.create({
       ownerSessionId: options.ownerSessionId,
       presentation: options.presentation,
+      ...(options.engine ? { engine: options.engine } : {}),
       cols: options.cols,
       rows: options.rows,
     })

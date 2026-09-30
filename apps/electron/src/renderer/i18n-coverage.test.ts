@@ -82,7 +82,7 @@ const migratedWorkspaceFiles = [
   'components/right-workspace/v2/RightWorkspaceToolbarV2.tsx',
   'components/right-workspace/v2/zcode/SidePaneTabTrigger.tsx',
   'components/terminal/v2/TerminalDockV2.tsx',
-  'components/terminal/v2/zcode/TerminalSession.tsx',
+  'components/terminal/v2/zcode/ZCodeTerminalSession.tsx',
   'components/file-browser/FileBrowser.tsx',
 ] as const
 

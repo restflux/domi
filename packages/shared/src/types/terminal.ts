@@ -41,6 +41,36 @@ export interface TerminalSourceTargetView {
   stale: boolean
 }
 
+export interface TerminalAppearance {
+  fontFamily: string
+  fontSize?: number
+  theme?: {
+    background?: string
+    foreground?: string
+    cursor?: string
+    cursorAccent?: string
+    selectionBackground?: string
+    selectionInactiveBackground?: string
+    black?: string
+    red?: string
+    green?: string
+    yellow?: string
+    blue?: string
+    magenta?: string
+    cyan?: string
+    white?: string
+    brightBlack?: string
+    brightRed?: string
+    brightGreen?: string
+    brightYellow?: string
+    brightBlue?: string
+    brightMagenta?: string
+    brightCyan?: string
+    brightWhite?: string
+  }
+  source: 'custom' | 'system' | 'fallback'
+}
+
 export interface TerminalSessionView {
   terminalId: string
   ownerSessionId: string
@@ -49,6 +79,8 @@ export interface TerminalSessionView {
   title: string
   cwd: string
   profile: TerminalProfile
+  /** 仅 v2 用户交互终端的 utility 探测结果；v1 与 Agent run 不生成。 */
+  appearance?: TerminalAppearance
   status: TerminalStatus
   pid?: number
   startedAt: number
@@ -71,6 +103,8 @@ export interface TerminalCreateInput {
   ownerSessionId: string
   profile?: TerminalProfile
   presentation?: TerminalPresentation
+  /** 仅用户交互终端可选择 v2；Main 始终校验 owner/Target/cwd。 */
+  engine?: 'zcode'
   title?: string
   /** 绝对路径或相对 Session Target 根目录的目录；Main 会重新校验授权根。 */
   cwd?: string

@@ -3,21 +3,27 @@ import { useTranslation } from 'react-i18next'
 import i18n from '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDown, ChevronUp, Plus, Square } from 'lucide-react'
-import type { TerminalProfile, TerminalSessionView } from '@domi/shared'
+import type { TerminalCreateInput, TerminalProfile, TerminalSessionView } from '@domi/shared'
 import { Button } from '@/components/ui/button.tsx'
 import {
   terminalActiveIdMapAtom,
+  terminalDockHeightMapAtom,
   terminalDockOpenMapAtom,
+  terminalDockProfileMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
 import { countRunningTerminals, selectDockTerminals } from '../terminal-dock-model.ts'
-import { TerminalSession } from './zcode/TerminalSession.tsx'
+import { ZCodeTerminalSurface } from './zcode/ZCodeTerminalSurface.tsx'
 import { TerminalTabTrigger } from './zcode/TerminalTabTrigger.tsx'
 import { Tabs, TabsList, TabsContent } from '@/components/ui/tabs.tsx'
 import { cn } from '@/lib/utils.ts'
 
 const MIN_HEIGHT = 150
 const MAX_HEIGHT = 560
+
+export function buildZCodeDockTerminalInput(ownerSessionId: string, profile: TerminalProfile): TerminalCreateInput {
+  return { ownerSessionId, profile, presentation: 'dock', engine: 'zcode', cols: 100, rows: 28 }
+}
 
 export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): React.ReactElement | null {
   const { t } = useTranslation('workspace', { i18n })
@@ -29,8 +35,10 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
   const setStates = useSetAtom(terminalStateMapAtom)
   const [openMap, setOpenMap] = useAtom(terminalDockOpenMapAtom)
   const [activeMap, setActiveMap] = useAtom(terminalActiveIdMapAtom)
-  const [profile, setProfile] = React.useState<TerminalProfile>('default')
-  const [height, setHeight] = React.useState(270)
+  const [heightMap, setHeightMap] = useAtom(terminalDockHeightMapAtom)
+  const [profileMap, setProfileMap] = useAtom(terminalDockProfileMapAtom)
+  const profile = profileMap.get(ownerSessionId) ?? 'default'
+  const height = heightMap.get(ownerSessionId) ?? 270
   const [creating, setCreating] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const open = openMap.get(ownerSessionId) ?? false
@@ -64,11 +72,11 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
         // Session 可能正在切换或被删除；全局 state event 会在可用时重新投影。
       })
     }
+    // ZCode 的 panelState 只在挂载时同步服务端快照，后续由全局 terminal.onStateChanged
+    // 投影驱动。避免每个 Dock 各自轮询，多个 Work Session 同时打开时会产生周期性 IPC 峰值。
     refresh()
-    const timer = setInterval(refresh, 5_000)
     return () => {
       cancelled = true
-      clearInterval(timer)
     }
   }, [ownerSessionId, setStates, setActiveMap])
 
@@ -77,13 +85,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
     setCreating(true)
     setError(null)
     try {
-      const terminal = await window.electronAPI.terminal.create({
-        ownerSessionId,
-        profile,
-        presentation: 'dock',
-        cols: 100,
-        rows: 28,
-      })
+      const terminal = await window.electronAPI.terminal.create(buildZCodeDockTerminalInput(ownerSessionId, profile))
       setStates((current) => new Map(current).set(terminal.terminalId, terminal))
       setActiveMap((current) => new Map(current).set(ownerSessionId, terminal.terminalId))
       setOpenMap((current) => new Map(current).set(ownerSessionId, true))
@@ -98,12 +100,20 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
     await window.electronAPI.terminal.close({ ownerSessionId, terminalId: terminal.terminalId })
   }, [ownerSessionId])
 
+  const updateHeight = React.useCallback((nextHeight: number): void => {
+    setHeightMap((current) => new Map(current).set(ownerSessionId, nextHeight))
+  }, [ownerSessionId, setHeightMap])
+
+  const updateProfile = React.useCallback((nextProfile: TerminalProfile): void => {
+    setProfileMap((current) => new Map(current).set(ownerSessionId, nextProfile))
+  }, [ownerSessionId, setProfileMap])
+
   const startResize = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const startY = event.clientY
     const startHeight = height
     const move = (pointer: PointerEvent): void => {
-      setHeight(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeight + startY - pointer.clientY)))
+      updateHeight(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeight + startY - pointer.clientY)))
     }
     const up = (): void => {
       document.removeEventListener('pointermove', move)
@@ -115,7 +125,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
     document.body.style.cursor = 'row-resize'
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
-  }, [height])
+  }, [height, updateHeight])
 
   if (!open && terminals.length === 0) return null
 
@@ -134,7 +144,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
             </TabsList>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {open && <select value={profile} onChange={(event) => setProfile(event.target.value as TerminalProfile)} aria-label={t('newTerminal') + ' Shell'} className="h-7 rounded-md bg-accent/50 px-1 text-[11px] text-muted-foreground">
+            {open && <select value={profile} onChange={(event) => updateProfile(event.target.value as TerminalProfile)} aria-label={t('newTerminal') + ' Shell'} className="h-7 rounded-md bg-accent/50 px-1 text-[11px] text-muted-foreground">
               <option value="default">{t('defaultShell')}</option>
               {navigator.platform.toLowerCase().includes('win') ? <><option value="powershell">PowerShell</option><option value="cmd">Command Prompt</option><option value="git-bash">Git Bash</option><option value="wsl">WSL</option></> : <><option value="bash">Bash</option><option value="zsh">Zsh</option></>}
             </select>}
@@ -145,7 +155,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
         </div>
         {open && error && <div className="shrink-0 bg-destructive/10 px-3 py-1 text-xs text-destructive">{error}</div>}
         <div className={cn('min-h-0 flex-1 overflow-hidden rounded-lg bg-[#171717]', !open && 'hidden')}>
-          {terminals.length ? terminals.map((terminal) => <TabsContent key={terminal.terminalId} value={terminal.terminalId} forceMount className="!m-0 h-full min-h-0 flex-1 data-[state=inactive]:hidden"><TerminalSession terminal={terminal} visible={open && active?.terminalId === terminal.terminalId} /></TabsContent>) : <button type="button" className="flex h-full w-full items-center justify-center text-xs text-muted-foreground hover:text-foreground" onClick={() => void createTerminal()}><Plus className="mr-1 size-4" />{t('newTerminal')}</button>}
+          {terminals.length ? terminals.map((terminal) => <TabsContent key={terminal.terminalId} value={terminal.terminalId} forceMount className="!m-0 h-full min-h-0 flex-1 data-[state=inactive]:hidden"><ZCodeTerminalSurface terminal={terminal} visible={open && active?.terminalId === terminal.terminalId} /></TabsContent>) : <button type="button" className="flex h-full w-full items-center justify-center text-xs text-muted-foreground hover:text-foreground" onClick={() => void createTerminal()}><Plus className="mr-1 size-4" />{t('newTerminal')}</button>}
         </div>
       </Tabs>
     </section>

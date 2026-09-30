@@ -57,7 +57,7 @@ import { SidePanel } from '@/components/agent/SidePanel'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { BrowserPanelV2 } from '@/components/browser/v2/BrowserPanelV2'
 import { TerminalPane } from '@/components/terminal/TerminalPane.tsx'
-import { TerminalSession } from '@/components/terminal/v2/zcode/TerminalSession.tsx'
+import { ZCodeTerminalSurface } from '@/components/terminal/v2/zcode/ZCodeTerminalSurface.tsx'
 import { selectWorkspaceTerminals } from '@/components/terminal/terminal-dock-model.ts'
 import { PreviewTabContent } from '@/components/diff/PreviewTabContent'
 import { ScratchPadWorkspace } from '@/components/scratch-pad/ScratchPadView'
@@ -390,7 +390,7 @@ function ActiveRightSidePanel({
           {isWorkbenchV2 && tabs.filter((tab) => tab.tool === 'terminal').map((tab) => {
             const terminalId = terminalIdFromTab(tab.id)
             const session = terminalId ? terminalStates.get(terminalId) : undefined
-            return session ? <div key={tab.id} className={activeTabId === tab.id ? 'h-full' : 'hidden'}><TerminalSession terminal={session} visible={activeTabId === tab.id} /></div> : null
+            return session ? <div key={tab.id} className={activeTabId === tab.id ? 'h-full' : 'hidden'}><ZCodeTerminalSurface terminal={session} visible={activeTabId === tab.id} /></div> : null
           })}
           {isWorkbenchV2 && !showV2Launcher && filesLikeTabOpen && (
             <div className={filesLikeActive ? 'h-full' : 'hidden'}>{sidePanelNode}</div>

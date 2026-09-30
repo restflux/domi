@@ -17,6 +17,7 @@ import { useOpenPreview } from '@/components/diff/preview-opener'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ImageLightbox } from '@/components/ui/image-lightbox'
 import { getMediaTypeFromFilename, setFilePanelDragData } from '@/lib/file-panel-drag'
+import { interfaceVariantAtom } from '@/atoms/theme'
 import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 import { getSessionSourceCapabilities, getSessionSourceOpenMode } from './session-source-actions'
 import { SessionSourceMenu } from './SessionSourceMenu'
@@ -51,6 +52,7 @@ export function SessionFilesCard({ sessionId, sessionPath, onViewAll }: SessionF
   const [hiddenPaths, setHiddenPaths] = React.useState<Set<string>>(new Set())
   const imageRequestRef = React.useRef(0)
   const creatingTerminalRef = React.useRef<ManualTerminalCreationGuard>({ pending: false })
+  const useZCodeTerminal = useAtomValue(interfaceVariantAtom) === 'workbench-v2'
   const openPreview = useOpenPreview()
 
   React.useEffect(() => {
@@ -175,10 +177,11 @@ export function SessionFilesCard({ sessionId, sessionPath, onViewAll }: SessionF
     }, {
       ownerSessionId: sessionId,
       presentation: 'dock',
+      ...(useZCodeTerminal ? { engine: 'zcode' as const } : {}),
       cols: 100,
       rows: 28,
     })
-  }, [sessionId])
+  }, [sessionId, useZCodeTerminal])
 
   return (
     <>

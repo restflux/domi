@@ -58,6 +58,7 @@ export interface TerminalSessionServiceDependencies {
 export interface UserTerminalCreateOptions {
   profile?: TerminalProfile
   presentation?: TerminalPresentation
+  engine?: 'zcode'
   title?: string
   cwd?: string
   cols: number
@@ -94,6 +95,7 @@ export class TerminalSessionService {
       cols: normalizeDimension(input.cols),
       rows: normalizeDimension(input.rows),
       mode: 'interactive-shell',
+      ...(input.engine === 'zcode' ? { engine: 'zcode' as const } : {}),
       shellPath: profile === 'git-bash' ? owner.env.CLAUDE_CODE_SHELL : undefined,
       wslDistro: profile === 'wsl' ? owner.env.DOMI_WSL_DISTRO : undefined,
     })
@@ -228,6 +230,7 @@ export class TerminalSessionService {
     cols: number
     rows: number
     mode: 'interactive-shell' | 'agent-command'
+    engine?: 'zcode'
     command?: string
     shellPath?: string
     wslDistro?: string
@@ -261,19 +264,26 @@ export class TerminalSessionService {
       cols: input.cols,
       rows: input.rows,
       mode: input.mode,
+      ...(input.engine ? { engine: input.engine } : {}),
       ...(input.command ? { command: input.command } : {}),
       ...(input.shellPath ? { shellPath: input.shellPath } : {}),
       ...(input.wslDistro ? { wslDistro: input.wslDistro } : {}),
     }).then((runtimeState) => {
-      if (!this.records.has(terminalId)) {
+      if (this.records.get(terminalId) !== record) {
         this.dependencies.runtime.kill(terminalId)
         throw new Error('终端已在创建完成前关闭')
       }
-      record.state = { ...record.state, status: 'running', pid: runtimeState.pid }
-      this.dependencies.onStateChanged?.(record.state)
+      if (record.state.status === 'starting') {
+        record.state = {
+          ...record.state, status: 'running', pid: runtimeState.pid,
+          ...(input.kind === 'user-shell' && input.engine === 'zcode' && runtimeState.appearance
+            ? { appearance: runtimeState.appearance } : {}),
+        }
+        this.dependencies.onStateChanged?.(record.state)
+      }
       return record.state
     }).catch((error) => {
-      if (this.records.has(terminalId)) {
+      if (this.records.get(terminalId) === record) {
         if (input.kind === 'user-shell') {
           this.records.delete(terminalId)
           this.dependencies.onStateChanged?.({

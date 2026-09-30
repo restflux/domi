@@ -26,6 +26,21 @@ describe('registerTerminalIpc', () => {
     expect(called).toBe(false)
   })
 
+  test('accepts ZCode engine only for a validated interactive shell request', async () => {
+    const ipc = new FakeIpc()
+    let selected: string | undefined
+    registerTerminalIpc(ipc, {
+      createUserShell: async (_ownerSessionId, input) => { selected = input.engine; return {} as never },
+      list: async () => [], inspect: async () => ({} as never), snapshot: async () => ({} as never),
+      input: async () => {}, resize: async () => {}, interrupt: async () => true, close: async () => true,
+    }, { assertSender: () => {} })
+    await ipc.handlers.get(TERMINAL_IPC_CHANNELS.CREATE)?.(
+      { sender: { id: 1 } },
+      { ownerSessionId: 's1', cols: 80, rows: 24, engine: 'zcode' },
+    )
+    expect(selected).toBe('zcode')
+  })
+
   test('accepts a bounded cwd while rejecting extra IPC keys and oversized terminal input', async () => {
     const ipc = new FakeIpc()
     let received: { cwd?: string; presentation?: string } = {}
@@ -46,6 +61,10 @@ describe('registerTerminalIpc', () => {
     await expect(ipc.handlers.get(TERMINAL_IPC_CHANNELS.CREATE)?.(
       { sender: { id: 1 } },
       { ownerSessionId: 's1', cols: 80, rows: 24, presentation: 'floating' },
+    )).rejects.toThrow('终端 IPC 请求无效')
+    await expect(ipc.handlers.get(TERMINAL_IPC_CHANNELS.CREATE)?.(
+      { sender: { id: 1 } },
+      { ownerSessionId: 's1', cols: 80, rows: 24, engine: 'untrusted-native' },
     )).rejects.toThrow('终端 IPC 请求无效')
     await expect(ipc.handlers.get(TERMINAL_IPC_CHANNELS.CREATE)?.(
       { sender: { id: 1 } },

@@ -8,6 +8,8 @@ import {
 } from '../main/lib/terminal/terminal-runtime-protocol.ts'
 import { resolveTerminalShell } from './terminal-shell-resolver.ts'
 import { resolveTerminalSpawnEnv } from './terminal-spawn-env.ts'
+import { spawnZCodeTerminal } from './zcode-terminal-runtime.ts'
+import { resolveTerminalFontProfile } from './terminal-profile.ts'
 
 interface MessagePortLike {
   on(event: 'message', listener: (event: { data: unknown }) => void): void
@@ -97,13 +99,14 @@ function createTerminal(input: TerminalRuntimeCreateInput): void {
       shellPath: input.shellPath,
       wslDistro: input.wslDistro,
     })
-    const pty = spawn(shell.file, shell.args, {
-      name: 'xterm-256color',
-      cols: normalizeDimension(input.cols),
-      rows: normalizeDimension(input.rows),
-      cwd: input.cwd,
-      env: resolveTerminalSpawnEnv(process.env, process.platform, input.mode),
-    })
+    const dimensions = { cols: normalizeDimension(input.cols), rows: normalizeDimension(input.rows) }
+    const env = resolveTerminalSpawnEnv(process.env, process.platform, input.mode)
+    // 样式仅从 utility 自身受信环境探测；不读取 Shell 的 cwd，也不接收 Renderer 配置路径。
+    const isV2Shell = input.mode === 'interactive-shell' && input.engine === 'zcode'
+    const appearance = isV2Shell ? resolveTerminalFontProfile({ settings: {}, env: process.env }) : undefined
+    const pty = isV2Shell
+      ? spawnZCodeTerminal({ file: shell.file, args: shell.args, ...dimensions, cwd: input.cwd, env })
+      : spawn(shell.file, shell.args, { name: 'xterm-256color', ...dimensions, cwd: input.cwd, env })
     const terminal: ManagedTerminal = {
       pty,
       output: '',
@@ -119,6 +122,7 @@ function createTerminal(input: TerminalRuntimeCreateInput): void {
         cwd: input.cwd,
         profile: input.profile,
         pid: pty.pid,
+        ...(appearance ? { appearance: { ...appearance, source: appearance.source } } : {}),
       },
     })
     pty.onData((data) => enqueueOutput(input.terminalId, data))

@@ -3,11 +3,17 @@ import { Provider, createStore } from 'jotai'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { TerminalSessionView } from '@domi/shared'
 import { terminalDockOpenMapAtom, terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
-import { TerminalDockV2 } from './TerminalDockV2'
+import { TerminalDockV2, buildZCodeDockTerminalInput } from './TerminalDockV2'
 
 const terminal = (terminalId: string, ownerSessionId: string): TerminalSessionView => ({
   terminalId, ownerSessionId, kind: 'user-shell', presentation: 'dock', title: terminalId,
   cwd: '/tmp', profile: 'bash', status: 'running', startedAt: 1,
+})
+
+test('Given the v2 Dock When creating an interactive shell Then it selects ZCode backend without changing the owner or presentation', () => {
+  expect(buildZCodeDockTerminalInput('owner', 'zsh')).toEqual({
+    ownerSessionId: 'owner', profile: 'zsh', presentation: 'dock', engine: 'zcode', cols: 100, rows: 28,
+  })
 })
 
 test('Given multiple owners and terminals When rendering v2 Dock Then only owner tabs have separate keyboard-accessible close controls', () => {

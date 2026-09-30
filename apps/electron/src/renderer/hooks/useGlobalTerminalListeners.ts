@@ -8,10 +8,18 @@ import {
   terminalServiceUrlsMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
+import { currentAgentSessionIdAtom } from '@/atoms/agent-atoms.ts'
 import {
   accumulateTerminalServiceOutput,
   type TerminalServiceOutputState,
 } from '@/components/terminal/running-terminals-model.ts'
+import {
+  activateSessionRightWorkspaceTab,
+  rightWorkspaceOpenAtom,
+  rightWorkspaceSessionStateMapAtom,
+} from '@/atoms/right-workspace-atoms.ts'
+import { terminalTabId } from '@/lib/right-workspace-model.ts'
+import { sidePaneTerminalSessionRegistry } from '@/components/terminal/v2/zcode/ZCodeSessionRegistry.ts'
 
 export function useGlobalTerminalListeners(): void {
   const store = useStore()
@@ -46,6 +54,7 @@ export function useGlobalTerminalListeners(): void {
     const disposeState = window.electronAPI.terminal.onStateChanged((change: TerminalStateChange) => {
       store.set(terminalStateMapAtom, (current) => applyTerminalStateChange(current, change))
       if ('closed' in change) {
+        sidePaneTerminalSessionRegistry.release(JSON.stringify([change.ownerSessionId, change.terminalId]))
         clearServiceOutput(change.terminalId)
         store.set(terminalActiveIdMapAtom, (current) => {
           if (current.get(change.ownerSessionId) !== change.terminalId) return current
@@ -63,7 +72,15 @@ export function useGlobalTerminalListeners(): void {
 
       if (change.status === 'starting') {
         if (change.kind === 'agent-run') clearServiceOutput(change.terminalId)
-        if (change.presentation === 'workspace') return
+        if (change.presentation === 'workspace') {
+          store.set(rightWorkspaceSessionStateMapAtom, (current) => (
+            activateSessionRightWorkspaceTab(current, change.ownerSessionId, terminalTabId(change.terminalId))
+          ))
+          if (store.get(currentAgentSessionIdAtom) === change.ownerSessionId) {
+            store.set(rightWorkspaceOpenAtom, true)
+          }
+          return
+        }
 
         store.set(terminalDockOpenMapAtom, (current) => new Map(current).set(change.ownerSessionId, true))
         store.set(terminalActiveIdMapAtom, (current) => new Map(current).set(change.ownerSessionId, change.terminalId))

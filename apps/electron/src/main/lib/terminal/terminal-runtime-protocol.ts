@@ -2,6 +2,7 @@ import type {
   TerminalExitEvent,
   TerminalOutputEvent,
   TerminalProfile,
+  TerminalAppearance,
 } from '@domi/shared'
 
 export interface TerminalRuntimeCreateInput {
@@ -11,6 +12,8 @@ export interface TerminalRuntimeCreateInput {
   cols: number
   rows: number
   mode: 'interactive-shell' | 'agent-command'
+  /** Main 仅为交互终端指定 v2；Agent 命令沿用现有 Runtime。 */
+  engine?: 'zcode'
   command?: string
   /** Main 从受信 RuntimeEnv 解析出的 Shell，不接受 Renderer 输入。 */
   shellPath?: string
@@ -23,6 +26,7 @@ export interface TerminalRuntimeState {
   cwd: string
   profile: TerminalProfile
   pid: number
+  appearance?: TerminalAppearance
 }
 
 export type TerminalRuntimeRequest =
