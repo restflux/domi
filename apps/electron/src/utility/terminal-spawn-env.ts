@@ -1,10 +1,13 @@
-import { delimiter } from 'node:path'
-
 // 改编自 ZCode packages/services/src/terminal/terminalService.ts 的 resolveTerminalEnv。
 const DARWIN_GUI_FALLBACK_PATHS = [
   '/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', '/usr/local/sbin',
   '/usr/bin', '/bin', '/usr/sbin', '/sbin',
 ] as const
+
+/** PATH 语义跟随目标平台（darwin/linux 为 ':'，win32 为 ';'），与宿主无关。 */
+function pathDelimiterFor(platform: string): string {
+  return platform === 'win32' ? ';' : ':'
+}
 
 function isUtf8Locale(value: string | undefined): boolean {
   return /utf-?8/i.test(value ?? '')
@@ -15,7 +18,7 @@ function isMissingOrCLocale(value: string | undefined): boolean {
   return normalized === '' || normalized === 'C' || normalized === 'POSIX'
 }
 
-function mergePathEntries(entries: readonly (string | undefined)[]): string {
+function mergePathEntries(entries: readonly (string | undefined)[], delimiter: string): string {
   const seen = new Set<string>()
   const merged: string[] = []
   for (const value of entries) {
@@ -38,7 +41,10 @@ export function resolveTerminalSpawnEnv(
   const next: NodeJS.ProcessEnv = { ...env, TERM: 'xterm-256color', COLORTERM: env.COLORTERM?.trim() || 'truecolor' }
   if (mode !== 'interactive-shell') return next
 
-  if (platform === 'darwin') next.PATH = mergePathEntries([env.PATH, ...DARWIN_GUI_FALLBACK_PATHS])
+  if (platform === 'darwin') {
+    const delimiter = pathDelimiterFor(platform)
+    next.PATH = mergePathEntries([env.PATH, ...DARWIN_GUI_FALLBACK_PATHS], delimiter)
+  }
   if (next.CI === '1' && env.TERM === 'dumb') delete next.CI
   const fallback = [env.LC_ALL, env.LC_CTYPE, env.LANG].find(isUtf8Locale)
     ?? (platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8')

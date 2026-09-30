@@ -1,13 +1,12 @@
 import { expect, test } from 'bun:test'
-import { delimiter } from 'node:path'
 import { resolveTerminalSpawnEnv } from './terminal-spawn-env.ts'
 
 test('Given a GUI launch with a narrow PATH and C locale When starting an interactive terminal Then ZCode shell defaults preserve user entries and restore UTF-8/color', () => {
   const inherited = { PATH: '/custom/bin:/usr/bin', TERM: 'dumb', CI: '1', LANG: 'C', LC_CTYPE: 'POSIX', LC_ALL: 'C' }
   const resolved = resolveTerminalSpawnEnv(inherited, 'darwin', 'interactive-shell')
-  // mergePathEntries 使用宿主 node:path delimiter（Windows 为 ';'），断言跟随同一分隔符。
-  expect(resolved.PATH?.split(delimiter).slice(0, 2)).toEqual(['/custom/bin', '/usr/bin'])
-  expect(resolved.PATH?.split(delimiter).filter((path) => path === '/usr/bin')).toHaveLength(1)
+  // PATH 语义跟随目标平台（darwin 为 ':'），与宿主无关，在任意平台断言都确定。
+  expect(resolved.PATH?.split(':').slice(0, 2)).toEqual(['/custom/bin', '/usr/bin'])
+  expect(resolved.PATH?.split(':').filter((path) => path === '/usr/bin')).toHaveLength(1)
   expect(resolved.PATH).toContain('/opt/homebrew/bin')
   expect(resolved.TERM).toBe('xterm-256color')
   expect(resolved.COLORTERM).toBe('truecolor')
