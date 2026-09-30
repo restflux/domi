@@ -1116,15 +1116,33 @@ export function createSessionCheckoutModule(
     }
     if (lockOptions.cleanupOnly) return [...keys].sort()
     for (const root of roots) {
-      const canonicalRoot = await dependencies.files.canonicalize(root)
+      // 项目根或 checkout 目录可能在等待期间被移动/删除；资源不可解析时退回保守全局屏障
+      //（resources 为 undefined 时队列按全局串行且跳过身份守卫），
+      // 不让锁资源计算阻断交付证据读取等持久化路径。
+      let canonicalRoot: string
+      try {
+        canonicalRoot = await dependencies.files.canonicalize(root)
+      } catch {
+        return undefined
+      }
       keys.add(`root:${process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot}`)
       // 从当前 Git 身份取得 common-dir，不按 projectId 猜测仓库独立性。
-      const snapshot = await dependencies.git.inspect(root)
+      let snapshot: Awaited<ReturnType<typeof dependencies.git.inspect>>
+      try {
+        snapshot = await dependencies.git.inspect(root)
+      } catch {
+        return undefined
+      }
       if (!snapshot) return undefined
       commonDirs.add(snapshot.commonDir)
     }
     for (const dir of commonDirs) {
-      const canonicalDir = await dependencies.files.canonicalize(dir)
+      let canonicalDir: string
+      try {
+        canonicalDir = await dependencies.files.canonicalize(dir)
+      } catch {
+        return undefined
+      }
       keys.add(`git:${process.platform === 'win32' ? canonicalDir.toLowerCase() : canonicalDir}`)
     }
     return [...keys].sort()
@@ -1147,7 +1165,7 @@ export function createSessionCheckoutModule(
         await waitForSessionCheckoutSignal(waitForConflictingInspects(active.scope), queueWaitTimeoutMs)
         return await bindingQueue.run(lockOptions.operation, lockOptions.sessionIds?.[0], async () => {
           if (resources && JSON.stringify(await bindingResources(lockOptions)) !== JSON.stringify(resources)) {
-            throw new SessionCheckoutError('operation_not_allowed', '工作环境身份在等待期间变化，请重试')
+            throw new SessionCheckoutError('binding_identity_changed', '工作环境身份在等待期间变化，请重试')
           }
           return operation()
         }, { resources, priority: lockOptions.background ? 'maintenance' : 'foreground' })
@@ -1160,6 +1178,26 @@ export function createSessionCheckoutModule(
       if (maintenance) {
         pendingMaintenanceOperations -= 1
         notifyBindingStateChanged()
+      }
+    }
+  }
+
+  function isBindingIdentityChanged(error: unknown): boolean {
+    return error instanceof SessionCheckoutError && error.code === 'binding_identity_changed'
+  }
+
+  /**
+   * bind 系操作在排队等待期间可能观察到兄弟操作写入的 binding（例如同会话并发提交相同选择），
+   * 身份守卫会要求重试；bindTarget 从最新状态幂等收敛，因此这里有界自动重试，
+   * 不把可收敛的竞态暴露给上层。重试会以全新资源集合重新排队，序列化语义不变。
+   */
+  async function runWithBindingIdentityRetry<T>(operation: () => Promise<T>): Promise<T> {
+    const maxAttempts = 3
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await operation()
+      } catch (error) {
+        if (attempt >= maxAttempts || !isBindingIdentityChanged(error)) throw error
       }
     }
   }
@@ -4613,10 +4651,10 @@ export function createSessionCheckoutModule(
     ), { operation: 'runExclusiveSessionMutation', sessionIds: [sessionId] }),
     bind: (sessionId, choice, expectedProjectId) => {
       const requestStartedAt = Date.now()
-      return withBindingLock(
+      return runWithBindingIdentityRetry(() => withBindingLock(
         () => bindTarget(sessionId, choice, undefined, 0, requestStartedAt, expectedProjectId),
         { operation: 'bind', sessionIds: choice.kind === 'inherit' ? [sessionId, choice.parentSessionId] : [sessionId] },
-      )
+      ))
     },
     cloneIsolatedTarget: (sourceSessionId, childSessionId, expectedSourceRevision) => withBindingLock(
       () => cloneIsolatedTarget(sourceSessionId, childSessionId, expectedSourceRevision),
@@ -4624,17 +4662,17 @@ export function createSessionCheckoutModule(
     ),
     bindVerifiedIsolated: (sessionId, proof) => {
       const requestStartedAt = Date.now()
-      return withBindingLock(
+      return runWithBindingIdentityRetry(() => withBindingLock(
         () => bindTarget(sessionId, { kind: 'isolated' }, proof, 0, requestStartedAt),
         { operation: 'bindVerifiedIsolated', sessionIds: [sessionId] },
-      )
+      ))
     },
     beginNextIteration: (sessionId) => {
       const requestStartedAt = Date.now()
-      return withBindingLock(
+      return runWithBindingIdentityRetry(() => withBindingLock(
         () => bindTarget(sessionId, { kind: 'isolated' }, undefined, 0, requestStartedAt),
         { operation: 'beginNextIteration', sessionIds: [sessionId] },
-      )
+      ))
     },
     captureSessionHandoff: (sessionId, expectedRevision) => withBindingLock(
       () => captureSessionHandoff(sessionId, expectedRevision),

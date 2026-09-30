@@ -500,6 +500,7 @@ export const SESSION_CHECKOUT_ERROR_CODES = [
   'preview_modified',
   'collaborator_active',
   'operation_not_allowed',
+  'binding_identity_changed',
   'recovery_unsafe',
 ] as const
 

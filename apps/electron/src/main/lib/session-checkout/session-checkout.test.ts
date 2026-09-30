@@ -3994,7 +3994,12 @@ describe.concurrent('SessionCheckoutModule', () => {
       resume()
       await Promise.allSettled([mutation, alias])
     }
-    await expect(alias).rejects.toThrow('身份在等待期间变化')
+    // 等待期间项目根变化后，bind 在模块内部以全新资源集合有界重试：
+    // 不把旧仓库锁用于新项目目标，且收敛绑定到项目当前根目录。
+    const aliasView = await alias
+    expect(aliasView.checkout.kind).toBe('local')
+    const aliasLease = await context.module.lease('alias-session')
+    expect(aliasLease.cwd).toBe(realpathSync(otherRoot))
   }, 60_000)
 
   test('Given 自动清理巡检挂起 When 同仓库新会话绑定 Then 新会话可启动且清理记录不丢失', async () => {
