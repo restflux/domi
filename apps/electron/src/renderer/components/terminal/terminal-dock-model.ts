@@ -22,6 +22,21 @@ export function selectWorkspaceTerminals(
     .sort((left, right) => left.startedAt - right.startedAt)
 }
 
+/**
+ * 对齐 ZCode terminalPanelState：关闭当前 active tab 时优先回到前一个 tab，
+ * 关闭非 active tab 时保留当前 active；没有前一个时才回到剩余列表首项。
+ */
+export function resolveClosedDockTerminalId(
+  previousIds: readonly string[],
+  remainingIds: readonly string[],
+  closedId: string,
+  activeId?: string,
+): string | undefined {
+  if (activeId && activeId !== closedId && remainingIds.includes(activeId)) return activeId
+  const closedIndex = previousIds.indexOf(closedId)
+  return remainingIds[Math.max(0, closedIndex - 1)] ?? remainingIds[0]
+}
+
 export function terminalStatusLabel(terminal: TerminalSessionView): string {
   if (terminal.sourceTarget?.stale) return '上一轮'
   if (terminal.status === 'starting') return '启动中'

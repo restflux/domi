@@ -13,6 +13,7 @@ import {
   accumulateTerminalServiceOutput,
   type TerminalServiceOutputState,
 } from '@/components/terminal/running-terminals-model.ts'
+import { resolveClosedDockTerminalId, selectDockTerminals } from '@/components/terminal/terminal-dock-model.ts'
 import {
   activateSessionRightWorkspaceTab,
   rightWorkspaceOpenAtom,
@@ -52,18 +53,21 @@ export function useGlobalTerminalListeners(): void {
     })
 
     const disposeState = window.electronAPI.terminal.onStateChanged((change: TerminalStateChange) => {
+      const previousState = store.get(terminalStateMapAtom)
       store.set(terminalStateMapAtom, (current) => applyTerminalStateChange(current, change))
       if ('closed' in change) {
         sidePaneTerminalSessionRegistry.release(JSON.stringify([change.ownerSessionId, change.terminalId]))
         clearServiceOutput(change.terminalId)
         store.set(terminalActiveIdMapAtom, (current) => {
-          if (current.get(change.ownerSessionId) !== change.terminalId) return current
-          const nextTerminal = [...store.get(terminalStateMapAtom).values()]
-            .find((terminal) => terminal.ownerSessionId === change.ownerSessionId
-              && terminal.kind === 'user-shell'
-              && terminal.presentation === 'dock')
+          const activeId = current.get(change.ownerSessionId)
+          if (activeId !== change.terminalId) return current
+          const previousIds = selectDockTerminals(previousState.values(), change.ownerSessionId)
+            .map((terminal) => terminal.terminalId)
+          const remainingIds = selectDockTerminals(store.get(terminalStateMapAtom).values(), change.ownerSessionId)
+            .map((terminal) => terminal.terminalId)
+          const nextId = resolveClosedDockTerminalId(previousIds, remainingIds, change.terminalId, activeId)
           const next = new Map(current)
-          if (nextTerminal) next.set(change.ownerSessionId, nextTerminal.terminalId)
+          if (nextId) next.set(change.ownerSessionId, nextId)
           else next.delete(change.ownerSessionId)
           return next
         })

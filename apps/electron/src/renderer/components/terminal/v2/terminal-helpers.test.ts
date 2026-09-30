@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { IBuffer } from '@xterm/xterm'
 import { getHttpLinksForTerminalBufferLine } from './terminalLinks'
 import { normalizePowerShellReadlineRedraw } from './terminalDataTransform'
+import { resolveClosedDockTerminalId } from '../terminal-dock-model.ts'
 
 function textBuffer(text: string): IBuffer {
   return {
@@ -30,5 +31,11 @@ describe('ZCode terminal helpers on Domi terminal buffers', () => {
     expect(normalizePowerShellReadlineRedraw(redraw, 'pwsh')).toContain('\u001b[49m')
     expect(normalizePowerShellReadlineRedraw(redraw, 'bash')).toBe(redraw)
     expect(normalizePowerShellReadlineRedraw('\u001b[40m plain', 'pwsh')).toBe('\u001b[40m plain')
+  })
+
+  test('Given three terminal tabs When the active last tab exits Then focus returns to the previous tab', () => {
+    expect(resolveClosedDockTerminalId(['one', 'two', 'three'], ['one', 'two'], 'three', 'three')).toBe('two')
+    expect(resolveClosedDockTerminalId(['one', 'two', 'three'], ['one', 'three'], 'two', 'three')).toBe('three')
+    expect(resolveClosedDockTerminalId(['one', 'two', 'three'], ['two', 'three'], 'one', 'one')).toBe('two')
   })
 })
