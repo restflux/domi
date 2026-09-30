@@ -1,6 +1,6 @@
 # Domi 桌面安装包发布
 
-Domi 的首个二进制发布范围是 Windows x64 与 Linux x64。macOS 配置继续保留，但在具备真实 Mac 构建、签名和安装验证环境前不发布预构建包。
+Domi 的二进制发布范围是 Windows x64、Linux x64 与 macOS arm64。macOS 包为未签名（ad-hoc）构建：无 Developer ID 签名与 notarization，用户首次打开需右键「打开」跳过 Gatekeeper 提示；macOS x64 与正式签名/notarization 仍需真实证书与安装验证环境后再补。
 
 发布流程只生成 GitHub Draft Release，不接入 Electron 自动更新，也不配置 electron-builder publish provider。维护者核对 Draft 中的安装包、校验和与发布说明后，才在 GitHub 页面手动公开为正式 Release。只有 alpha、beta、rc 或明确用于测试的版本才标记为 Pre-release。
 
@@ -9,6 +9,7 @@ Domi 的首个二进制发布范围是 Windows x64 与 Linux x64。macOS 配置�
 | 平台 | 资产 | 当前验证 |
 | --- | --- | --- |
 | Windows x64 | `Domi-<version>-windows-x64-setup.exe` | NSIS 打包、`win-unpacked/Domi.exe` 启动 smoke |
+| macOS arm64 | `Domi-<version>-macos-arm64.dmg` | macOS runner 打包（ad-hoc 签名）、unpacked 应用启动 smoke |
 | Linux x64 | `Domi-<version>-linux-x64.AppImage` | Linux runner 打包、unpacked 应用启动 smoke |
 | Debian/Ubuntu x64 | `Domi-<version>-linux-x64.deb` | `dpkg-deb --info` 包结构检查 |
 | 所有平台 | `SHA256SUMS.txt` | 合并 Windows 与 Linux 资产的 SHA-256 |
@@ -113,14 +114,13 @@ Get-FileHash -Algorithm SHA256 .\Domi-<version>-windows-x64-setup.exe
 
 不得把 PFX、密码、Base64 证书内容或云签名凭据写入仓库、workflow 日志、Issue 或 Release Notes。首次启用签名时，应检查安装程序和 `win-unpacked/Domi.exe` 的 Authenticode 状态，并重新做安装与启动验证。
 
-## macOS 后续发布条件
+## macOS 签名升级与 x64 扩展
 
-只有满足以下条件后，才把 macOS 加入二进制支持矩阵：
+当前 macOS arm64 已在真实 macOS runner 上构建、启动 smoke 并发布未签名（ad-hoc）DMG。后续升级条件：
 
-- 在真实 macOS runner 上分别构建需要支持的 arm64/x64 架构；
-- 编译并验证 `macos-agent-island-helper`；
-- 配置 Developer ID Application 签名、hardened runtime、entitlements；
-- 完成 notarization 与 stapling；
+- 获得证书后配置 Developer ID Application 签名、hardened runtime、entitlements，并完成 notarization 与 stapling；
+- 发布说明更新为已签名；在此之前 macOS 包必须保留 Gatekeeper 右键「打开」提示；
+- 需要 x64 支持时，先准备 x64 版 `macos-agent-island-helper` 并在 Intel Mac 上完成安装验证；
 - 在干净 Mac 上验证 DMG 安装、首次启动和基本 Work 会话。
 
-在这些条件完成前，不从 Windows 交叉生成或上传未经验证的 macOS 安装包。
+不从 Windows 交叉生成或上传未经验证的 macOS 安装包。

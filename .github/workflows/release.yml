@@ -256,12 +256,89 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  macos:
+    name: 构建 macOS arm64
+    needs: validate
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: 安装依赖
+        run: bun install --frozen-lockfile
+
+      - name: 准备 Electron 运行时
+        run: bunx install-electron
+
+      - name: 校验版本
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            bun run scripts/verify-release-version.ts "${GITHUB_REF_NAME}"
+          else
+            bun run scripts/verify-release-version.ts
+          fi
+
+      # 无签名证书时 electron-builder 对 arm64 自动 ad-hoc 签名（无 notarization，
+      # 用户首次打开需右键“打开”）；本 job 不禁用签名身份自动发现，否则完全无签名的
+      # arm64 二进制在 macOS 上无法启动。
+      - name: 生成 macOS 发布构建
+        working-directory: apps/electron
+        env:
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+        run: bun run dist:mac -- --publish never
+
+      - name: 校验打包后的 Pi runtime
+        working-directory: apps/electron
+        run: bun run verify:pi-runtime --packaged-resources=out/mac-arm64/resources
+
+      - name: macOS 启动 smoke
+        shell: bash
+        run: |
+          smoke_root="$PWD/apps/electron/out/release-smoke"
+          exe="$PWD/apps/electron/out/mac-arm64/Domi.app/Contents/MacOS/Domi"
+          test -x "$exe" || { echo "未找到打包产物: $exe"; exit 1; }
+          mkdir -p "$smoke_root/home" "$smoke_root/user-data"
+          HOME="$smoke_root/home" \
+          timeout 30s "$exe" "--user-data-dir=$smoke_root/user-data" \
+            --disable-gpu \
+            --launch-smoke
+
+      - name: 整理 macOS 发布资产
+        shell: bash
+        run: |
+          version="$(bun -e "console.log(require('./apps/electron/package.json').version)")"
+          dmg="$(find apps/electron/out -maxdepth 1 -type f -name 'Domi-*-arm64.dmg' -print -quit)"
+          test -n "$dmg" || { echo "未找到 macOS 安装包"; exit 1; }
+          mkdir -p release-assets
+          cp "$dmg" "release-assets/Domi-$version-macos-arm64.dmg"
+          cd release-assets
+          shasum -a 256 "Domi-$version-macos-arm64.dmg" | awk '{print $1"  "$2}' > SHA256SUMS-macos.txt
+
+      - name: 保存 macOS 发布资产
+        uses: actions/upload-artifact@v4
+        with:
+          name: domi-macos-arm64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
   draft-release:
     name: 创建 Draft Release
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs:
       - windows
       - linux
+      - macos
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -279,7 +356,8 @@ jobs:
           cd release-assets
           sha256sum --check SHA256SUMS-windows.txt
           sha256sum --check SHA256SUMS-linux.txt
-          rm SHA256SUMS-windows.txt SHA256SUMS-linux.txt
+          sha256sum --check SHA256SUMS-macos.txt
+          rm SHA256SUMS-windows.txt SHA256SUMS-linux.txt SHA256SUMS-macos.txt
           sha256sum Domi-* > SHA256SUMS.txt
 
       - name: 创建或更新 Draft Release

@@ -33,4 +33,14 @@ describe('Domi Release Candidate workflow', () => {
   test('只有 Draft Release job 获取 GitHub 发布 token', () => {
     expect(workflow.match(/GH_TOKEN: \$\{\{ github\.token \}\}/g)).toHaveLength(1)
   })
+
+  test('macOS arm64 构建不自动发布且资产进入统一校验', () => {
+    expect(workflow).toContain('runs-on: macos-latest')
+    expect(workflow).toContain('run: bun run dist:mac -- --publish never')
+    expect(workflow).toContain('name: domi-macos-arm64')
+    expect(workflow).toContain('sha256sum --check SHA256SUMS-macos.txt')
+    // arm64 需要 ad-hoc 签名才能启动，mac job 不禁用签名身份自动发现
+    const macosJob = workflow.slice(workflow.indexOf('  macos:'), workflow.indexOf('  draft-release:'))
+    expect(macosJob).not.toContain('CSC_IDENTITY_AUTO_DISCOVERY')
+  })
 })
