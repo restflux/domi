@@ -299,7 +299,7 @@ jobs:
 
       - name: 校验打包后的 Pi runtime
         working-directory: apps/electron
-        run: bun run verify:pi-runtime --packaged-resources=out/mac-arm64/resources
+        run: bun run verify:pi-runtime --packaged-resources="out/mac-arm64/Domi.app/Contents/Resources"
 
       - name: macOS 启动 smoke
         shell: bash
