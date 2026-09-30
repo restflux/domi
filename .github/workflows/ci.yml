@@ -9,6 +9,9 @@ on:
     branches:
       - main
   workflow_dispatch:
+  # 每日 20:00 UTC（北京时间 04:00）自动跑全量车道：含全量测试基线对比。
+  schedule:
+    - cron: '0 20 * * *'
 
 concurrency:
   group: domi-ci-${{ github.workflow }}-${{ github.ref }}
@@ -19,7 +22,8 @@ permissions:
 
 jobs:
   windows:
-    name: Windows 必过
+    # push/PR 走快车道（类型检查、M0、构建打包与 smoke）；schedule/手动触发跑全量。
+    name: Windows 必过 ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '（全量）' || '（快车道）' }}
     runs-on: windows-latest
     steps:
       - name: 检出代码
@@ -48,6 +52,8 @@ jobs:
           apps/electron/src/main/lib/product-update-policy.test.ts
 
       - name: 对比全量测试基线
+        # 仅全量车道（schedule/手动）执行；快车道跳过约 30 分钟的全量串行测试。
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
           # GitHub Windows 的默认 TEMP 可能是 8.3 短路径，而 realpath 会展开为长路径，
           # 造成 checkout 路径断言和锁归属判断出现系统性误报。
@@ -94,7 +100,7 @@ jobs:
           }
 
   linux:
-    name: Linux 必过
+    name: Linux 必过 ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '（全量）' || '（快车道）' }}
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码

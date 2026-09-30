@@ -41,8 +41,9 @@ Windows 工作流支持 `WIN_CSC_LINK` 与 `WIN_CSC_KEY_PASSWORD` Repository Sec
 2. 工作区没有未提交改动。
 3. 根 `package.json` 与 `apps/electron/package.json` 使用相同版本。
 4. 版本符合 semver，Release tag 必须严格使用 `v<version>`，例如 `v0.20.2`。
-5. Windows 必过 CI 已通过；新增或修改 Linux 打包逻辑时，先完成 Release Candidate workflow 的手动试跑。
-6. `README.md`、`README.en.md`、许可证和第三方声明与本次资产内容一致。
+5. tag 构建的校验 job 会运行发布链路测试与类型检查，这是硬门槛；push CI 默认为快车道（类型检查、M0 测试、构建打包与启动 smoke），不要求等它全绿后再打 tag。全量测试基线每日定时运行，发布前如需全量确认，可在 Actions 手动触发一次 Domi CI（全量车道）。
+6. 新增或修改打包/发布链路时，先完成 Release Candidate workflow 的手动试跑。
+7. `README.md`、`README.en.md`、许可证和第三方声明与本次资产内容一致。
 
 本地检查版本：
 
