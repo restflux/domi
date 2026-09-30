@@ -10,7 +10,7 @@
 
 import * as React from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { Keyboard, PanelRight, PanelRightClose, SquareTerminal } from 'lucide-react'
+import { Keyboard, PanelRight, PanelRightClose } from 'lucide-react'
 import {
   tabsAtom,
   activeTabIdAtom,
@@ -43,14 +43,9 @@ import {
   rightWorkspaceOpenAtom,
   rightWorkspaceSessionStateMapAtom,
 } from '@/atoms/right-workspace-atoms'
-import { terminalDockOpenMapAtom, terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
-import { toast } from 'sonner'
-import { selectRunningAgentTerminals } from '@/components/terminal/running-terminals-model.ts'
-import { RunningTerminalsPopover } from '@/components/terminal/RunningTerminalsPopover.tsx'
 import { SessionFilesPopover } from '@/components/right-workspace/SessionFilesPopover'
 import { resolveRightWorkspaceToolAfterSessionFilesClose } from '@/components/right-workspace/session-files-popover-model'
 import { canCloseMainTab } from '@/lib/tab-close-policy.ts'
-import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 
 export function TabBar(): React.ReactElement {
   const isModern = useAtomValue(interfaceVariantAtom) !== 'classic'
@@ -236,18 +231,6 @@ function TabBarInner({
   const activeTab = React.useMemo(() => tabs.find((t) => t.id === activeTabId), [tabs, activeTabId])
   const showPanelButton = activeTab?.type === 'agent'
   const activeAgentSessionId = activeTab?.type === 'agent' ? activeTab.sessionId : null
-  const [terminalOpenMap] = useAtom(terminalDockOpenMapAtom)
-  const terminalStates = useAtomValue(terminalStateMapAtom)
-  const isTerminalOpen = activeAgentSessionId
-    ? terminalOpenMap.get(activeAgentSessionId) ?? false
-    : false
-
-  // 只有 TerminalRun 托管的长期进程代表可监控服务；Agent/Bash 运行状态不占用服务入口。
-  const hasRunningServiceTerminal = React.useMemo(() => {
-    if (!activeAgentSessionId) return false
-    return selectRunningAgentTerminals([...terminalStates.values()], activeAgentSessionId).length > 0
-  }, [activeAgentSessionId, terminalStates])
-
   const togglePanel = React.useCallback(() => {
     if (activeTab?.type !== 'agent') return
     if (!isPanelOpen) {
@@ -260,31 +243,6 @@ function TabBarInner({
     }
     setSidePanelOpen((value) => !value)
   }, [activeTab, isPanelOpen, setRightWorkspaceSessionStateMap, setSidePanelOpen])
-
-  const creatingTerminalRef = React.useRef<ManualTerminalCreationGuard>({ pending: false })
-  const createDockTerminal = React.useCallback(async (): Promise<void> => {
-    if (!activeAgentSessionId) return
-    await createManualTerminal(creatingTerminalRef.current, {
-      create: (input) => window.electronAPI.terminal.create(input),
-      onError: (error) => {
-        console.error('[TabBar] 创建终端失败:', error)
-        toast.error('创建终端失败')
-      },
-    }, {
-      ownerSessionId: activeAgentSessionId,
-      presentation: 'dock',
-      cols: 100,
-      rows: 28,
-    })
-  }, [activeAgentSessionId])
-
-  // 右上角终端按钮展开“运行中服务”浮层（Radix Popover 受控，外点收起由 Radix 处理）
-  const [runningPopoverOpen, setRunningPopoverOpen] = React.useState(false)
-
-  // 切换标签/会话，或服务进程全部结束时收起浮层，避免残留
-  React.useEffect(() => {
-    setRunningPopoverOpen(false)
-  }, [activeAgentSessionId, hasRunningServiceTerminal])
 
   const openShortcutGuide = React.useCallback(() => {
     setShortcutGuideOpen(true)
@@ -417,14 +375,9 @@ function TabBarInner({
         isModern={isModern}
         showPanelButton={showPanelButton}
         isPanelOpen={isPanelOpen}
-        isTerminalOpen={isTerminalOpen}
         activeAgentSessionId={activeAgentSessionId}
-        runningPopoverOpen={runningPopoverOpen}
-        hasRunningServiceTerminal={hasRunningServiceTerminal}
         onOpenShortcutGuide={openShortcutGuide}
-        onToggleTerminal={() => void createDockTerminal()}
         onTogglePanel={togglePanel}
-        onSetRunningPopoverOpen={setRunningPopoverOpen}
       />
     </div>
   )
@@ -436,27 +389,17 @@ function TabBarActions({
   isModern,
   showPanelButton,
   isPanelOpen,
-  isTerminalOpen,
   activeAgentSessionId,
-  runningPopoverOpen,
-  hasRunningServiceTerminal,
   onOpenShortcutGuide,
-  onToggleTerminal,
   onTogglePanel,
-  onSetRunningPopoverOpen,
 }: {
   isWindows: boolean
   isModern: boolean
   showPanelButton: boolean
   isPanelOpen: boolean
-  isTerminalOpen: boolean
   activeAgentSessionId: string | null
-  runningPopoverOpen: boolean
-  hasRunningServiceTerminal: boolean
   onOpenShortcutGuide: () => void
-  onToggleTerminal: () => void
   onTogglePanel: () => void
-  onSetRunningPopoverOpen: (open: boolean) => void
 }): React.ReactElement {
   const panelActionLabel = isPanelOpen ? '折叠右侧工作区' : '打开右侧工作区'
 
@@ -487,26 +430,6 @@ function TabBarActions({
           <p>查看快捷键地图</p>
         </TooltipContent>
       </Tooltip>}
-
-      {showPanelButton && (
-        <RunningTerminalsPopover
-          ownerSessionId={activeAgentSessionId ?? ''}
-          open={runningPopoverOpen}
-          onOpenChange={(nextOpen) => {
-            if (nextOpen && !hasRunningServiceTerminal) {
-              // 无运行中服务：不弹浮层，直接打开底部手动终端。
-              onToggleTerminal()
-              return
-            }
-            onSetRunningPopoverOpen(nextOpen)
-          }}
-          onOpenTerminalPanel={onToggleTerminal}
-          icon={<SquareTerminal className="size-3.5" />}
-          tooltipLabel={hasRunningServiceTerminal ? '查看运行中的服务' : '手动终端'}
-          active={isTerminalOpen || runningPopoverOpen}
-          hasRunningDot={hasRunningServiceTerminal}
-        />
-      )}
 
       {activeAgentSessionId && (
         <SessionFilesPopover

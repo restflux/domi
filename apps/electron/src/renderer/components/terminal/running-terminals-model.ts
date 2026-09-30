@@ -1,7 +1,7 @@
 /**
  * running-terminals-model — 后台服务终端的纯逻辑
  *
- * 顶部入口只关心由 TerminalRun 托管、仍在运行的长期进程。
+ * 会话概览只展示由 TerminalRun 托管、仍在运行的长期进程。
  * 普通 Bash 工具和 Agent run 状态不代表独立服务，不进入这里。
  */
 

@@ -1,4 +1,4 @@
-/** 会话文件浮窗：只按确定的来源区分生成内容与用户附加输入。 */
+/** 会话概览浮窗：展示会话文件、来源与当前运行中的服务。 */
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
@@ -17,8 +17,10 @@ import { useOpenPreview } from '@/components/diff/preview-opener'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ImageLightbox } from '@/components/ui/image-lightbox'
 import { getMediaTypeFromFilename, setFilePanelDragData } from '@/lib/file-panel-drag'
+import { createManualTerminal, type ManualTerminalCreationGuard } from '@/lib/manual-terminal-creation.ts'
 import { getSessionSourceCapabilities, getSessionSourceOpenMode } from './session-source-actions'
 import { SessionSourceMenu } from './SessionSourceMenu'
+import { RunningServicesSection } from '@/components/terminal/RunningServicesSection'
 import { selectConfirmedSessionOutputs, selectSessionFileSources } from './session-files-popover-model'
 
 interface SessionFilesCardProps {
@@ -48,6 +50,7 @@ export function SessionFilesCard({ sessionId, sessionPath, onViewAll }: SessionF
   const [lightbox, setLightbox] = React.useState<{ src: string; alt: string } | null>(null)
   const [hiddenPaths, setHiddenPaths] = React.useState<Set<string>>(new Set())
   const imageRequestRef = React.useRef(0)
+  const creatingTerminalRef = React.useRef<ManualTerminalCreationGuard>({ pending: false })
   const openPreview = useOpenPreview()
 
   React.useEffect(() => {
@@ -162,6 +165,21 @@ export function SessionFilesCard({ sessionId, sessionPath, onViewAll }: SessionF
     setFilesVersion((current) => current + 1)
   }
 
+  const openManualTerminal = React.useCallback((): void => {
+    void createManualTerminal(creatingTerminalRef.current, {
+      create: (input) => window.electronAPI.terminal.create(input),
+      onError: (error) => {
+        console.error('[SessionFilesCard] 创建终端失败:', error)
+        toast.error('创建终端失败')
+      },
+    }, {
+      ownerSessionId: sessionId,
+      presentation: 'dock',
+      cols: 100,
+      rows: 28,
+    })
+  }, [sessionId])
+
   return (
     <>
       <ImageLightbox src={lightbox?.src} alt={lightbox?.alt} open={lightbox !== null} onOpenChange={(open) => { if (!open) setLightbox(null) }} />
@@ -234,6 +252,7 @@ export function SessionFilesCard({ sessionId, sessionPath, onViewAll }: SessionF
           <span>查看全部</span>
         </button>
       </div>
+      <RunningServicesSection ownerSessionId={sessionId} onOpenTerminalPanel={openManualTerminal} />
     </>
   )
 }
