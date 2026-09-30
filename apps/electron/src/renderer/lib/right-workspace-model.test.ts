@@ -27,10 +27,26 @@ const allAvailable: RightWorkspaceAvailability = {
 
 describe('Right Workspace 状态模型', () => {
   test('Given 文件和改动原本常驻 When 切到 v2 Then 仅显式打开的标签出现，v1 始终保留', () => {
-    const tabs = [{ tool: 'files' as const }, { tool: 'changes' as const }]
+    const tabs = [{ tool: 'files' as const }, { tool: 'session-files' as const }, { tool: 'changes' as const }]
     expect(visibleRightWorkspaceTabs(tabs, true, { activeTool: 'files' })).toEqual([])
     expect(visibleRightWorkspaceTabs(tabs, true, openRightWorkspaceV2OptionalTab(undefined, 'changes'))).toEqual([{ tool: 'changes' }])
     expect(visibleRightWorkspaceTabs(tabs, false, { activeTool: 'files' })).toEqual(tabs)
+  })
+
+  test('Given 项目文件与会话文件已拆分 When v2 按需打开 Then 两个独立标签互不重复、可各自关闭', () => {
+    const tabs = [{ tool: 'session-files' as const }, { tool: 'files' as const }]
+    const sessionFiles = openRightWorkspaceV2OptionalTab(undefined, 'session-files')
+    expect(sessionFiles.v2OpenTools).toEqual(['session-files'])
+    expect(visibleRightWorkspaceTabs(tabs, true, sessionFiles)).toEqual([{ tool: 'session-files' }])
+
+    const both = openRightWorkspaceV2OptionalTab(sessionFiles, 'files')
+    expect(both.v2OpenTools).toEqual(['session-files', 'files'])
+    expect(visibleRightWorkspaceTabs(tabs, true, both)).toEqual(tabs)
+    expect(openRightWorkspaceV2OptionalTab(both, 'session-files').v2OpenTools).toEqual(['session-files', 'files'])
+
+    const afterSessionFiles = closeRightWorkspaceV2OptionalTab(both, 'session-files', ['files'])
+    expect(afterSessionFiles.v2OpenTools).toEqual(['files'])
+    expect(afterSessionFiles.activeTabId).toBe('files')
   })
 
   test('Given v2 空工作区 When 从加号按需打开文件与改动 Then 不重复并可关闭回到启动页', () => {

@@ -11,6 +11,7 @@ import {
   positionSessionFilesPopover,
   resolveRightWorkspaceToolAfterSessionFilesClose,
   resolveSessionFilesConversationReservation,
+  resolveSessionFilesViewAllTab,
   selectConfirmedSessionOutputs,
   selectSessionFileSources,
   shouldCloseSessionFilesPopoverOnPointerDown,
@@ -155,7 +156,13 @@ describe('会话文件浮窗入口', () => {
   test('Given 会话文件浮窗正在展示 When 打开完整右侧栏 Then 关闭浮窗并转到改动，不把文件恢复进侧栏', () => {
     expect(resolveRightWorkspaceToolAfterSessionFilesClose(undefined)).toBe('changes')
     expect(resolveRightWorkspaceToolAfterSessionFilesClose('files')).toBe('changes')
+    expect(resolveRightWorkspaceToolAfterSessionFilesClose('session-files')).toBe('changes')
     expect(resolveRightWorkspaceToolAfterSessionFilesClose('browser')).toBe('browser')
+  })
+
+  test('Given 会话概览点击查看全部 When 展开完整右侧栏 Then v2 打开独立会话文件标签，v1 回到文件工具', () => {
+    expect(resolveSessionFilesViewAllTab(true)).toBe('session-files')
+    expect(resolveSessionFilesViewAllTab(false)).toBe('files')
   })
 
 })

@@ -12,6 +12,8 @@ interface RightWorkspaceHeaderProps {
   fileSourceFilter: AgentFileSourceFilter
   scratchSaveState: ScratchPadSaveState
   onFileSourceFilterChange: (filter: AgentFileSourceFilter) => void
+  /** v2 已拆分会话/项目文件标签，头部不再提供来源切换；v1 仍保留分段控件。 */
+  showFileSourceToggle?: boolean
 }
 
 export function RightWorkspaceHeader({
@@ -20,10 +22,13 @@ export function RightWorkspaceHeader({
   fileSourceFilter,
   scratchSaveState,
   onFileSourceFilterChange,
+  showFileSourceToggle = true,
 }: RightWorkspaceHeaderProps): React.ReactElement | null {
   const { t } = useTranslation('workspace')
   // Browser 和 Terminal 自带内容上下文；Changes 与问答也无需重复工具名称。
   if (activeTool === 'browser' || activeTool === 'terminal' || activeTool === 'changes' || activeTool === 'side-chat') return null
+  // 会话文件标签自身已限定来源；v2 项目文件标签同样不需要头部切换。
+  if (activeTool === 'session-files' || (activeTool === 'files' && !showFileSourceToggle)) return null
 
   const previewContextTitle = activeTool === 'preview'
     ? previewTitle ?? t('preview')

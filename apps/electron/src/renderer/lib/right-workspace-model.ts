@@ -1,4 +1,4 @@
-export type RightWorkspaceTool = 'files' | 'changes' | 'browser' | 'terminal' | 'scratch' | 'preview' | 'side-chat'
+export type RightWorkspaceTool = 'files' | 'session-files' | 'changes' | 'browser' | 'terminal' | 'scratch' | 'preview' | 'side-chat'
 
 export const MIN_RIGHT_WORKSPACE_WIDTH = 340
 export const MAX_RIGHT_WORKSPACE_WIDTH = 720
@@ -14,7 +14,7 @@ export interface RightWorkspaceAvailability {
 
 export type RightWorkspaceTabId = RightWorkspaceTool | `browser:${string}` | `terminal:${string}`
 
-export type RightWorkspaceOptionalTab = 'files' | 'changes'
+export type RightWorkspaceOptionalTab = 'files' | 'session-files' | 'changes'
 
 export interface RightWorkspaceSessionState {
   activeTool: RightWorkspaceTool
@@ -129,9 +129,11 @@ export function resolveRightWorkspaceTool(
     : DEFAULT_RIGHT_WORKSPACE_TOOL
 }
 
+const RIGHT_WORKSPACE_V2_OPTIONAL_TOOLS: readonly RightWorkspaceTool[] = ['files', 'session-files', 'changes']
+
 export function visibleRightWorkspaceTabs<T extends { tool: RightWorkspaceTool }>(tabs: readonly T[], isWorkbenchV2: boolean, state: RightWorkspaceSessionState): T[] {
   if (!isWorkbenchV2) return [...tabs]
-  return tabs.filter((tab) => (tab.tool !== 'files' && tab.tool !== 'changes') || state.v2OpenTools?.includes(tab.tool))
+  return tabs.filter((tab) => !RIGHT_WORKSPACE_V2_OPTIONAL_TOOLS.includes(tab.tool) || (state.v2OpenTools?.some((tool) => tool === tab.tool) ?? false))
 }
 
 export function openRightWorkspaceV2OptionalTab(state: RightWorkspaceSessionState | undefined, tool: RightWorkspaceOptionalTab): RightWorkspaceSessionState {

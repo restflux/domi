@@ -25,6 +25,7 @@ import {
   positionSessionFilesPopover,
   resolveRightWorkspaceToolAfterSessionFilesClose,
   resolveSessionFilesConversationReservation,
+  resolveSessionFilesViewAllTab,
   shouldCloseSessionFilesPopoverOnPointerDown,
 } from './session-files-popover-model'
 
@@ -61,7 +62,7 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
     }
     setRightWorkspaceSessionStateMap((current) => {
       const currentState = current.get(sessionId)
-      if (isWorkbenchV2 && currentState?.v2OpenTools?.includes('files')) return current
+      if (isWorkbenchV2 && (currentState?.v2OpenTools?.includes('files') || currentState?.v2OpenTools?.includes('session-files'))) return current
       const nextTool = resolveRightWorkspaceToolAfterSessionFilesClose(currentState?.activeTool)
       if (currentState?.activeTool === nextTool) return current
       return activateSessionRightWorkspaceTool(current, sessionId, nextTool)
@@ -161,7 +162,7 @@ export function SessionFilesPopover({ sessionId, rightWorkspaceOpen }: SessionFi
     setRightWorkspaceSessionStateMap((current) => {
       if (!isWorkbenchV2) return activateSessionRightWorkspaceTool(current, sessionId, 'files')
       const next = new Map(current)
-      next.set(sessionId, openRightWorkspaceV2OptionalTab(current.get(sessionId), 'files'))
+      next.set(sessionId, openRightWorkspaceV2OptionalTab(current.get(sessionId), resolveSessionFilesViewAllTab(true)))
       return next
     })
     setRightWorkspaceOpen(true)

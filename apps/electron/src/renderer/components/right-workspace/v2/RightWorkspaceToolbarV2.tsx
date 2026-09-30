@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable'
-import { FolderClosed, GitCompareArrows, Globe2, Maximize2, Minimize2, NotebookPen, PanelRightClose, Plus, SquareTerminal } from 'lucide-react'
+import { Blinds, FolderClosed, GitCompareArrows, Globe2, Maximize2, Minimize2, NotebookPen, PanelRightClose, Plus, SquareTerminal } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.tsx'
 import type { RightWorkspaceTabId, RightWorkspaceTool } from '@/lib/right-workspace-model.ts'
@@ -25,6 +25,7 @@ interface RightWorkspaceToolbarProps {
   onCloseTab: (tabId: RightWorkspaceTabId) => void
   onAddBrowser: () => void
   onOpenTerminal: () => void
+  onOpenSessionFiles?: () => void
   onOpenFiles?: () => void
   onOpenChanges?: () => void
   onShowScratch: () => void
@@ -37,7 +38,7 @@ export function getHorizontalTabWheelDelta(deltaX: number, deltaY: number): numb
 }
 
 /** ZCode AnimatedSidePanePanel 的可排序等宽 tab 带；Domi 只提供 tab 身份与宿主操作。 */
-export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, hasUnseenChanges, expandAvailable, expanded, onTabChange, onCloseTab, onAddBrowser, onOpenTerminal, onOpenFiles, onOpenChanges, onShowScratch, onToggleExpand, onCloseWorkspace }: RightWorkspaceToolbarProps): React.ReactElement {
+export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, hasUnseenChanges, expandAvailable, expanded, onTabChange, onCloseTab, onAddBrowser, onOpenTerminal, onOpenSessionFiles, onOpenFiles, onOpenChanges, onShowScratch, onToggleExpand, onCloseWorkspace }: RightWorkspaceToolbarProps): React.ReactElement {
   const [order, setOrder] = React.useState<string[]>([])
   const [menuOpen, setMenuOpen] = React.useState(false)
   const viewport = React.useRef<HTMLDivElement>(null)
@@ -78,6 +79,7 @@ export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, has
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild><button type="button" aria-label="添加工具" title="添加工具" aria-expanded={menuOpen} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><Plus className="size-4" /></button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6} className="min-w-44" aria-label="添加工具菜单">
+          <DropdownMenuItem onSelect={onOpenSessionFiles} disabled={!onOpenSessionFiles} className="gap-2"><Blinds className="size-4" />会话文件</DropdownMenuItem>
           <DropdownMenuItem onSelect={onOpenFiles} disabled={!onOpenFiles} className="gap-2"><FolderClosed className="size-4" />项目文件</DropdownMenuItem>
           <DropdownMenuItem onSelect={onOpenChanges} disabled={!onOpenChanges} className="gap-2"><GitCompareArrows className="size-4" />改动</DropdownMenuItem>
           <DropdownMenuItem onSelect={onAddBrowser} className="gap-2"><Globe2 className="size-4" />新建浏览器</DropdownMenuItem>

@@ -46,6 +46,7 @@ import {
   terminalTabId,
   toolFromRightWorkspaceTab,
   visibleRightWorkspaceTabs,
+  type RightWorkspaceOptionalTab,
   type RightWorkspaceSessionState,
   type RightWorkspaceTabId,
   type RightWorkspaceTool,
@@ -71,7 +72,8 @@ function getPreviewTitle(filePath: string | undefined): string | undefined {
 }
 
 function toLegacyTab(tool: RightWorkspaceTool): AgentSidePanelTab | null {
-  if (tool === 'files' || tool === 'changes') return tool
+  if (tool === 'files' || tool === 'session-files') return 'files'
+  if (tool === 'changes') return 'changes'
   if (tool === 'side-chat') return 'chat'
   return null
 }
@@ -134,7 +136,8 @@ function ActiveRightSidePanel({
   }
 
   const tabs: RightWorkspaceToolbarTab[] = [
-    { id: 'files', tool: 'files', label: isWorkbenchV2 ? (fileSourceFilterMap[currentSessionId] === 'session' ? '会话文件' : '项目文件') : '文件', closeable: isWorkbenchV2 },
+    ...(isWorkbenchV2 ? [{ id: 'session-files' as const, tool: 'session-files' as const, label: '会话文件', closeable: true }] : []),
+    { id: 'files', tool: 'files', label: isWorkbenchV2 ? '项目文件' : '文件', closeable: isWorkbenchV2 },
     { id: 'changes', tool: 'changes', label: '改动', closeable: isWorkbenchV2 },
     ...(state.scratchVisible ? [{ id: 'scratch' as const, tool: 'scratch' as const, label: '草稿', closeable: true }] : []),
     ...workspaceTerminals.map((terminal) => ({
@@ -185,6 +188,9 @@ function ActiveRightSidePanel({
 
   const setActiveTab = (tabId: RightWorkspaceTabId): void => {
     const tool = toolFromRightWorkspaceTab(tabId)
+    // v2 的文件类标签自身限定来源；激活时同步来源，v1 仍由头部切换控制。
+    if (isWorkbenchV2 && tool === 'files') setFileSourceFilter('project')
+    if (tool === 'session-files') setFileSourceFilter('session')
     if (workspaceFocus?.sessionId === currentSessionId && (workspaceFocus.tabId ?? workspaceFocus.tool) !== tabId) setWorkspaceFocus(null)
     if (tool === 'changes') {
       setUnseenChangesMap((current) => {
@@ -245,8 +251,7 @@ function ActiveRightSidePanel({
       })
   }
 
-  const openOptionalTool = (tool: 'files' | 'changes'): void => {
-    if (tool === 'files') setFileSourceFilter('project')
+  const openOptionalTool = (tool: RightWorkspaceOptionalTab): void => {
     setActiveTab(tool)
     setWorkspaceStateMap((current) => {
       const next = new Map(current)
@@ -266,7 +271,7 @@ function ActiveRightSidePanel({
 
   const closeTab = (tabId: RightWorkspaceTabId): void => {
     if (workspaceFocus?.sessionId === currentSessionId && (workspaceFocus.tabId ?? workspaceFocus.tool) === tabId) setWorkspaceFocus(null)
-    if (isWorkbenchV2 && (tabId === 'files' || tabId === 'changes')) {
+    if (isWorkbenchV2 && (tabId === 'files' || tabId === 'session-files' || tabId === 'changes')) {
       const remaining = visibleTabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id)
       if (activeTabId === tabId && remaining.length > 0) {
         setActiveTab(resolveClosedTabFallback(visibleTabs.map((tab) => tab.id), tabId, state.previousTabId))
@@ -340,16 +345,24 @@ function ActiveRightSidePanel({
           onCloseTab={closeTab}
           onAddBrowser={addBrowser}
           onOpenTerminal={() => void createWorkspaceTerminal()}
+          onOpenSessionFiles={() => openOptionalTool('session-files')}
           onOpenFiles={() => openOptionalTool('files')}
           onOpenChanges={() => openOptionalTool('changes')}
           onShowScratch={showScratch}
           onToggleExpand={() => setWorkspaceFocus((current) => toggleRightWorkspaceFocus(current, currentSessionId, activeTabId))}
           onCloseWorkspace={() => setRightWorkspaceOpen(false)}
         />
-        {(!isWorkbenchV2 || (!showV2Launcher && !['browser', 'terminal'].includes(activeTool))) && <RightWorkspaceHeader activeTool={activeTool} previewTitle={getPreviewTitle(previewFile?.filePath)} fileSourceFilter={fileSourceFilter} scratchSaveState={scratchSaveState} onFileSourceFilterChange={setFileSourceFilter} />}
+        {(!isWorkbenchV2 || (!showV2Launcher && !['browser', 'terminal'].includes(activeTool))) && <RightWorkspaceHeader activeTool={activeTool} previewTitle={getPreviewTitle(previewFile?.filePath)} fileSourceFilter={fileSourceFilter} scratchSaveState={scratchSaveState} onFileSourceFilterChange={setFileSourceFilter} showFileSourceToggle={!isWorkbenchV2} />}
         <div className="min-h-0 flex-1 overflow-hidden titlebar-no-drag">
           {showV2Launcher ? (
-            <SidePaneOpenTabLauncher onOpenBrowser={addBrowser} onOpenTerminal={() => void createWorkspaceTerminal()} />
+            <SidePaneOpenTabLauncher
+              onOpenSessionFiles={() => openOptionalTool('session-files')}
+              onOpenFiles={() => openOptionalTool('files')}
+              onOpenChanges={() => openOptionalTool('changes')}
+              onOpenBrowser={addBrowser}
+              onOpenTerminal={() => void createWorkspaceTerminal()}
+              onShowScratch={showScratch}
+            />
           ) : activeTool === 'browser' && activeBrowserSessionId ? (
             isWorkbenchV2
               ? <BrowserPanelV2 ownerSessionId={currentSessionId} browserSessionId={activeBrowserSessionId} />

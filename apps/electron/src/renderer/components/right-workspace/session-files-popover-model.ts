@@ -1,7 +1,7 @@
 import type { GeneratedImageItem, SDKMessage, SDKUserMessage } from '@domi/shared'
 import { extractUserText, isUserInputMessage } from '@domi/session-core'
 import { parseAttachedFiles, isImageFile } from '@/lib/message-attachments'
-import type { RightWorkspaceTool } from '@/lib/right-workspace-model'
+import type { RightWorkspaceOptionalTab, RightWorkspaceTool } from '@/lib/right-workspace-model'
 
 export const SESSION_FILES_CARD_VISIBLE_LIMIT = 3
 
@@ -88,11 +88,16 @@ export function resolveSessionFilesConversationReservation(
   return !rightWorkspaceOpen && cardWidth > 0 && mainWidth - reservation >= 640 ? reservation : 0
 }
 
-/** 会话文件使用浮窗后，展开完整右侧工作区时不再回落到文件工具。 */
+/** 会话文件使用浮窗后，展开完整右侧工作区时不再回落到文件类工具。 */
 export function resolveRightWorkspaceToolAfterSessionFilesClose(
   activeTool: RightWorkspaceTool | undefined,
 ): RightWorkspaceTool {
-  return !activeTool || activeTool === 'files' ? 'changes' : activeTool
+  return !activeTool || activeTool === 'files' || activeTool === 'session-files' ? 'changes' : activeTool
+}
+
+/** 「查看全部」的目标标签：v2 打开独立的会话文件标签，v1 复用文件工具并切到会话来源。 */
+export function resolveSessionFilesViewAllTab(isWorkbenchV2: boolean): RightWorkspaceOptionalTab {
+  return isWorkbenchV2 ? 'session-files' : 'files'
 }
 
 export interface SessionFilesPopoverPointerInput {

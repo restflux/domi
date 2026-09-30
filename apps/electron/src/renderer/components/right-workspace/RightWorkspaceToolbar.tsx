@@ -2,6 +2,7 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import '@/i18n'
 import {
+  Blinds,
   Eye,
   Files,
   GitCompareArrows,
@@ -30,6 +31,7 @@ const useClientLayoutEffect = typeof window === 'undefined' ? React.useEffect : 
 
 const TOOL_ICONS: Record<RightWorkspaceTool, LucideIcon> = {
   files: Files,
+  'session-files': Blinds,
   changes: GitCompareArrows,
   browser: Globe2,
   terminal: SquareTerminal,

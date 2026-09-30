@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Eye, Files, GitCompareArrows, Globe2, MessagesSquare, NotebookPen, SquareTerminal, X } from 'lucide-react'
+import { Blinds, Eye, Files, GitCompareArrows, Globe2, MessagesSquare, NotebookPen, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.tsx'
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils.ts'
 import type { RightWorkspaceToolbarTab } from '../RightWorkspaceToolbarV2.tsx'
 
 const ICONS: Record<RightWorkspaceToolbarTab['tool'], LucideIcon> = {
-  files: Files, changes: GitCompareArrows, browser: Globe2, terminal: SquareTerminal,
+  files: Files, 'session-files': Blinds, changes: GitCompareArrows, browser: Globe2, terminal: SquareTerminal,
   scratch: NotebookPen, preview: Eye, 'side-chat': MessagesSquare,
 }
 
