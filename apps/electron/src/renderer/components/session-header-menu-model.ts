@@ -17,6 +17,8 @@ export interface SessionHeaderMenuSubmenuItem {
   label: string
   /** 分类用于图标：文件管理器 / 编辑器 / 终端 */
   kind?: 'file-manager' | 'editor' | 'terminal'
+  /** 系统读取的真实应用图标（PNG data URL）；缺省时回退分类图标 */
+  iconUrl?: string
 }
 
 export type SessionHeaderMenuEntry =

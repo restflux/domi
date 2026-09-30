@@ -69,6 +69,8 @@ export interface ProjectFolderOpener {
   label: string
   /** 分类，用于菜单图标与排序 */
   kind: 'file-manager' | 'editor' | 'terminal'
+  /** 系统读取的真实应用图标（PNG data URL）；读取失败时缺省，由渲染层回退通用图标 */
+  icon?: string
 }
 
 /** 创建项目后自动生成的首个 Agent 会话。 */

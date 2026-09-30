@@ -7,24 +7,36 @@ type ProjectFolderOpeners = typeof import('./project-folder-openers')
 let service: ProjectFolderOpeners
 
 beforeAll(async () => {
-  // 模拟 electron shell；测试内的启动执行器由 fakeRunner 注入。
+  // 模拟 electron app/shell；测试内的启动执行器由 fakeRunner 注入。
   mock.module('electron', () => ({
+    app: { getFileIcon: async () => ({ isEmpty: () => false, toDataURL: () => 'data:image/png;base64,icon' }) },
     shell: { openPath: async () => '' },
   }))
   service = await import('./project-folder-openers')
 })
 
 interface ProbeOverrides {
+  /** 存在的 macOS .app 名称（探测路径固定为 /Applications/<name>.app） */
   apps?: string[]
-  clis?: string[]
+  /** CLI 命令 → 解析出的完整路径 */
+  clis?: Record<string, string>
+  /** 额外判定为存在的物理路径（Windows exe 定位用） */
+  paths?: string[]
+  /** 图标读取结果：按目标路径返回 data URL；未命中返回 null */
+  iconByPath?: Record<string, string>
+  /** 所有图标读取都失败 */
+  iconFails?: boolean
 }
 
-/** 构造假探测环境：apps 为存在的 macOS .app 名，clis 为可解析的 CLI 命令 */
-function fakeRuntime(platform: string, { apps = [], clis = [] }: ProbeOverrides = {}): FolderOpenerRuntime {
+/** 构造假探测环境 */
+function fakeRuntime(platform: string, overrides: ProbeOverrides = {}): FolderOpenerRuntime {
+  const { apps = [], clis = {}, paths = [], iconByPath = {}, iconFails = false } = overrides
   return {
     platform,
-    appBundleExists: (name) => apps.includes(name),
-    cliExists: (command) => clis.includes(command),
+    appBundlePath: (name) => (apps.includes(name) ? `/Applications/${name}.app` : null),
+    cliPath: (command) => clis[command] ?? null,
+    pathExists: (target) => paths.includes(target),
+    getFileIcon: async (target) => (iconFails ? null : iconByPath[target] ?? null),
   }
 }
 
@@ -50,8 +62,8 @@ function fakeRunner(): { runner: FolderOpenerRunner; recorder: Recorder } {
 }
 
 describe('listProjectFolderOpeners', () => {
-  test('Given macOS 装有 VS Code/Zed/iTerm2 When 探测打开方式 Then 依序列出访达、编辑器与终端', () => {
-    const openers = service.listProjectFolderOpeners(fakeRuntime('darwin', {
+  test('Given macOS 装有 VS Code/Zed/iTerm2 When 探测打开方式 Then 依序列出访达、编辑器与终端', async () => {
+    const openers = await service.listProjectFolderOpeners(fakeRuntime('darwin', {
       apps: ['Visual Studio Code', 'Zed', 'iTerm', 'Terminal'],
     }))
 
@@ -65,15 +77,19 @@ describe('listProjectFolderOpeners', () => {
     expect(openers.find((opener) => opener.id === service.FILE_MANAGER_OPENER_ID)?.label).toBe('访达')
   })
 
-  test('Given 未安装的编辑器与终端 When 探测 Then 它们不出现在列表中', () => {
-    const openers = service.listProjectFolderOpeners(fakeRuntime('darwin', { apps: ['Visual Studio Code', 'Terminal'] }))
+  test('Given 未安装的编辑器与终端 When 探测 Then 它们不出现在列表中', async () => {
+    const openers = await service.listProjectFolderOpeners(fakeRuntime('darwin', { apps: ['Visual Studio Code', 'Terminal'] }))
 
     expect(openers.map((opener) => opener.id)).toEqual([service.FILE_MANAGER_OPENER_ID, 'vscode', 'terminal'])
   })
 
-  test('Given Windows 可解析 code 与 wt When 探测 Then 列出资源管理器、编辑器与终端', () => {
-    const openers = service.listProjectFolderOpeners(fakeRuntime('win32', {
-      clis: ['code', 'wt', 'powershell'],
+  test('Given Windows 可解析 code 与 wt When 探测 Then 列出资源管理器、编辑器与终端', async () => {
+    const openers = await service.listProjectFolderOpeners(fakeRuntime('win32', {
+      clis: {
+        code: 'C:\\Users\\dev\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd',
+        wt: 'C:\\Program Files\\WindowsApps\\wt.exe',
+        powershell: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      },
     }))
 
     expect(openers.map((opener) => opener.id)).toEqual([
@@ -85,18 +101,74 @@ describe('listProjectFolderOpeners', () => {
     expect(openers.find((opener) => opener.id === service.FILE_MANAGER_OPENER_ID)?.label).toBe('资源管理器')
   })
 
-  test('Given Linux 装有 xdg-open/code/gnome-terminal When 探测 Then 列出文件管理器与系统终端', () => {
-    const openers = service.listProjectFolderOpeners(fakeRuntime('linux', {
-      clis: ['xdg-open', 'code', 'gnome-terminal'],
+  test('Given Linux 装有 xdg-open/code/gnome-terminal When 探测 Then 列出文件管理器与系统终端', async () => {
+    const openers = await service.listProjectFolderOpeners(fakeRuntime('linux', {
+      clis: {
+        'xdg-open': '/usr/bin/xdg-open',
+        code: '/usr/bin/code',
+        'gnome-terminal': '/usr/bin/gnome-terminal',
+      },
     }))
 
     expect(openers.map((opener) => opener.id)).toEqual([service.FILE_MANAGER_OPENER_ID, 'vscode', 'terminal'])
   })
 
-  test('Given 平台不支持的打开方式 When 探测 Then 不会泄露到其他平台列表', () => {
-    expect(service.listProjectFolderOpeners(fakeRuntime('win32', { clis: [] })).map((o) => o.id))
+  test('Given 平台不支持的打开方式 When 探测 Then 不会泄露到其他平台列表', async () => {
+    expect((await service.listProjectFolderOpeners(fakeRuntime('win32'))).map((o) => o.id))
       .toEqual([service.FILE_MANAGER_OPENER_ID])
-    expect(service.listProjectFolderOpeners(fakeRuntime('linux', { clis: [] }))).toEqual([])
+    expect(await service.listProjectFolderOpeners(fakeRuntime('linux'))).toEqual([])
+  })
+})
+
+describe('listProjectFolderOpeners 图标', () => {
+  test('Given macOS 应用实体存在且可读图标 When 探测 Then 下发真实应用图标 data URL', async () => {
+    const openers = await service.listProjectFolderOpeners(fakeRuntime('darwin', {
+      apps: ['Visual Studio Code', 'Terminal'],
+      iconByPath: {
+        '/Applications/Visual Studio Code.app': 'data:image/png;base64,vscode-icon',
+        '/Applications/Terminal.app': 'data:image/png;base64,terminal-icon',
+      },
+    }))
+
+    expect(openers.find((opener) => opener.id === 'vscode')?.icon).toBe('data:image/png;base64,vscode-icon')
+    expect(openers.find((opener) => opener.id === 'terminal')?.icon).toBe('data:image/png;base64,terminal-icon')
+    // 访达图标目标（/System/Library/CoreServices/Finder.app）在假环境不可达 → 无 icon
+    expect(openers.find((opener) => opener.id === service.FILE_MANAGER_OPENER_ID)?.icon).toBeUndefined()
+  })
+
+  test('Given Windows code 垫片与同级 Code.exe 存在 When 解析图标 Then 指向实际 exe', async () => {
+    const shim = 'C:\\Users\\dev\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd'
+    const openers = await service.listProjectFolderOpeners(fakeRuntime('win32', {
+      clis: { code: shim },
+      paths: ['C:\\Users\\dev\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe'],
+      iconByPath: { 'C:\\Users\\dev\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe': 'data:image/png;base64,code-exe' },
+    }))
+
+    expect(openers.find((opener) => opener.id === 'vscode')?.icon).toBe('data:image/png;base64,code-exe')
+  })
+
+  test('Given 找不到同级 exe When 解析图标 Then 回退垫片路径本身', async () => {
+    const shim = 'D:\\tools\\cursor\\bin\\cursor.cmd'
+    const openers = await service.listProjectFolderOpeners(fakeRuntime('win32', {
+      clis: { cursor: shim },
+      iconByPath: { [shim]: 'data:image/png;base64,generic-cmd' },
+    }))
+
+    expect(openers.find((opener) => opener.id === 'cursor')?.icon).toBe('data:image/png;base64,generic-cmd')
+  })
+
+  test('Given 图标读取失败或无目标 When 探测 Then 不带 icon 字段', async () => {
+    const failed = await service.listProjectFolderOpeners(fakeRuntime('darwin', {
+      apps: ['Visual Studio Code'],
+      iconFails: true,
+    }))
+    expect(failed.find((opener) => opener.id === 'vscode')?.icon).toBeUndefined()
+
+    // Linux 无图标目标，永远不带 icon
+    const linux = await service.listProjectFolderOpeners(fakeRuntime('linux', {
+      clis: { 'xdg-open': '/usr/bin/xdg-open' },
+    }))
+    expect(linux[0]?.icon).toBeUndefined()
   })
 })
 
@@ -127,7 +199,7 @@ describe('openProjectFolderWith', () => {
   test('Given Windows 已装 Windows Terminal When 用 windows-terminal 打开 Then 经 cmd start wt -d 启动', async () => {
     const { runner, recorder } = fakeRunner()
     await service.openProjectFolderWith('windows-terminal', 'C:\\dev\\my project', {
-      runtime: fakeRuntime('win32', { clis: ['wt'] }),
+      runtime: fakeRuntime('win32', { clis: { wt: 'C:\\Program Files\\WindowsApps\\wt.exe' } }),
       runner,
     })
 
@@ -139,7 +211,7 @@ describe('openProjectFolderWith', () => {
   test('Given Windows 用 PowerShell 打开 Then 以项目目录为 cwd 启动交互式会话', async () => {
     const { runner, recorder } = fakeRunner()
     await service.openProjectFolderWith('powershell', 'C:\\dev\\demo', {
-      runtime: fakeRuntime('win32', { clis: ['powershell'] }),
+      runtime: fakeRuntime('win32', { clis: { powershell: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' } }),
       runner,
     })
 
@@ -151,7 +223,7 @@ describe('openProjectFolderWith', () => {
   test('Given Linux 只装有 x-terminal-emulator When 用 terminal 打开 Then 以 cwd 方式启动', async () => {
     const { runner, recorder } = fakeRunner()
     await service.openProjectFolderWith('terminal', '/home/dev/demo', {
-      runtime: fakeRuntime('linux', { clis: ['x-terminal-emulator'] }),
+      runtime: fakeRuntime('linux', { clis: { 'x-terminal-emulator': '/usr/bin/x-terminal-emulator' } }),
       runner,
     })
 
@@ -169,7 +241,7 @@ describe('openProjectFolderWith', () => {
 
     // macOS 注册表里有 iterm2，但 Windows 平台不允许使用
     await expect(service.openProjectFolderWith('iterm2', 'C:\\dev', {
-      runtime: fakeRuntime('win32', { clis: [] }),
+      runtime: fakeRuntime('win32'),
       runner,
     })).rejects.toThrow('未知的打开方式')
 

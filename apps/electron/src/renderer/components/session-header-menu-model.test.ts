@@ -75,7 +75,7 @@ describe('session header menu model', () => {
       hasSessionPath: true,
       projectFolderOpeners: [
         { id: 'file-manager', label: '访达', kind: 'file-manager' },
-        { id: 'vscode', label: 'VS Code', kind: 'editor' },
+        { id: 'vscode', label: 'VS Code', kind: 'editor', iconUrl: 'data:image/png;base64,vscode-icon' },
         { id: 'terminal', label: '终端', kind: 'terminal' },
       ],
     })
@@ -84,6 +84,9 @@ describe('session header menu model', () => {
     expect(submenu).toMatchObject({ action: 'openProject', label: '打开项目文件夹' })
     if (submenu?.type !== 'submenu') return
     expect(submenu.items.map((item) => item.id)).toEqual(['file-manager', 'vscode', 'terminal'])
+    // 系统真实应用图标（iconUrl）原样透传给渲染层
+    expect(submenu.items.find((item) => item.id === 'vscode')?.iconUrl).toBe('data:image/png;base64,vscode-icon')
+    expect(submenu.items.find((item) => item.id === 'terminal')?.iconUrl).toBeUndefined()
     expect(submenu.disabled).toBe(false)
 
     // 项目根不可用时子菜单整体禁用，与旧菜单项行为一致

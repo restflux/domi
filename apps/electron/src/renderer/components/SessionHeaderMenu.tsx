@@ -130,7 +130,9 @@ export function SessionHeaderMenu({ entries, onAction }: SessionHeaderMenuProps)
                       key={item.id}
                       onSelect={() => onAction(entry.action, item.id)}
                     >
-                      {subMenuItemIcon(item.kind)}
+                      {item.iconUrl
+                        ? <img src={item.iconUrl} alt="" className="size-4 shrink-0 rounded-[3px]" />
+                        : subMenuItemIcon(item.kind)}
                       {item.label}
                     </DropdownMenuItem>
                   ))}

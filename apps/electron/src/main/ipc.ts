@@ -2654,7 +2654,7 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
   // workspaceId 与固定 openerId，路径解析与存在性检查留在主进程。
   ipcMain.handle(
     AGENT_IPC_CHANNELS.LIST_PROJECT_FOLDER_OPENERS,
-    (): import('@domi/shared').ProjectFolderOpener[] => listProjectFolderOpeners()
+    async (): Promise<import('@domi/shared').ProjectFolderOpener[]> => listProjectFolderOpeners()
   )
 
   ipcMain.handle(

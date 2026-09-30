@@ -330,6 +330,15 @@ function ActiveRightSidePanel({
   const sidePanelTab: AgentSidePanelTab = activeTool === 'side-chat' ? 'chat' : activeTool === 'changes' ? 'changes' : 'files'
   const Toolbar = isWorkbenchV2 ? RightWorkspaceToolbarV2 : RightWorkspaceToolbar
 
+  // 文件/改动面板（SidePanel 含 FileBrowser）：目录展开与滚动状态都在组件内部，
+  // v2 下只要对应标签还开着就保持挂载，切到预览/浏览器等标签时仅隐藏（模式对齐终端持久挂载）。
+  const isFilesLikeTool = (tool: RightWorkspaceTool): boolean => tool === 'files' || tool === 'session-files' || tool === 'changes'
+  const filesLikeTabOpen = visibleTabs.some((tab) => isFilesLikeTool(tab.tool))
+  const filesLikeActive = isFilesLikeTool(activeTool)
+  const sidePanelNode = (
+    <SidePanel sessionId={currentSessionId} sessionPath={sessionPath} activeTab={sidePanelTab} onTabChange={(tab) => setActiveTool(fromLegacyTab(tab))} embedded hideTabBar />
+  )
+
   return (
     <div className="relative flex h-full min-w-0 shrink-0 overflow-hidden bg-content-area titlebar-no-drag" style={width ? { width } : undefined}>
       <RightWorkspaceTitlebarDragRegion isWindows={isWindows} />
@@ -375,14 +384,17 @@ function ActiveRightSidePanel({
             <SideChatPanel key={currentSessionId} parentSessionId={currentSessionId} />
           ) : activeTool === 'scratch' ? (
             <ScratchPadWorkspace />
-          ) : (
-            <SidePanel sessionId={currentSessionId} sessionPath={sessionPath} activeTab={sidePanelTab} onTabChange={(tab) => setActiveTool(fromLegacyTab(tab))} embedded hideTabBar />
+          ) : isWorkbenchV2 ? null : (
+            sidePanelNode
           )}
           {isWorkbenchV2 && tabs.filter((tab) => tab.tool === 'terminal').map((tab) => {
             const terminalId = terminalIdFromTab(tab.id)
             const session = terminalId ? terminalStates.get(terminalId) : undefined
             return session ? <div key={tab.id} className={activeTabId === tab.id ? 'h-full' : 'hidden'}><TerminalSession terminal={session} visible={activeTabId === tab.id} /></div> : null
           })}
+          {isWorkbenchV2 && !showV2Launcher && filesLikeTabOpen && (
+            <div className={filesLikeActive ? 'h-full' : 'hidden'}>{sidePanelNode}</div>
+          )}
         </div>
       </div>
     </div>

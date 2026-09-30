@@ -93,7 +93,7 @@ export function AgentHeader({
     canOpenProjectFolder,
     hasSessionPath: !!sessionPath,
     includeSessionTools: isModern,
-    projectFolderOpeners: projectFolderOpeners ?? undefined,
+    projectFolderOpeners: projectFolderOpeners?.map(({ id, label, kind, icon }) => ({ id, label, kind, iconUrl: icon })),
   })
 
   const rename = async (title: string): Promise<void> => {

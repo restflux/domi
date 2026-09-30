@@ -5456,7 +5456,9 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
                       className="text-xs py-1 [&>svg]:size-3.5"
                       onSelect={() => void onOpenProjectFolder(group.workspace.id, opener.id)}
                     >
-                      {opener.kind === 'editor' ? <Code2 size={14} /> : opener.kind === 'terminal' ? <SquareTerminal size={14} /> : <FolderOpen size={14} />}
+                      {opener.icon
+                        ? <img src={opener.icon} alt="" className="size-3.5 shrink-0 rounded-[3px]" />
+                        : opener.kind === 'editor' ? <Code2 size={14} /> : opener.kind === 'terminal' ? <SquareTerminal size={14} /> : <FolderOpen size={14} />}
                       {opener.label}
                     </DropdownMenuItem>
                   ))}
