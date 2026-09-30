@@ -78,6 +78,35 @@ const knownUntranslatedPlanningAutomationLiterals = [
   '运行一次',
 ]
 
+const migratedWorkspaceFiles = [
+  'components/right-workspace/v2/RightWorkspaceToolbarV2.tsx',
+  'components/right-workspace/v2/zcode/SidePaneTabTrigger.tsx',
+  'components/terminal/v2/TerminalDockV2.tsx',
+  'components/terminal/v2/zcode/TerminalSession.tsx',
+  'components/file-browser/FileBrowser.tsx',
+] as const
+
+const knownUntranslatedWorkspaceLiterals = [
+  '工作区标签',
+  '工作区工具',
+  '添加工具菜单',
+  '关闭当前标签',
+  '关闭其他标签',
+  '关闭所有标签',
+  '有未查看的改动',
+  '内置终端',
+  '新建终端',
+  '中断当前终端',
+  '折叠终端',
+  '展开终端',
+  '无法打开终端链接',
+  '无法复制终端选中内容',
+  '无法粘贴剪贴板内容',
+  '确认删除',
+  '在 Finder 中打开',
+  '空文件夹',
+]
+
 const knownUntranslatedSettingsLiterals = [
   '模型配置',
   '添加配置',
@@ -137,6 +166,28 @@ describe('Chat UI i18n coverage', () => {
     for (const literal of knownUntranslatedPlanningAutomationLiterals) {
       expect(source).not.toContain(literal)
     }
+  })
+
+  test('workspace components do not retain migrated fixed UI literals', () => {
+    const source = migratedWorkspaceFiles
+      .map((file) => readFileSync(resolve(import.meta.dir, file), 'utf8'))
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      .replace(/^\s*console\.(?:error|warn|log)\(.*$/gm, '')
+
+    for (const literal of knownUntranslatedWorkspaceLiterals) {
+      expect(source).not.toContain(literal)
+    }
+  })
+
+  test('workspace and sidebar resources switch with the locale', async () => {
+    await i18n.changeLanguage('en-US')
+    expect(i18n.t('workspace:newTerminal')).toBe('New terminal')
+    expect(i18n.t('sidebar:newSession')).toBe('New session')
+    await i18n.changeLanguage('zh-CN')
+    expect(i18n.t('workspace:newTerminal')).toBe('新建终端')
+    expect(i18n.t('sidebar:newSession')).toBe('新会话')
   })
 
   test('settings batch provides English resources for core configuration pages', async () => {

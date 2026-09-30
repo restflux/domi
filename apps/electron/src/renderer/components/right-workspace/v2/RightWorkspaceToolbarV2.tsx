@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { Blinds, FolderClosed, GitCompareArrows, Globe2, Maximize2, Minimize2, NotebookPen, PanelRightClose, Plus, SquareTerminal } from 'lucide-react'
@@ -39,6 +41,7 @@ export function getHorizontalTabWheelDelta(deltaX: number, deltaY: number): numb
 
 /** ZCode AnimatedSidePanePanel 的可排序等宽 tab 带；Domi 只提供 tab 身份与宿主操作。 */
 export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, hasUnseenChanges, expandAvailable, expanded, onTabChange, onCloseTab, onAddBrowser, onOpenTerminal, onOpenSessionFiles, onOpenFiles, onOpenChanges, onShowScratch, onToggleExpand, onCloseWorkspace }: RightWorkspaceToolbarProps): React.ReactElement {
+  const { t } = useTranslation('workspace', { i18n })
   const [order, setOrder] = React.useState<string[]>([])
   const [menuOpen, setMenuOpen] = React.useState(false)
   const viewport = React.useRef<HTMLDivElement>(null)
@@ -68,27 +71,27 @@ export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, has
     if (delta) { event.preventDefault(); element.scrollLeft += delta }
   }
   return (
-    <nav className="zcode-v2-side-pane titlebar-no-drag flex h-12 shrink-0 items-center border-b border-border/50 bg-background p-0" aria-label="工作区标签">
+    <nav className="zcode-v2-side-pane titlebar-no-drag flex h-12 shrink-0 items-center border-b border-border/50 bg-background p-0" aria-label={t('tabList')}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <div ref={viewport} onWheel={onWheel} className="flex h-12 min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="工作区工具">
+        <div ref={viewport} onWheel={onWheel} className="flex h-12 min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label={t('toolsTabList')}>
           <SortableContext items={ordered.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
             {ordered.map((tab) => <SidePaneTabTrigger key={tab.id} tab={tab} active={tab.id === activeTabId} unseen={hasUnseenChanges} onActivate={() => onTabChange(tab.id)} onClose={() => onCloseTab(tab.id)} onCloseOthers={() => { for (const other of closable) if (other.id !== tab.id) onCloseTab(other.id) }} onCloseAll={closeAll} />)}
           </SortableContext>
         </div>
       </DndContext>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild><button type="button" aria-label="添加工具" title="添加工具" aria-expanded={menuOpen} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><Plus className="size-4" /></button></DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={6} className="min-w-44" aria-label="添加工具菜单">
-          <DropdownMenuItem onSelect={onOpenSessionFiles} disabled={!onOpenSessionFiles} className="gap-2"><Blinds className="size-4" />会话文件</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onOpenFiles} disabled={!onOpenFiles} className="gap-2"><FolderClosed className="size-4" />项目文件</DropdownMenuItem>
+        <DropdownMenuTrigger asChild><button type="button" aria-label={t('addTool')} title={t('addTool')} aria-expanded={menuOpen} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><Plus className="size-4" /></button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6} className="min-w-44" aria-label={t('addToolMenu')}>
+          <DropdownMenuItem onSelect={onOpenSessionFiles} disabled={!onOpenSessionFiles} className="gap-2"><Blinds className="size-4" />{t('sessionFiles')}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onOpenFiles} disabled={!onOpenFiles} className="gap-2"><FolderClosed className="size-4" />{t('projectFilesMenu')}</DropdownMenuItem>
           <DropdownMenuItem onSelect={onOpenChanges} disabled={!onOpenChanges} className="gap-2"><GitCompareArrows className="size-4" />改动</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onAddBrowser} className="gap-2"><Globe2 className="size-4" />新建浏览器</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onOpenTerminal} className="gap-2"><SquareTerminal className="size-4" />打开终端</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onShowScratch} className="gap-2"><NotebookPen className="size-4" />{scratchVisible ? '打开草稿' : '显示草稿'}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onAddBrowser} className="gap-2"><Globe2 className="size-4" />{t('newBrowser')}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onOpenTerminal} className="gap-2"><SquareTerminal className="size-4" />{t('openTerminal')}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onShowScratch} className="gap-2"><NotebookPen className="size-4" />{scratchVisible ? t('openDraft') : t('showDraft')}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {expandAvailable && <Tooltip><TooltipTrigger asChild><button type="button" aria-label={expanded ? '恢复分栏' : '展开到主区域'} aria-pressed={expanded} onClick={onToggleExpand} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">{expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</button></TooltipTrigger><TooltipContent side="bottom">{expanded ? '恢复分栏' : '展开到主区域'}</TooltipContent></Tooltip>}
-      <Tooltip><TooltipTrigger asChild><button type="button" aria-label="关闭右侧工作区" onClick={onCloseWorkspace} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><PanelRightClose className="size-4" /></button></TooltipTrigger><TooltipContent side="bottom">关闭右侧工作区</TooltipContent></Tooltip>
+      {expandAvailable && <Tooltip><TooltipTrigger asChild><button type="button" aria-label={expanded ? t('restoreSplit') : t('expandMain')} aria-pressed={expanded} onClick={onToggleExpand} className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">{expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</button></TooltipTrigger><TooltipContent side="bottom">{expanded ? t('restoreSplit') : t('expandMain')}</TooltipContent></Tooltip>}
+      <Tooltip><TooltipTrigger asChild><button type="button" aria-label={t('closeWorkspace')} onClick={onCloseWorkspace} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><PanelRightClose className="size-4" /></button></TooltipTrigger><TooltipContent side="bottom">{t('closeWorkspace')}</TooltipContent></Tooltip>
     </nav>
   )
 }

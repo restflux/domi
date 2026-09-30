@@ -9,6 +9,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtom, useSetAtom, useAtomValue, useStore } from 'jotai'
 import { toast } from 'sonner'
@@ -209,6 +211,7 @@ function WorkSidebarControls({
   onCreateProject,
   onCreateProjectFromFolder,
 }: WorkSidebarControlsProps): React.ReactElement {
+  const { t } = useTranslation('sidebar', { i18n })
   const projectView = preferences.groupMode === 'project'
   const [menuOpen, setMenuOpen] = React.useState(false)
   const applyPreference = React.useCallback((updates: Partial<WorkSidebarPreferences>): void => {
@@ -231,7 +234,7 @@ function WorkSidebarControls({
                 : 'text-foreground/35 hover:text-foreground/60',
             )}
           >
-            <Hash size={11} />分组
+            <Hash size={11} />{t('groups')}
           </button>
           <button
             type="button"
@@ -244,14 +247,14 @@ function WorkSidebarControls({
                 : 'text-foreground/35 hover:text-foreground/60',
             )}
           >
-            <FolderOpen size={11} />项目
+            <FolderOpen size={11} />{t('projects')}
           </button>
         </div>
         {preferences.sectionMode === 'projects' && projectView && (
           <button
             type="button"
-            title={allProjectsCollapsed ? '展开全部项目' : '收起全部项目'}
-            aria-label={allProjectsCollapsed ? '展开全部项目' : '收起全部项目'}
+            title={allProjectsCollapsed ? t('expandAllProjects') : t('collapseAllProjects')}
+            aria-label={allProjectsCollapsed ? t('expandAllProjects') : t('collapseAllProjects')}
             onClick={onToggleAllProjects}
             className="titlebar-no-drag flex size-6 items-center justify-center rounded-md text-foreground/30 transition-colors hover:bg-foreground/[0.06] hover:text-foreground/60"
           >
@@ -265,8 +268,8 @@ function WorkSidebarControls({
             {preferences.customGroups.length > 0 && (
               <button
                 type="button"
-                title={allCustomGroupsCollapsed ? '展开全部分组' : '收起全部分组'}
-                aria-label={allCustomGroupsCollapsed ? '展开全部分组' : '收起全部分组'}
+                title={allCustomGroupsCollapsed ? t('expandAllGroups') : t('collapseAllGroups')}
+                aria-label={allCustomGroupsCollapsed ? t('expandAllGroups') : t('collapseAllGroups')}
                 onClick={onToggleAllCustomGroups}
                 className="titlebar-no-drag flex size-7 items-center justify-center rounded-md text-foreground/30 transition-colors hover:bg-foreground/[0.07] hover:text-foreground/60"
               >
@@ -275,8 +278,8 @@ function WorkSidebarControls({
             )}
             <button
               type="button"
-              title="新建分组"
-              aria-label="新建 Work 分组"
+              title={t('newGroup')}
+              aria-label={t('newWorkGroup')}
               onClick={onCreateCustomGroup}
               className="titlebar-no-drag flex size-7 items-center justify-center rounded-md text-foreground/35 transition-colors hover:bg-foreground/[0.07] hover:text-foreground/65"
             >
@@ -289,8 +292,8 @@ function WorkSidebarControls({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label="添加项目"
-              title="添加项目"
+              aria-label={t('addProject')}
+              title={t('addProject')}
               className="titlebar-no-drag flex size-7 items-center justify-center rounded-md text-foreground/35 transition-colors hover:bg-foreground/[0.07] hover:text-foreground/65 data-[state=open]:bg-foreground/[0.09] data-[state=open]:text-foreground/70"
             >
               <Plus size={13} />
@@ -311,15 +314,15 @@ function WorkSidebarControls({
           <PopoverTrigger asChild>
             <button
               type="button"
-              title="视图与排序"
-              aria-label="设置 Work 会话视图与排序"
+              title={t('viewAndSort')}
+              aria-label={t('workSessionViewSort')}
               className="titlebar-no-drag flex size-7 items-center justify-center rounded-md text-foreground/35 transition-colors hover:bg-foreground/[0.07] hover:text-foreground/65 data-[state=open]:bg-foreground/[0.09] data-[state=open]:text-foreground/70"
             >
               <ListFilter size={13} />
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" sideOffset={4} className="w-48 p-2">
-            <div role="menu" aria-label="Work 会话视图与排序" className="space-y-2">
+            <div role="menu" aria-label={t('workSessionViewSort')} className="space-y-2">
               <section>
                 <div className="px-2 pb-1 text-[11px] font-medium text-foreground/35">视图</div>
                 <SidebarPreferenceOption
@@ -541,12 +544,13 @@ interface AutomationSidebarEntryProps {
 }
 
 function AutomationSidebarEntry({ count, active, onClick }: AutomationSidebarEntryProps): React.ReactElement {
+  const { t } = useTranslation('sidebar', { i18n })
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
-          aria-label={`任务与日程，${count} 个定时任务`}
+          aria-label={`${t('automationsAndCalendar')}，${t('automationCount', { count })}`}
           onClick={onClick}
           className={cn(
             'sidebar-nav-entry group w-full flex items-center justify-between px-3 py-2 rounded-md text-[13px] transition-colors duration-100 titlebar-no-drag automation-entry',
@@ -591,11 +595,12 @@ interface SkillsSidebarEntryProps {
 }
 
 function SkillsSidebarEntry({ count, updateCount, active, onClick }: SkillsSidebarEntryProps): React.ReactElement {
+  const { t } = useTranslation('sidebar', { i18n })
   const hasUpdate = updateCount > 0
   return (
     <button
       type="button"
-      aria-label={`技能，${count} 个能力${hasUpdate ? `，${updateCount} 个可更新` : ''}`}
+      aria-label={`${t('skills')}，${t('capabilitiesCount', { count })}${hasUpdate ? `，${t('updatesCount', { count: updateCount })}` : ''}`}
       onClick={onClick}
       className={cn(
         'sidebar-nav-entry group w-full flex items-center justify-between px-3 py-2 rounded-md text-[13px] transition-colors duration-100 titlebar-no-drag',
@@ -643,6 +648,7 @@ function NewAgentSessionSidebarEntry({
   onCreateProject,
   modernLayout = false,
 }: NewAgentSessionSidebarEntryProps): React.ReactElement {
+  const { t } = useTranslation('sidebar', { i18n })
   const [menuOpen, setMenuOpen] = React.useState(false)
 
   return (
@@ -650,7 +656,7 @@ function NewAgentSessionSidebarEntry({
       <button
         type="button"
         onClick={() => { void onCreateCurrent() }}
-        aria-label={currentWorkspace ? `在「${currentWorkspace.name}」中新会话` : '新会话'}
+        aria-label={currentWorkspace ? `${t('newSession')}「${currentWorkspace.name}」` : t('newSession')}
         className="titlebar-no-drag flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2 text-left outline-none focus-visible:bg-primary/[0.10]"
       >
         <span className="flex size-[18px] flex-shrink-0 items-center text-primary">
@@ -668,7 +674,7 @@ function NewAgentSessionSidebarEntry({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            aria-label="选择新会话项目"
+            aria-label={t('chooseNewSessionProject')}
             onClick={(event) => {
               event.stopPropagation()
               setMenuOpen(true)
@@ -683,7 +689,7 @@ function NewAgentSessionSidebarEntry({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="z-[9999] w-56">
           <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-            选择会话所属项目
+            {t('chooseSessionProject')}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {workspaces.length > 0 ? (
@@ -696,20 +702,20 @@ function NewAgentSessionSidebarEntry({
                 <FolderOpen size={14} />
                 <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
                 {workspace.id === currentWorkspace?.id && (
-                  <span className="text-[10px] text-muted-foreground">当前</span>
+                  <span className="text-[10px] text-muted-foreground">{t('current')}</span>
                 )}
               </DropdownMenuItem>
             ))
           ) : (
             <DropdownMenuItem onSelect={onCreateProject}>
               <FolderPlus size={14} />
-              先新建一个项目
+              {t('createProjectFirst')}
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem disabled className="items-start gap-2 opacity-70">
             <Bot size={14} className="mt-0.5" />
-            <span className="text-xs leading-4">无项目会话暂不支持；Agent 需要明确的 Session Target。</span>
+            <span className="text-xs leading-4">{t('noProjectSessionUnsupported')}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -775,12 +781,12 @@ function formatRelativeUpdatedAt(updatedAt: number, now: number): string {
   const month = 30 * day
   const year = 365 * day
 
-  if (diff < minute) return '刚刚'
-  if (diff < hour) return `${Math.max(1, Math.floor(diff / minute))} 分钟`
-  if (diff < day) return `${Math.floor(diff / hour)} 小时`
-  if (diff < month) return `${Math.floor(diff / day)} 天`
-  if (diff < year) return `${Math.floor(diff / month)} 月`
-  return `${Math.floor(diff / year)} 年`
+  if (diff < minute) return i18n.t('sidebar:justNow')
+  if (diff < hour) return i18n.t('sidebar:minutesAgo', { count: Math.max(1, Math.floor(diff / minute)) })
+  if (diff < day) return i18n.t('sidebar:hoursAgo', { count: Math.floor(diff / hour) })
+  if (diff < month) return i18n.t('sidebar:daysAgo', { count: Math.floor(diff / day) })
+  if (diff < year) return i18n.t('sidebar:monthsAgo', { count: Math.floor(diff / month) })
+  return i18n.t('sidebar:yearsAgo', { count: Math.floor(diff / year) })
 }
 
 /** 按 updatedAt 将项目分为 今天 / 昨天 / 更早 三组 */
@@ -1138,6 +1144,7 @@ function deleteSetEntry<T>(prev: Set<T>, value: T): Set<T> {
 }
 
 export function LeftSidebar({ width, noTransition, previewExpanded = false }: LeftSidebarProps): React.ReactElement {
+  const { t } = useTranslation('sidebar', { i18n })
   const [activeView, setActiveView] = useAtom(activeViewAtom)
   const setAgentSkillsTab = useSetAtom(agentSkillsTabAtom)
   const setAutomationForm = useSetAtom(automationFormAtom)

@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Blinds, Eye, Files, GitCompareArrows, Globe2, MessagesSquare, NotebookPen, SquareTerminal, X } from 'lucide-react'
@@ -25,6 +27,7 @@ interface SidePaneTabTriggerProps {
 
 /** 改编自 ZCode SidePaneTabTrigger：固定 tab 宽度、水平排序、单击/中键/菜单关闭语义。 */
 export function SidePaneTabTrigger({ tab, active, unseen, onActivate, onClose, onCloseOthers, onCloseAll }: SidePaneTabTriggerProps): React.ReactElement {
+  const { t } = useTranslation('workspace', { i18n })
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.id })
   const suppressedClick = React.useRef(false)
   if (isDragging) suppressedClick.current = true
@@ -52,17 +55,17 @@ export function SidePaneTabTrigger({ tab, active, unseen, onActivate, onClose, o
               role="tab" aria-label={tab.label} aria-selected={active} tabIndex={active ? 0 : -1}>
               <Icon className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{tab.label}</span>
-              {tab.tool === 'changes' && unseen && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="有未查看的改动" />}
-              {tab.closeable && <button type="button" aria-label={`关闭${tab.label}`} className={cn('absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md hover:bg-background/80', !active && 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100')} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClose() }}><X className="size-3" /></button>}
+              {tab.tool === 'changes' && unseen && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label={t('unseenChanges')} />}
+              {tab.closeable && <button type="button" aria-label={`${t('close')}${tab.label}`} className={cn('absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md hover:bg-background/80', !active && 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100')} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClose() }}><X className="size-3" /></button>}
             </div>
           </TooltipTrigger>
         </ContextMenuTrigger>
         <TooltipContent side="bottom">{tab.label}</TooltipContent>
       </Tooltip>
       {tab.closeable && <ContextMenuContent className="w-44">
-        <ContextMenuItem onSelect={onClose}>关闭当前标签</ContextMenuItem>
-        <ContextMenuItem onSelect={onCloseOthers}>关闭其他标签</ContextMenuItem>
-        <ContextMenuItem onSelect={onCloseAll}>关闭所有标签</ContextMenuItem>
+        <ContextMenuItem onSelect={onClose}>{t('closeCurrentTab')}</ContextMenuItem>
+        <ContextMenuItem onSelect={onCloseOthers}>{t('closeOtherTabs')}</ContextMenuItem>
+        <ContextMenuItem onSelect={onCloseAll}>{t('closeAllTabs')}</ContextMenuItem>
       </ContextMenuContent>}
     </ContextMenu>
   )

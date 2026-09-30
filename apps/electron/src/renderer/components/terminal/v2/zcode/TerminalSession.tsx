@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { ClipboardAddon } from '@xterm/addon-clipboard'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal as XTerm, type ILink } from '@xterm/xterm'
@@ -29,6 +31,7 @@ interface TerminalSessionProps {
  * Browser 链接只可交给 Domi Main 安全策略，不能由 xterm 直接导航。
  */
 export function TerminalSession({ terminal, visible, resizing = false }: TerminalSessionProps): React.ReactElement {
+  const { t } = useTranslation('workspace', { i18n })
   const container = React.useRef<HTMLDivElement>(null)
   const xtermRef = React.useRef<XTerm | null>(null)
   const visibleRef = React.useRef(visible)
@@ -50,7 +53,7 @@ export function TerminalSession({ terminal, visible, resizing = false }: Termina
       setWorkspaceStates((current) => activateSessionRightWorkspaceTab(current, terminal.ownerSessionId, browserTabId(state.browserSessionId)))
       setWorkspaceOpen(true)
     } catch (error) {
-      toast.error('无法打开终端链接', { description: error instanceof Error ? error.message : '链接不可用' })
+      toast.error(t('unableOpenTerminalLink'), { description: error instanceof Error ? error.message : t('terminalLinkUnavailable') })
     }
   }, [terminal.ownerSessionId, setBrowserStates, setWorkspaceStates, setWorkspaceOpen])
 
@@ -179,7 +182,7 @@ export function TerminalSession({ terminal, visible, resizing = false }: Termina
       loaded = true
       for (const event of pendingOutput) writeOutput(event)
       pendingOutput.length = 0
-      xterm.writeln(`\r\n[Domi] ${error instanceof Error ? error.message : '终端输出读取失败'}`)
+      xterm.writeln(`\r\n[Domi] ${error instanceof Error ? error.message : t('terminalOutputReadFailed')}`)
     })
     scheduleFit()
     return () => {
@@ -201,21 +204,21 @@ export function TerminalSession({ terminal, visible, resizing = false }: Termina
 
   const copySelection = (): void => {
     const selection = xtermRef.current?.getSelection()
-    if (selection) void navigator.clipboard.writeText(selection).catch(() => toast.error('无法复制终端选中内容'))
+    if (selection) void navigator.clipboard.writeText(selection).catch(() => toast.error(t('copyTerminalSelectionFailed')))
   }
   const pasteClipboard = (): void => {
     if (terminal.status !== 'running') return
     void navigator.clipboard.readText()
       .then((text) => { if (text) xtermRef.current?.paste(text) })
-      .catch(() => toast.error('无法粘贴剪贴板内容'))
+      .catch(() => toast.error(t('pasteClipboardFailed')))
   }
 
   // 保留 ZCode TerminalSession 的右键复制/粘贴；输入继续由 owner-bound PTY IPC 处理。
   return <ContextMenu>
     <ContextMenuTrigger asChild><div ref={container} className="terminal-xterm-shell h-full min-h-0 w-full px-2 py-1" /></ContextMenuTrigger>
     <ContextMenuContent>
-      <ContextMenuItem onSelect={copySelection} disabled={!visible}><Copy className="mr-2 size-4" />复制</ContextMenuItem>
-      <ContextMenuItem onSelect={pasteClipboard} disabled={!visible || terminal.status !== 'running'}><ClipboardPaste className="mr-2 size-4" />粘贴</ContextMenuItem>
+      <ContextMenuItem onSelect={copySelection} disabled={!visible}><Copy className="mr-2 size-4" />{t('copy')}</ContextMenuItem>
+      <ContextMenuItem onSelect={pasteClipboard} disabled={!visible || terminal.status !== 'running'}><ClipboardPaste className="mr-2 size-4" />{t('paste')}</ContextMenuItem>
     </ContextMenuContent>
   </ContextMenu>
 }

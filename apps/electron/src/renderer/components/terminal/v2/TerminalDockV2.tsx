@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDown, ChevronUp, Plus, Square } from 'lucide-react'
 import type { TerminalProfile, TerminalSessionView } from '@domi/shared'
@@ -18,6 +20,7 @@ const MIN_HEIGHT = 150
 const MAX_HEIGHT = 560
 
 export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): React.ReactElement | null {
+  const { t } = useTranslation('workspace', { i18n })
   const terminalStates = useAtomValue(terminalStateMapAtom)
   const terminals = React.useMemo(
     () => selectDockTerminals(terminalStates.values(), ownerSessionId),
@@ -85,7 +88,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
       setActiveMap((current) => new Map(current).set(ownerSessionId, terminal.terminalId))
       setOpenMap((current) => new Map(current).set(ownerSessionId, true))
     } catch (cause) {
-      setError(cause instanceof Error && cause.message ? cause.message : '终端创建失败。')
+      setError(cause instanceof Error && cause.message ? cause.message : t('terminalCreateFailed'))
     } finally {
       setCreating(false)
     }
@@ -119,30 +122,30 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
   // ZCode Terminal 的 TabsContent forceMount：收起或切 tab 不释放 xterm / PTY。
   // Domi 的 terminal state 与 owner/target IPC 仍是唯一资源事实源。
   return (
-    <section className="relative flex shrink-0 flex-col overflow-hidden border-t border-border/60 bg-background p-2 pb-1 titlebar-no-drag" style={{ height: open ? height : 46 }} aria-label="内置终端" data-zcode-terminal-dock="">
+    <section className="relative flex shrink-0 flex-col overflow-hidden border-t border-border/60 bg-background p-2 pb-1 titlebar-no-drag" style={{ height: open ? height : 46 }} aria-label={t('terminalPanel')} data-zcode-terminal-dock="">
       {open && <div className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize" onPointerDown={startResize} />}
       <Tabs value={active?.terminalId ?? ''} onValueChange={(terminalId) => setActiveMap((current) => new Map(current).set(ownerSessionId, terminalId))} className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex h-8 shrink-0 items-center gap-2">
-          <div className="shrink-0 truncate text-xs font-medium">终端</div>
-          {runningCount > 0 && <span className="shrink-0 text-[11px] text-muted-foreground">{runningCount} 个运行中</span>}
+          <div className="shrink-0 truncate text-xs font-medium">{t('terminal')}</div>
+          {runningCount > 0 && <span className="shrink-0 text-[11px] text-muted-foreground">{t('runningCount', { count: runningCount })}</span>}
           <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <TabsList className="flex !h-7 w-max justify-start gap-1 rounded-none bg-transparent p-0">
-              {terminals.map((terminal) => <TerminalTabTrigger key={terminal.terminalId} id={terminal.terminalId} title={terminal.title} closeLabel={`关闭${terminal.title}`} active={active?.terminalId === terminal.terminalId} status={terminal.status} onClose={(id) => { if (id === terminal.terminalId) void closeTerminal(terminal) }} />)}
+              {terminals.map((terminal) => <TerminalTabTrigger key={terminal.terminalId} id={terminal.terminalId} title={terminal.title} closeLabel={`${t('close')}${terminal.title}`} active={active?.terminalId === terminal.terminalId} status={terminal.status} onClose={(id) => { if (id === terminal.terminalId) void closeTerminal(terminal) }} />)}
             </TabsList>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {open && <select value={profile} onChange={(event) => setProfile(event.target.value as TerminalProfile)} aria-label="新终端 Shell" className="h-7 rounded-md bg-accent/50 px-1 text-[11px] text-muted-foreground">
-              <option value="default">默认 Shell</option>
+            {open && <select value={profile} onChange={(event) => setProfile(event.target.value as TerminalProfile)} aria-label={t('newTerminal') + ' Shell'} className="h-7 rounded-md bg-accent/50 px-1 text-[11px] text-muted-foreground">
+              <option value="default">{t('defaultShell')}</option>
               {navigator.platform.toLowerCase().includes('win') ? <><option value="powershell">PowerShell</option><option value="cmd">Command Prompt</option><option value="git-bash">Git Bash</option><option value="wsl">WSL</option></> : <><option value="bash">Bash</option><option value="zsh">Zsh</option></>}
             </select>}
-            {open && <Button type="button" variant="ghost" size="icon" className="size-7" disabled={creating} onClick={() => void createTerminal()} aria-label="新建终端"><Plus className="size-4" /></Button>}
-            {open && active?.status === 'running' && <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => void window.electronAPI.terminal.interrupt({ ownerSessionId, terminalId: active.terminalId })} aria-label="中断当前终端"><Square className="size-3" /></Button>}
-            <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => setOpenMap((current) => new Map(current).set(ownerSessionId, !open))} aria-label={open ? '折叠终端' : '展开终端'}>{open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}</Button>
+            {open && <Button type="button" variant="ghost" size="icon" className="size-7" disabled={creating} onClick={() => void createTerminal()} aria-label={t('newTerminal')}><Plus className="size-4" /></Button>}
+            {open && active?.status === 'running' && <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => void window.electronAPI.terminal.interrupt({ ownerSessionId, terminalId: active.terminalId })} aria-label={t('interruptTerminal')}><Square className="size-3" /></Button>}
+            <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => setOpenMap((current) => new Map(current).set(ownerSessionId, !open))} aria-label={open ? t('collapseTerminal') : t('expandTerminal')}>{open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}</Button>
           </div>
         </div>
         {open && error && <div className="shrink-0 bg-destructive/10 px-3 py-1 text-xs text-destructive">{error}</div>}
         <div className={cn('min-h-0 flex-1 overflow-hidden rounded-lg bg-[#171717]', !open && 'hidden')}>
-          {terminals.length ? terminals.map((terminal) => <TabsContent key={terminal.terminalId} value={terminal.terminalId} forceMount className="!m-0 h-full min-h-0 flex-1 data-[state=inactive]:hidden"><TerminalSession terminal={terminal} visible={open && active?.terminalId === terminal.terminalId} /></TabsContent>) : <button type="button" className="flex h-full w-full items-center justify-center text-xs text-muted-foreground hover:text-foreground" onClick={() => void createTerminal()}><Plus className="mr-1 size-4" />新建终端</button>}
+          {terminals.length ? terminals.map((terminal) => <TabsContent key={terminal.terminalId} value={terminal.terminalId} forceMount className="!m-0 h-full min-h-0 flex-1 data-[state=inactive]:hidden"><TerminalSession terminal={terminal} visible={open && active?.terminalId === terminal.terminalId} /></TabsContent>) : <button type="button" className="flex h-full w-full items-center justify-center text-xs text-muted-foreground hover:text-foreground" onClick={() => void createTerminal()}><Plus className="mr-1 size-4" />{t('newTerminal')}</button>}
         </div>
       </Tabs>
     </section>

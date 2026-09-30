@@ -11,6 +11,8 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { useAtomValue } from 'jotai'
 import { toast } from 'sonner'
 import {
@@ -164,6 +166,7 @@ function sortEntries(entries: ScopedFileEntry[]): ScopedFileEntry[] {
 }
 
 export function FileBrowser({ rootPath, roots, hideToolbar, embedded, hideEmpty, access, usesSessionTarget = false, projectRootPath, showSessionBadge = true, browseOnly = false, onAddToChat, onFilePreview }: FileBrowserProps): React.ReactElement {
+  const { t } = useTranslation('workspace', { i18n })
   const browserRoots = React.useMemo<FileBrowserRoot[]>(() => {
     if (roots && roots.length > 0) return roots.filter((root) => Boolean(root.path))
     return rootPath ? [{ path: rootPath, scope: 'project' }] : []
@@ -500,7 +503,7 @@ export function FileBrowser({ rootPath, roots, hideToolbar, embedded, hideEmpty,
             }}
           >
             <RefreshCw className="mr-1 size-3" />
-            重试
+            {t('retry')}
           </Button>
         </div>
       )}
@@ -580,7 +583,7 @@ export function FileBrowser({ rootPath, roots, hideToolbar, embedded, hideEmpty,
                 window.electronAPI.openFile(path, access).catch(console.error)
               }
             }}
-            title="在 Finder 中打开"
+            title={t('openInFinder')}
           >
             <ExternalLink className="size-3.5" />
           </Button>
@@ -608,23 +611,23 @@ export function FileBrowser({ rootPath, roots, hideToolbar, embedded, hideEmpty,
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogTitle>{t('confirmDelete')}</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteCount > 1 ? (
-                <>确定要删除选中的 <strong>{deleteCount}</strong> 个项目吗？</>
+                <>{t('deleteSelectedItems', { count: deleteCount })}</>
               ) : (
                 <>
-                  确定要删除 <strong>{deleteTarget?.name}</strong> 吗？
-                  {deleteTarget?.isDirectory && '（包含所有子文件）'}
+                  {t('deleteItem', { name: deleteTarget?.name ?? '' })}
+                  {deleteTarget?.isDirectory && t('includesChildren')}
                 </>
               )}
-              此操作不可撤销。
+              {t('irreversible')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('cancelAction')}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              删除
+              {t('deleteAction')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -704,6 +707,7 @@ function FileTreeItem({
   onAddToChat,
   onFilePreview,
 }: FileTreeItemProps): React.ReactElement {
+  const { t } = useTranslation('workspace', { i18n })
   const [expanded, setExpanded] = React.useState(false)
   const [children, setChildren] = React.useState<ScopedFileEntry[]>([])
   const [childrenLoaded, setChildrenLoaded] = React.useState(false)
@@ -1162,7 +1166,7 @@ function FileTreeItem({
               className="text-[11px] text-muted-foreground/50 py-1"
               style={{ paddingLeft: paddingLeft + 24 }}
             >
-              空文件夹
+              {t('emptyFolder')}
             </div>
           )}
           {children.map((child) => (
