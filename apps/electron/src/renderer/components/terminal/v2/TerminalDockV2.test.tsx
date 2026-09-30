@@ -28,6 +28,7 @@ test('Given multiple owners and terminals When rendering v2 Dock Then only owner
   expect(html).toContain('aria-label="切换到first"')
   expect(html).toContain('aria-label="关闭first"')
   expect(html).toContain('aria-label="关闭second"')
+  expect(html).toContain('data-zcode-terminal-close="true"')
   expect(html).not.toContain('关闭other')
   // ZCode forceMount：切到第二标签时，第一标签的 xterm DOM 保留，不随 tab 重建。
   expect(html.match(/terminal-xterm-shell/g)).toHaveLength(2)

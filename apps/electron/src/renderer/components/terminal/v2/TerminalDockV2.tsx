@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, ChevronUp, Plus, Square } from 'lucide-react'
+import { ChevronDown, ChevronUp, Plus, Square, X } from 'lucide-react'
 import type { TerminalCreateInput, TerminalProfile, TerminalSessionView } from '@domi/shared'
 import { Button } from '@/components/ui/button.tsx'
 import {
@@ -97,8 +97,12 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
   }, [creating, ownerSessionId, profile, setActiveMap, setOpenMap, setStates])
 
   const closeTerminal = React.useCallback(async (terminal: TerminalSessionView) => {
+    // ZCode 关闭最后一个 session 时同时关闭 panel；PTY 仍由 Main/utility 负责回收。
+    if (terminals.length === 1) {
+      setOpenMap((current) => new Map(current).set(ownerSessionId, false))
+    }
     await window.electronAPI.terminal.close({ ownerSessionId, terminalId: terminal.terminalId })
-  }, [ownerSessionId])
+  }, [ownerSessionId, setOpenMap, terminals.length])
 
   const updateHeight = React.useCallback((nextHeight: number): void => {
     setHeightMap((current) => new Map(current).set(ownerSessionId, nextHeight))
@@ -150,6 +154,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
             </select>}
             {open && <Button type="button" variant="ghost" size="icon" className="size-7" disabled={creating} onClick={() => void createTerminal()} aria-label={t('newTerminal')}><Plus className="size-4" /></Button>}
             {open && active?.status === 'running' && <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => void window.electronAPI.terminal.interrupt({ ownerSessionId, terminalId: active.terminalId })} aria-label={t('interruptTerminal')}><Square className="size-3" /></Button>}
+            {open && <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => setOpenMap((current) => new Map(current).set(ownerSessionId, false))} aria-label={`${t('close')}${t('terminal')}`} data-zcode-terminal-close="true"><X className="size-4" /></Button>}
             <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => setOpenMap((current) => new Map(current).set(ownerSessionId, !open))} aria-label={open ? t('collapseTerminal') : t('expandTerminal')}>{open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}</Button>
           </div>
         </div>
