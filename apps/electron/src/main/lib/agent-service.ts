@@ -774,10 +774,19 @@ export async function submitOrEnqueueAgentMessage(
   input: AgentSubmitOrEnqueueInput,
   webContents: WebContents,
 ): Promise<AgentSubmitOrEnqueueResult> {
-  // 进入队列前解析默认值，之后设置变化不能影响这条请求。
-  if (input.imageGeneration || parseAgentImageRequest(input.userMessage).matched) {
-    input = { ...input, imageGeneration: resolveImageGenerationSelection(input.imageGeneration) }
-  }
+  // 只有当前原始消息明确请求生图时才解析默认模型；历史选择或陈旧标志不能授权普通消息。
+  const imageRequest = parseAgentImageRequest(input.rawUserMessage ?? input.userMessage).matched
+  input = imageRequest
+    ? {
+        ...input,
+        imageGenerationRequested: true,
+        imageGeneration: resolveImageGenerationSelection(input.imageGeneration),
+      }
+    : {
+        ...input,
+        imageGenerationRequested: false,
+        imageGeneration: undefined,
+      }
   registerWebContents(input.sessionId, webContents)
   return submissionDeduplicator.submit(input, async () => {
     const meta = getAgentSessionMeta(input.sessionId)

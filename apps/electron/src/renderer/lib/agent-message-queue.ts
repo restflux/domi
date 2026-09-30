@@ -23,6 +23,7 @@ export interface AgentQueuedAttachment {
 
 export interface AgentQueuedMessage {
   imageGeneration?: ImageGenerationSelection
+  imageGenerationRequested?: boolean
   id: string
   text: string
   createdAt: number
@@ -44,6 +45,7 @@ export function createAgentQueuedMessage(
   quotedSelection?: QuotedSelection | null,
   options?: {
     imageGeneration?: ImageGenerationSelection
+    imageGenerationRequested?: boolean
     fileReferenceBlock?: string
     attachments?: AgentQueuedAttachment[]
     additionalDirectories?: string[]
@@ -57,7 +59,8 @@ export function createAgentQueuedMessage(
     createdAt,
     kind: options?.kind ?? 'steering',
   }
-  if (options?.imageGeneration) message.imageGeneration = { ...options.imageGeneration }
+  if (options?.imageGenerationRequested && options.imageGeneration) message.imageGeneration = { ...options.imageGeneration }
+  if (options?.imageGenerationRequested) message.imageGenerationRequested = true
   if (quotedSelection) message.quotedSelection = quotedSelection
   if (options?.fileReferenceBlock) message.fileReferenceBlock = options.fileReferenceBlock
   if (options?.attachments && options.attachments.length > 0) message.attachments = options.attachments

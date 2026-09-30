@@ -3,7 +3,8 @@ import type { ImageGenerationConfig, ImageGenerationToolId } from './image-gener
 import { resolveImageGenerationConfig, resolveImageGenerationSelection } from './image-generation/config'
 
 /** 失效的默认生图渠道不应阻断普通对话；显式选择必须报错而不能静默回退。 */
-export function resolveRequestImageGeneration(selection?: ImageGenerationSelection): ImageGenerationSelection | undefined {
+export function resolveRequestImageGeneration(selection?: ImageGenerationSelection, requested = false): ImageGenerationSelection | undefined {
+  if (!requested) return undefined
   if (selection !== undefined) return resolveImageGenerationSelection(selection)
   try {
     return resolveImageGenerationSelection()

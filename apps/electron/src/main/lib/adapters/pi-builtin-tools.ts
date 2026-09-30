@@ -99,6 +99,7 @@ type PiSdk = typeof import('@earendil-works/pi-coding-agent')
 export interface PiBuiltinToolsContext {
   imageGenerationRun?: ImageGenerationRun
   imageGeneration?: import('@domi/shared').ImageGenerationSelection
+  imageGenerationRequested?: boolean
   sessionId: string
   channelId: string
   modelId?: string
@@ -1181,7 +1182,7 @@ export async function buildPiBuiltinTools(
     }
   }
 
-  if (ctx.imageGeneration ? getImageGenerationToolId(ctx.imageGeneration) === 'nano-banana' : isImageGenerationAvailable('nano-banana')) {
+  if (ctx.imageGenerationRequested && (ctx.imageGeneration ? getImageGenerationToolId(ctx.imageGeneration) === 'nano-banana' : isImageGenerationAvailable('nano-banana'))) {
     try {
       tools.push(...buildPiNanoBananaTools(sdk, ctx.sessionId, ctx.agentCwd, ctx.imageGeneration, imageGenerationRun))
     } catch (error) {
@@ -1189,7 +1190,7 @@ export async function buildPiBuiltinTools(
     }
   }
 
-  if (ctx.imageGeneration ? getImageGenerationToolId(ctx.imageGeneration) === 'gpt-image' : isImageGenerationAvailable('gpt-image')) {
+  if (ctx.imageGenerationRequested && (ctx.imageGeneration ? getImageGenerationToolId(ctx.imageGeneration) === 'gpt-image' : isImageGenerationAvailable('gpt-image'))) {
     try {
       tools.push(...buildPiGptImageTools(sdk, ctx.sessionId, ctx.agentCwd, ctx.imageGeneration, imageGenerationRun))
     } catch (error) {

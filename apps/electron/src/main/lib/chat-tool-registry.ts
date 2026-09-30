@@ -126,7 +126,7 @@ export interface EnabledToolsResult {
  * @param enabledToolIds 前端传入的启用工具 ID 列表
  * @returns 合并后的工具定义和系统提示词
  */
-export function getEnabledTools(enabledToolIds?: string[], imageGeneration?: import('@domi/shared').ImageGenerationSelection): EnabledToolsResult {
+export function getEnabledTools(enabledToolIds?: string[], imageGeneration?: import('@domi/shared').ImageGenerationSelection, imageGenerationRequested = false): EnabledToolsResult {
   // 未传入 enabledToolIds 时使用配置文件的开关状态
   const config = getChatToolsConfig()
 
@@ -140,12 +140,12 @@ export function getEnabledTools(enabledToolIds?: string[], imageGeneration?: imp
     // 检查工具是否启用（前端开关 + 配置开关）
     const isImageTool = toolId === 'gpt-image' || toolId === 'nano-banana'
     const isEnabledByUser = isImageTool
-      ? (imageGeneration ? toolId === getImageGenerationToolId(imageGeneration) : entry.checkAvailable())
+      ? imageGenerationRequested && (imageGeneration ? toolId === getImageGenerationToolId(imageGeneration) : entry.checkAvailable())
       : enabledToolIds ? enabledToolIds.includes(toolId) : (state?.enabled ?? false)
     if (!isEnabledByUser) continue
 
     // 检查工具是否可用（凭据已配置）
-    if (!(imageGeneration && isImageTool) && !entry.checkAvailable()) continue
+    if (!(imageGenerationRequested && isImageTool) && !entry.checkAvailable()) continue
 
     // 收集工具定义
     allDefinitions.push(...entry.getDefinitions())

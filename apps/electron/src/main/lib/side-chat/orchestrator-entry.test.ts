@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import ts from 'typescript'
 import type { AgentSendInput } from '@domi/shared'
 import { claimSideChatLaunch, registerSideChatLaunch } from './policy'
+import { parseAgentImageRequest } from '../agent-image-command'
 
 // 执行生产类的完整 sendMessage 方法，不复制授权逻辑、不 mock claim。
 // 仅剥离模块依赖与构造副作用，在进入后续 Worktree 准备时停止；不是 Provider/GUI 集成测试。
@@ -20,11 +21,11 @@ function harness(parent: string | undefined = 'parent', capturePersistedInput = 
   const defaultSelection: NonNullable<AgentSendInput['imageGeneration']> = { channelId: 'image-channel', modelId: 'image-model' }
   const errors: string[] = []
   let completed = 0
-  const create = new Function('claimSideChatLaunch', 'getAgentSessionMeta', 'resolveRequestImageGeneration', 'normalizeAgentNextTurnAsides', 'worktreeContinuationAuthorizationRegistry', `${compiled}\nreturn AgentOrchestrator;`) as (...dependencies: unknown[]) => EntryClass
+  const create = new Function('claimSideChatLaunch', 'getAgentSessionMeta', 'resolveRequestImageGeneration', 'normalizeAgentNextTurnAsides', 'worktreeContinuationAuthorizationRegistry', 'parseAgentImageRequest', `${compiled}\nreturn AgentOrchestrator;`) as (...dependencies: unknown[]) => EntryClass
   const Class = create(claimSideChatLaunch, () => ({ sideChatParentSessionId: parent || undefined }), (selection: AgentSendInput['imageGeneration']) => { resolutions++; return selection ?? defaultSelection }, () => [], {
     isConfirmationInProgress: () => { if (!capturePersistedInput) throw admitted; return false },
     noteSessionActivity: () => {}, clearSession: () => {},
-  })
+  }, parseAgentImageRequest)
   const entry: Entry = Object.assign(Object.create(Class.prototype), {
     rewindSessions: new Set(), activeSessions: new Set(['child']),
     persistUserMessage: (_id: string, _text: string, _started: number, _asides: unknown, _uuid: string | undefined, selection: AgentSendInput['imageGeneration']) => { persistedSelection = selection },
@@ -87,16 +88,25 @@ test('Given 侧聊请求带生图配置 When 授权后正规化 Then 持久化�
 })
 
 for (const explicit of [false, true]) {
-  test(`Given 普通 Work ${explicit ? '显式' : '默认'}生图选择 When 正规化 Then 原选择规则保持`, async () => {
+  test(`Given 普通 Work ${explicit ? '携带历史选择' : '已有默认模型'} When 正规化 Then 不解析也不持久化生图配置`, async () => {
     const h = harness('', true)
     const selection = { channelId: 'chosen-channel', modelId: 'chosen-model' }
-    await h.send({ ...request(), ...(explicit ? { imageGeneration: selection } : {}) })
+    await h.send({ ...request(), ...(explicit ? { imageGeneration: selection, imageGenerationRequested: true } : {}) })
     expect(h.errors).toEqual(['上一条消息仍在处理中，请稍候再试'])
-    expect(h.resolutions()).toBe(1)
-    expect(h.selection()).toBe(explicit ? selection : h.defaultSelection)
+    expect(h.resolutions()).toBe(0)
+    expect(h.selection()).toBeUndefined()
   })
 }
 
+test('Given 明确生图请求 When 正规化 Then 自动解析默认模型并保存本轮选择', async () => {
+  const h = harness('', true)
+  await h.send({ ...request(), userMessage: '/image 画一只猫' })
+  expect(h.errors).toEqual(['上一条消息仍在处理中，请稍候再试'])
+  expect(h.resolutions()).toBe(1)
+  expect(h.selection()).toEqual(h.defaultSelection)
+})
+
+// 普通 Work 的历史选择不会在没有明确图片正文时授权本轮生图；覆盖在上面的回归用例中。
 test('Given 宿主 continuation When 进入编排 Then 不补入用户生图默认', async () => {
   const h = harness('', true)
   await h.send({ ...request(), worktreeContinuationAuthorizationToken: 'host-token' })

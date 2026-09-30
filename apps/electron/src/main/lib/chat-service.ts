@@ -1,5 +1,5 @@
 import { ImageGenerationRun } from './image-generation/run'
-import { parseAgentImageCommand } from './agent-image-command'
+import { parseAgentImageCommand, parseAgentImageRequest } from './agent-image-command'
 import { prepareImageGenerationConfigs, resolveRequestImageGeneration } from './image-generation-request'
 /**
  * AI 聊天流式服务（Electron 编排层）
@@ -203,9 +203,12 @@ export async function sendMessage(
   input: ChatSendInput,
   webContents: WebContents,
 ): Promise<void> {
+  // 生图授权必须由当前消息正文产生；持久化选择或陈旧 flag 不能单独授权本轮工具。
+  const imageGenerationRequested = parseAgentImageCommand(input.userMessage).matched
+    || parseAgentImageRequest(input.userMessage).matched
   let imageGeneration: import('@domi/shared').ImageGenerationSelection | undefined
   try {
-    imageGeneration = resolveRequestImageGeneration(input.imageGeneration)
+    imageGeneration = resolveRequestImageGeneration(input.imageGeneration, imageGenerationRequested)
   } catch (error) {
     webContents.send(CHAT_IPC_CHANNELS.STREAM_ERROR, {
       conversationId: input.conversationId,
@@ -262,7 +265,7 @@ export async function sendMessage(
   const userMsg: ChatMessage = {
     id: randomUUID(),
     role: 'user',
-    imageGeneration,
+    ...(imageGenerationRequested && imageGeneration ? { imageGeneration } : {}),
     content: userMessage,
     createdAt: Date.now(),
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
@@ -319,9 +322,9 @@ export async function sendMessage(
     const adapter = getAdapter(channel.provider)
 
     // 8. 从工具注册表获取启用的工具
-    const enabledTools = getEnabledTools(enabledToolIds, imageGeneration)
+    const enabledTools = getEnabledTools(enabledToolIds, imageGeneration, imageGenerationRequested)
     const tools = enabledTools.tools
-    const systemPromptAppend = (enabledTools.systemPromptAppend ?? '') + (input.imageGeneration || parseAgentImageCommand(input.userMessage).matched
+    const systemPromptAppend = (enabledTools.systemPromptAppend ?? '') + (imageGenerationRequested
       ? `
 用户已开启图片生成。请使用提供的生图工具实际生成或编辑图片，不要只输出提示词。用户的渠道、模型和参数已由宿主固定；只有工具返回图片且没有错误时才能报告完成。`
       : '')

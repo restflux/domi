@@ -1315,7 +1315,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       queueMessageId: message.id,
       queueKind,
       userMessage: sdkText,
-      imageGeneration: message.imageGeneration,
+      ...(message.imageGenerationRequested && message.imageGeneration ? { imageGeneration: message.imageGeneration } : {}),
+      imageGenerationRequested: message.imageGenerationRequested === true,
       rawUserMessage: rawText,
       userMessageUuid: message.id,
       channelId: agentChannelId,
@@ -1335,7 +1336,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
     if (result.disposition === 'injected') {
       if (!isNativePiQueue) {
-        appendLiveUserMessage(createUserSDKMessage(rawText, message.id, Date.now(), message.nextTurnAsides, message.imageGeneration))
+        appendLiveUserMessage(createUserSDKMessage(rawText, message.id, Date.now(), message.nextTurnAsides, message.imageGenerationRequested ? message.imageGeneration : undefined))
       }
       return
     }
@@ -1361,6 +1362,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     queuedAdditionalDirectories: string[] = [],
     nextTurnAsides: AgentNextTurnAside[] = [],
     imageGeneration?: ImageGenerationSelection,
+    imageGenerationRequested = false,
   ): Promise<void> => {
     const streamStartedAt = Date.now()
     const additionalDirectoriesForRun = createBaseAdditionalDirectories()
@@ -1395,13 +1397,14 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return map
     })
 
-    appendOptimisticPersistedMessage(createUserSDKMessage(text, undefined, streamStartedAt, nextTurnAsides, imageGeneration))
+    appendOptimisticPersistedMessage(createUserSDKMessage(text, undefined, streamStartedAt, nextTurnAsides, imageGenerationRequested ? imageGeneration : undefined))
 
     try {
       await window.electronAPI.sendAgentMessage({
         sessionId,
         userMessage: text,
-        imageGeneration,
+        ...(imageGenerationRequested && imageGeneration ? { imageGeneration } : {}),
+        imageGenerationRequested,
         ...(nextTurnAsides.length > 0 && { nextTurnAsides }),
         channelId,
         modelId: agentModelId || undefined,
@@ -1469,7 +1472,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return
     }
 
-    await startQueuedMessageRun(payload.rawText, payload.mentions, agentChannelId, message.additionalDirectories, message.nextTurnAsides, message.imageGeneration)
+    await startQueuedMessageRun(payload.rawText, payload.mentions, agentChannelId, message.additionalDirectories, message.nextTurnAsides, message.imageGeneration, message.imageGenerationRequested === true)
   }, [
     agentChannelId,
     backgroundWaiting,
@@ -1650,7 +1653,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     // 快照当前上下文
     const snapshot = {
       message: pendingPrompt.message,
-      imageGeneration: pendingPrompt.imageGeneration,
       channelId: agentChannelId,
       modelId: agentModelId || undefined,
       workspaceId: currentWorkspaceId || undefined,
@@ -1696,7 +1698,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         message: {
           content: [{ type: 'text', text: snapshot.message }],
         },
-        _imageGeneration: snapshot.imageGeneration,
         parent_tool_use_id: null,
         _createdAt: Date.now(),
       } as unknown as SDKMessage
@@ -1706,7 +1707,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       const input: AgentSendInput = {
         sessionId,
         userMessage: snapshot.message,
-        imageGeneration: snapshot.imageGeneration,
+        imageGenerationRequested: false,
         channelId: snapshot.channelId,
         modelId: snapshot.modelId,
         workspaceId: snapshot.workspaceId,
@@ -2555,11 +2556,12 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     const scope = `work:${sessionId}`
     const command = parseImageCommand((overrideText ?? inputContent).trim())
     const preferredImage = store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom)
-    const selectedImage = cleanInput ? null : command.requested
+    const imageGenerationRequested = !cleanInput && command.requested
+    const selectedImage = imageGenerationRequested
       ? resolveImageSelection(store.get(imageGenerationChannelsAtom), store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom))
-      : store.get(imageGenerationSelectionsAtom)[scope]
+      : null
     const imageGeneration = selectedImage ? { ...selectedImage } : undefined
-    if (command.requested && !cleanInput) {
+    if (imageGenerationRequested) {
       if (!selectedImage) { toast.error(preferredImage ? '所选生图渠道或模型已不可用，请重新选择' : '请先在渠道设置中启用图片生成'); return }
 
       store.set(imageGenerationSelectionsAtom, (current) => ({ ...current, [scope]: selectedImage ?? null }))
@@ -2682,7 +2684,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         Date.now(),
         quotedSelection,
         {
-          imageGeneration,
+          ...(imageGeneration ? { imageGeneration } : {}),
+          imageGenerationRequested,
           kind,
           ...(attachmentContext ? {
             fileReferenceBlock: attachmentContext.referenceBlock,
@@ -2751,7 +2754,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       const quotedSelection = cleanInput ? null : consumeQuotedSelection()
       const backgroundQueueKind: AgentQueueMessageKind = requestedQueueKind
       const message = createAgentQueuedMessage(effectiveText, crypto.randomUUID(), Date.now(), quotedSelection, {
-        imageGeneration,
+        ...(imageGeneration ? { imageGeneration } : {}),
+        imageGenerationRequested,
         ...(attachmentContext ? {
           fileReferenceBlock: attachmentContext.referenceBlock,
           attachments: attachmentContext.attachments,
@@ -2893,13 +2897,14 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
 
     // 乐观更新：附言作为展示元数据挂在用户消息上，不混入正文与树摘要。
     const tempUserSDKMsg = createUserSDKMessage(finalMessage, undefined, Date.now(), nextTurnAsides)
-    if (tempUserSDKMsg.type === 'user') tempUserSDKMsg._imageGeneration = imageGeneration
+    if (tempUserSDKMsg.type === 'user' && imageGenerationRequested && imageGeneration) tempUserSDKMsg._imageGeneration = imageGeneration
     appendOptimisticPersistedMessage(tempUserSDKMsg)
 
     const input: AgentSendInput = {
       sessionId,
       userMessage: finalMessage,
-      imageGeneration,
+      ...(imageGeneration ? { imageGeneration } : {}),
+      imageGenerationRequested,
       ...(nextTurnAsides.length > 0 && { nextTurnAsides }),
       channelId: agentChannelId,
       modelId: agentModelId || undefined,
@@ -3463,7 +3468,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     window.electronAPI.sendAgentMessage({
       sessionId,
       userMessage: lastUserMessage,
-      imageGeneration: [...persistedSDKMessages].reverse().filter((message): message is SDKUserMessage => message.type === 'user').find((message) => getUserTextFromSDKMessage(message) !== null)?._imageGeneration,
+      // 重试是普通续跑动作，不把历史消息中的 `_imageGeneration` 恢复成本轮授权。
+      imageGenerationRequested: false,
       channelId: agentChannelId,
       modelId: agentModelId || undefined,
       workspaceId: currentWorkspaceId || undefined,
@@ -3493,7 +3499,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       setPendingPrompt({
         sessionId: meta.id,
         message: intent.prompt,
-        imageGeneration: [...persistedSDKMessages].reverse().filter((message): message is SDKUserMessage => message.type === 'user').find((message) => getUserTextFromSDKMessage(message) !== null)?._imageGeneration,
         mentionedSessionIds: intent.mentionedSessionIds,
       })
     } catch (error) {
@@ -3893,7 +3898,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         uuid: message.id,
         kind: message.kind,
         userMessage: payload.sdkText,
-        imageGeneration: message.imageGeneration,
+        ...(message.imageGenerationRequested && message.imageGeneration ? { imageGeneration: message.imageGeneration } : {}),
+        imageGenerationRequested: message.imageGenerationRequested === true,
         rawUserMessage: payload.rawText,
         ...(message.nextTurnAsides?.length ? { nextTurnAsides: message.nextTurnAsides } : {}),
         ...(payload.mentions.mentionedSkills.length > 0 && { mentionedSkills: payload.mentions.mentionedSkills }),

@@ -207,8 +207,10 @@ export interface MessageSearchResult {
  * 发送消息的输入参数
  */
 export interface ChatSendInput {
-  /** 本次生图选择，独立于主对话模型。 */
+  /** 本次生图选择，独立于主对话模型；仅在 imageGenerationRequested=true 时生效。 */
   imageGeneration?: import('./image-generation').ImageGenerationSelection
+  /** 本轮是否由用户明确请求生图；模型选择本身不构成授权。 */
+  imageGenerationRequested?: boolean
   /** 对话 ID */
   conversationId: string
   /** 用户消息内容 */

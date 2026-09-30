@@ -39,7 +39,7 @@ describe('原生生图选择', () => {
   })
   test('Given 已排队请求 When 输入框修改模型或队列失败恢复 Then 保留原选择快照', () => {
     const imageGeneration: ImageGenerationSelection = { channelId: 'a', modelId: 'gpt-image-2', numberOfImages: 2 }
-    const message = createAgentQueuedMessage('猫', 'queue-1', 1, null, { kind: 'followUp', imageGeneration })
+    const message = createAgentQueuedMessage('猫', 'queue-1', 1, null, { kind: 'followUp', imageGeneration, imageGenerationRequested: true })
     imageGeneration.modelId = 'another-model'
     expect(message.imageGeneration?.modelId).toBe('gpt-image-2')
     expect(restoreQueuedMessageToFront([], message)[0]?.imageGeneration).toEqual({ channelId: 'a', modelId: 'gpt-image-2', numberOfImages: 2 })

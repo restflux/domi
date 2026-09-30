@@ -248,7 +248,7 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     const preferredImage = store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom)
     const selection = options && 'imageGeneration' in options ? options.imageGeneration : command.requested
       ? resolveImageSelection(store.get(imageGenerationChannelsAtom), store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom))
-      : store.get(imageGenerationSelectionsAtom)[scope]
+      : undefined
     if (command.requested) {
       if (!selection) { toast.error(preferredImage ? '所选生图渠道或模型已不可用，请重新选择' : '请先在渠道设置中启用图片生成'); return }
 
@@ -367,7 +367,8 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
     const input: ChatSendInput = {
       conversationId,
       userMessage: finalContent,
-      imageGeneration,
+      ...(imageGeneration ? { imageGeneration } : {}),
+      imageGenerationRequested: command.requested,
       messageHistory: [], // 后端已改为从磁盘读取完整历史，无需前端传入
       channelId: selectedModel.channelId,
       modelId: selectedModel.modelId,

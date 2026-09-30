@@ -925,13 +925,17 @@ export class AgentOrchestrator {
       return
     }
     // 侧聊许可绑定原始请求对象，必须在任何配置正规化／复制之前消费。
-    // 看图输入仍走附件 + Read；侧聊不继承或接受生图配置。
-    const explicitImageRequest = !sideChatParentSessionId && Boolean(input.imageGeneration)
-    if (sideChatParentSessionId) {
-      input = { ...input, imageGeneration: undefined }
-    } else if (!worktreeContinuationAuthorizationToken) {
-      // 在异步准备前固定普通 Work 的选择；宿主续跑不继承用户生图默认。
-      input = { ...input, imageGeneration: resolveRequestImageGeneration(input.imageGeneration) }
+    // 生图模型选择只是配置；只有本轮明确意图才允许注入生图工具。
+    const detectedImageRequest = !sideChatParentSessionId
+      ? parseAgentImageRequest(rawUserMessage ?? userMessage)
+      : { matched: false as const }
+    const explicitImageRequest = !sideChatParentSessionId
+      && worktreeContinuationAuthorizationToken === undefined
+      && detectedImageRequest.matched
+    if (sideChatParentSessionId || !explicitImageRequest) {
+      input = { ...input, imageGeneration: undefined, imageGenerationRequested: false }
+    } else {
+      input = { ...input, imageGeneration: resolveRequestImageGeneration(input.imageGeneration, true), imageGenerationRequested: true }
     }
     let trustedWorktreeContinuation: TrustedWorktreeContinuationAuthorization | undefined
     let prevalidatedWorktreeContinuationTarget: Awaited<ReturnType<typeof resolveProductionAgentSessionTarget>> | undefined
@@ -1562,7 +1566,7 @@ export class AgentOrchestrator {
         // Exact file uploads are copied into the session workbench, already covered above.
         attachedDirectories: sessionMeta?.visionRelayAttachedDirectories ?? [],
       })
-      const selectedImageToolName = input.imageGeneration
+      const selectedImageToolName = explicitImageRequest && input.imageGeneration
         ? (getImageGenerationToolId(input.imageGeneration) === 'gpt-image' ? 'mcp__gpt_image__imagegen' : 'mcp__nano_banana__generate_image')
         : undefined
       const piSdk = await import('@earendil-works/pi-coding-agent')
@@ -1575,6 +1579,7 @@ export class AgentOrchestrator {
         ? { tools: [], toolAnnotations: {}, collaborationAvailable: false }
         : await buildPiBuiltinTools(piSdk, {
         imageGeneration: input.imageGeneration,
+        imageGenerationRequested: explicitImageRequest,
         imageGenerationRun,
         sessionId,
         channelId,
@@ -1669,10 +1674,11 @@ export class AgentOrchestrator {
         console.log(`[Agent 编排] 注入 referenced_planning: ${mentionedTodoIds?.length ?? 0} todos, ${mentionedCalendarEventIds?.length ?? 0} calendar events`)
       }
 
-      const detectedImageRequest = parseAgentImageRequest(sideChatParentSessionId ? '' : userMessage)
-      const imageCommand = detectedImageRequest.matched || !explicitImageRequest
+      const imageCommand = detectedImageRequest.matched
         ? detectedImageRequest
-        : parseAgentImageRequest(`/image ${userMessage}`)
+        : explicitImageRequest
+          ? { matched: true as const, command: 'image' as const, ...(userMessage.trim() ? { prompt: userMessage.trim() } : {}) }
+          : detectedImageRequest
       if (imageCommand.matched) {
         enrichedMessage = buildAgentImageCommandPrompt({
           command: imageCommand,
@@ -2234,8 +2240,12 @@ export class AgentOrchestrator {
         ...(maxTurns != null && { maxTurns }),
         permissionMode: promptPermissionMode,
         authorizeToolCall: (toolName, toolInput, options) => {
+          const isImageTool = collectAvailableAgentImageToolNames([toolName]).length > 0
+          if (isImageTool && !explicitImageRequest) {
+            return Promise.resolve({ behavior: 'deny' as const, message: '当前消息没有明确的生图请求，已禁止调用图片生成工具。' })
+          }
           // 用户明确选定的生图路由也约束同名外部 MCP，不能偷偷换供应商。
-          if (selectedImageToolName && toolName !== selectedImageToolName && collectAvailableAgentImageToolNames([toolName]).length) {
+          if (selectedImageToolName && toolName !== selectedImageToolName && isImageTool) {
             return Promise.resolve({ behavior: 'deny' as const, message: '本次已选择生图模型，请使用对应的内置生图工具，不得改用其他渠道。' })
           }
           return authorizePiExecution({ type: 'tool', toolName, input: toolInput, options })
