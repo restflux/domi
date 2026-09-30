@@ -355,7 +355,7 @@ Domi 没有 `UpdaterInitializer`，主进程也不初始化 Proma updater。
 - `electron-builder.yml` 通过 `node_modules/**/*` 收集同步后的运行时闭包，再排除 Electron、builder、esbuild、文档、示例和 sourcemap 等构建期内容；内部 `@domi/*` 已被 bundle，不随 node_modules 重复打包。
 - Domi CLI 由 `build:cli` 编译到 `resources/bin/`，默认 Skills 从 `default-skills/` 作为 `extraResources` 打包。修改这些路径时必须同时验证打包后的资源定位。
 - Domi 不配置 Proma 官方 `publish` provider。Windows CI 快车道每次 push 完成 typecheck、M0 测试、build、runtime dependency sync、未签名打包并实际启动 `out/win-unpacked/Domi.exe` 做 smoke；全量测试基线由每日 schedule 或手动 workflow_dispatch 运行，不阻塞发布节奏。
-- 二进制发布范围为 Windows x64 NSIS、Linux x64 AppImage/deb、macOS arm64 未签名（ad-hoc）DMG；macOS 包无 notarization，用户首次打开需右键「打开」，x64 与正式签名待证书与验证环境就绪后补。Release workflow 只能创建 Draft Release，不得自动公开；稳定版本核验后公开为正式 Release，只有 alpha、beta、rc 或明确测试版本才标记为 Pre-release。Release Notes 使用中英双版（先完整中文、分隔线后完整 English）。
+- 二进制发布范围为 Windows x64 NSIS、Linux x64 AppImage/deb、macOS arm64 未签名（ad-hoc）DMG；macOS 包无 notarization，用户首次打开需右键「打开」，x64 与正式签名待证书与验证环境就绪后补。Release workflow 只能创建 Draft Release，不得自动公开；稳定版本核验后公开为正式 Release，只有 alpha、beta、rc 或明确测试版本才标记为 Pre-release。Release Notes 使用中英双版（先完整中文、分隔线后完整 English），只描述 Domi 自身能力，不引用其他产品名称作为风格或出处。
 
 **修改打包配置时的检查清单：**
 
