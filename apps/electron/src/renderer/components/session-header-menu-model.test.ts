@@ -64,6 +64,64 @@ describe('session header menu model', () => {
     expect(actions.find((item) => item.action === 'copyPath')?.disabled).toBe(false)
   })
 
+  test('Given 本机有多种打开方式 When 构建菜单 Then 打开项目文件夹展开为子菜单并保留禁用态', () => {
+    const entries = buildAgentSessionHeaderMenu({
+      pinned: false,
+      needsFollowUp: false,
+      archived: false,
+      canTransfer: false,
+      isDraft: false,
+      canOpenProjectFolder: true,
+      hasSessionPath: true,
+      projectFolderOpeners: [
+        { id: 'file-manager', label: '访达', kind: 'file-manager' },
+        { id: 'vscode', label: 'VS Code', kind: 'editor' },
+        { id: 'terminal', label: '终端', kind: 'terminal' },
+      ],
+    })
+
+    const submenu = entries.find((entry) => entry.type === 'submenu')
+    expect(submenu).toMatchObject({ action: 'openProject', label: '打开项目文件夹' })
+    if (submenu?.type !== 'submenu') return
+    expect(submenu.items.map((item) => item.id)).toEqual(['file-manager', 'vscode', 'terminal'])
+    expect(submenu.disabled).toBe(false)
+
+    // 项目根不可用时子菜单整体禁用，与旧菜单项行为一致
+    const disabled = buildAgentSessionHeaderMenu({
+      pinned: false,
+      needsFollowUp: false,
+      archived: false,
+      canTransfer: false,
+      isDraft: false,
+      canOpenProjectFolder: false,
+      hasSessionPath: true,
+      projectFolderOpeners: [
+        { id: 'file-manager', label: '访达' },
+        { id: 'vscode', label: 'VS Code', kind: 'editor' },
+      ],
+    })
+    const disabledSubmenu = disabled.find((entry) => entry.type === 'submenu')
+    expect(disabledSubmenu?.type === 'submenu' && disabledSubmenu.disabled).toBe(true)
+  })
+
+  test('Given 只有一种或探测失败的打开方式 When 构建菜单 Then 回退为普通菜单项', () => {
+    const single = buildAgentSessionHeaderMenu({
+      pinned: false,
+      needsFollowUp: false,
+      archived: false,
+      canTransfer: false,
+      isDraft: false,
+      canOpenProjectFolder: true,
+      hasSessionPath: true,
+      projectFolderOpeners: [{ id: 'file-manager', label: '访达', kind: 'file-manager' }],
+    })
+    expect(single.some((entry) => entry.type === 'submenu')).toBe(false)
+    expect(single.find((entry) => entry.type === 'item' && entry.action === 'openProject')).toMatchObject({
+      label: '打开项目文件夹',
+      disabled: false,
+    })
+  })
+
   test('已绑定会话只显示统一的交接到新会话入口', () => {
     const items = buildAgentSessionHeaderMenu({
       pinned: false,

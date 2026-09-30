@@ -11,6 +11,14 @@ export type SessionHeaderMenuAction =
   | 'gallery'
   | 'delete'
 
+/** 子菜单项；如「打开项目文件夹」里的每个可用应用 */
+export interface SessionHeaderMenuSubmenuItem {
+  id: string
+  label: string
+  /** 分类用于图标：文件管理器 / 编辑器 / 终端 */
+  kind?: 'file-manager' | 'editor' | 'terminal'
+}
+
 export type SessionHeaderMenuEntry =
   | { type: 'separator' }
   | {
@@ -19,6 +27,13 @@ export type SessionHeaderMenuEntry =
       label: string
       disabled?: boolean
       destructive?: boolean
+    }
+  | {
+      type: 'submenu'
+      action: SessionHeaderMenuAction
+      label: string
+      disabled?: boolean
+      items: SessionHeaderMenuSubmenuItem[]
     }
 
 interface AgentSessionHeaderMenuState {
@@ -30,10 +45,8 @@ interface AgentSessionHeaderMenuState {
   canOpenProjectFolder: boolean
   hasSessionPath: boolean
   includeSessionTools?: boolean
-}
-
-export function getAgentSessionTransferLabel(isDraft: boolean): '迁移到其他项目' | '交接到新会话' {
-  return isDraft ? '迁移到其他项目' : '交接到新会话'
+  /** 本机可用的项目文件夹打开方式；多于一个时渲染为子菜单 */
+  projectFolderOpeners?: SessionHeaderMenuSubmenuItem[]
 }
 
 interface ChatSessionHeaderMenuState {
@@ -41,9 +54,30 @@ interface ChatSessionHeaderMenuState {
   archived: boolean
 }
 
+export function getAgentSessionTransferLabel(isDraft: boolean): '迁移到其他项目' | '交接到新会话' {
+  return isDraft ? '迁移到其他项目' : '交接到新会话'
+}
+
 export function buildAgentSessionHeaderMenu(
   state: AgentSessionHeaderMenuState,
 ): SessionHeaderMenuEntry[] {
+  // 只有一种打开方式（或探测失败）时保持普通菜单项，避免单元素子菜单。
+  const openers = state.projectFolderOpeners ?? []
+  const openProjectEntry: SessionHeaderMenuEntry = openers.length > 1
+    ? {
+        type: 'submenu',
+        action: 'openProject',
+        label: '打开项目文件夹',
+        disabled: !state.canOpenProjectFolder,
+        items: openers,
+      }
+    : {
+        type: 'item',
+        action: 'openProject',
+        label: '打开项目文件夹',
+        disabled: !state.canOpenProjectFolder,
+      }
+
   return [
     { type: 'item', action: 'pin', label: state.pinned ? '取消置顶' : '置顶会话' },
     { type: 'item', action: 'followUp', label: state.needsFollowUp ? '取消待继续' : '标记为待继续' },
@@ -62,7 +96,7 @@ export function buildAgentSessionHeaderMenu(
           label: getAgentSessionTransferLabel(state.isDraft),
         } as const]
       : []),
-    { type: 'item', action: 'openProject', label: '打开项目文件夹', disabled: !state.canOpenProjectFolder },
+    openProjectEntry,
     { type: 'item', action: 'copyPath', label: '复制会话目录', disabled: !state.hasSessionPath },
     { type: 'item', action: 'copyId', label: '复制会话 ID' },
     { type: 'separator' },

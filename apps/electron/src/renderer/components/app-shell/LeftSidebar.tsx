@@ -14,7 +14,7 @@ import i18n from '@/i18n'
 import { isAgentSessionVisibleInNavigation } from '@/lib/agent-session-purpose'
 import { useAtom, useSetAtom, useAtomValue, useStore } from 'jotai'
 import { toast } from 'sonner'
-import { Pin, PinOff, Star, Flag, Settings, Plus, Trash2, Pencil, PanelLeftClose, PanelLeftOpen, ArrowRightLeft, Search, Archive, ArchiveRestore, ArrowLeft, Bot, MessageSquare, MessageSquarePlus, MoreHorizontal, FolderOpen, FolderInput, FolderPlus, GripVertical, Clock, AlarmClock, ChevronRight, ChevronDown, Blocks, GitBranch, Check, Hash, ListFilter, Maximize2, Minimize2 } from 'lucide-react'
+import { Pin, PinOff, Star, Flag, Settings, Plus, Trash2, Pencil, PanelLeftClose, PanelLeftOpen, ArrowRightLeft, Search, Archive, ArchiveRestore, ArrowLeft, Bot, MessageSquare, MessageSquarePlus, MoreHorizontal, FolderOpen, FolderInput, FolderPlus, GripVertical, Clock, AlarmClock, ChevronRight, ChevronDown, Blocks, GitBranch, Check, Hash, ListFilter, Maximize2, Minimize2, Code2, SquareTerminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Spinner } from '@/components/ui/spinner'
@@ -142,10 +142,14 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { WorkSidebarCustomGroup, WorkSidebarPreferences } from '../../../types'
 import type { ConversationMeta, AgentSessionMeta, AgentWorkspace, WorkspaceCapabilities } from '@domi/shared'
+import { FILE_MANAGER_OPENER_ID, type ProjectFolderOpener } from '@domi/shared'
 import { DomiBrandLockup, DomiBrandMark } from './DomiBrand'
 import {
   WorkActivitySidebarOverview,
@@ -1180,6 +1184,15 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
   const [expandedExtraCountMap, setExpandedExtraCountMap] = React.useState<Map<string, number>>(new Map())
   /** 记录被用户手动折叠的工作区 ID（点击当前工作区标题时折叠/展开）。刻意不持久化：折叠被视为临时查看行为，刷新/重启后恢复默认展开 */
   const [collapsedWorkspaceIds, setCollapsedWorkspaceIds] = React.useState<Set<string>>(new Set())
+  /** 本机可用的项目文件夹打开方式；探测失败时回退为单一「打开项目文件夹」。 */
+  const [projectFolderOpeners, setProjectFolderOpeners] = React.useState<ProjectFolderOpener[]>([])
+  React.useEffect(() => {
+    let cancelled = false
+    window.electronAPI.listProjectFolderOpeners()
+      .then((openers) => { if (!cancelled) setProjectFolderOpeners(openers) })
+      .catch(() => { if (!cancelled) setProjectFolderOpeners([]) })
+    return () => { cancelled = true }
+  }, [])
   /** 记录已展开的委派母会话；默认收起，避免批量派遣后撑满侧栏 */
   const [expandedDelegationParentIds, setExpandedDelegationParentIds] = React.useState<Set<string>>(new Set())
   /** 记录用户手动收起的委派母会话；用于覆盖“当前子会话自动展开”的兜底可见性 */
@@ -2414,9 +2427,9 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
   }, [setWorkspaces])
 
   /** 使用系统文件管理器打开项目文件夹。 */
-  const handleOpenProjectFolder = React.useCallback(async (workspaceId: string): Promise<void> => {
+  const handleOpenProjectFolder = React.useCallback(async (workspaceId: string, openerId: string = FILE_MANAGER_OPENER_ID): Promise<void> => {
     try {
-      await window.electronAPI.openAgentWorkspaceProjectFolder(workspaceId)
+      await window.electronAPI.openAgentWorkspaceProjectFolderWith(workspaceId, openerId)
     } catch (error) {
       console.error('[侧边栏] 打开项目文件夹失败:', error)
       toast.error(error instanceof Error ? error.message : '打开项目文件夹失败')
@@ -3827,6 +3840,7 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
                           handleOpenMcpManagement()
                         }}
                         onOpenProjectFolder={isAuto ? noopAsync : handleOpenProjectFolder}
+                        projectFolderOpeners={isAuto ? [] : projectFolderOpeners}
                         onRenameWorkspace={isAuto ? noopAsync : handleWorkspaceRename}
                         onRelinkProjectRoot={isAuto ? noopAsync : handleRelinkProjectRoot}
                         onRequestRestoreProjectRoot={isAuto ? noopVoid : setPendingRestoreProjectRootId}
@@ -5118,7 +5132,9 @@ interface AgentProjectGroupItemProps {
   onDrop: (e: React.DragEvent, workspaceId: string) => void
   onDragEnd: () => void
   onConfigureProject: (workspaceId: string) => void
-  onOpenProjectFolder: (workspaceId: string) => Promise<void>
+  onOpenProjectFolder: (workspaceId: string, openerId?: string) => Promise<void>
+  /** 本机可用的项目文件夹打开方式；多于一个时展开为子菜单 */
+  projectFolderOpeners: ProjectFolderOpener[]
   onRenameWorkspace: (workspaceId: string, newName: string) => Promise<void>
   onRelinkProjectRoot: (workspaceId: string) => Promise<void>
   onRequestRestoreProjectRoot: (workspaceId: string) => void
@@ -5161,6 +5177,7 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
   onDragEnd,
   onConfigureProject,
   onOpenProjectFolder,
+  projectFolderOpeners,
   onRenameWorkspace,
   onRelinkProjectRoot,
   onRequestRestoreProjectRoot,
@@ -5423,14 +5440,38 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
               <FolderOpen size={14} />
               设为当前项目
             </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={hasUnavailableProjectRoot}
-              className="text-xs py-1 [&>svg]:size-3.5"
-              onSelect={() => void onOpenProjectFolder(group.workspace.id)}
-            >
-              <FolderOpen size={14} />
-              打开项目文件夹
-            </DropdownMenuItem>
+            {projectFolderOpeners.length > 1 ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger
+                  disabled={hasUnavailableProjectRoot}
+                  className="cursor-default rounded-md px-2 py-1 text-xs [&_svg]:size-3.5 [&_svg]:shrink-0"
+                >
+                  <FolderOpen size={14} />
+                  打开项目文件夹
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-36 p-0.5">
+                  {projectFolderOpeners.map((opener) => (
+                    <DropdownMenuItem
+                      key={opener.id}
+                      className="text-xs py-1 [&>svg]:size-3.5"
+                      onSelect={() => void onOpenProjectFolder(group.workspace.id, opener.id)}
+                    >
+                      {opener.kind === 'editor' ? <Code2 size={14} /> : opener.kind === 'terminal' ? <SquareTerminal size={14} /> : <FolderOpen size={14} />}
+                      {opener.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : (
+              <DropdownMenuItem
+                disabled={hasUnavailableProjectRoot}
+                className="text-xs py-1 [&>svg]:size-3.5"
+                onSelect={() => void onOpenProjectFolder(group.workspace.id)}
+              >
+                <FolderOpen size={14} />
+                打开项目文件夹
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="text-xs py-1 [&>svg]:size-3.5"
               onSelect={handleStartWorkspaceRename}

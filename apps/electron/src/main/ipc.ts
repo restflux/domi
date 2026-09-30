@@ -391,6 +391,7 @@ import {
   cleanupStaleWorkspaceAttachedPaths,
 } from './lib/agent-workspace-manager'
 import { movePathSafely } from './lib/file-move-service'
+import { listProjectFolderOpeners, openProjectFolderWith } from './lib/project-folder-openers'
 import { getAllToolInfos } from './lib/chat-tool-registry'
 import { updateToolCredentials, getToolCredentials, addCustomTool, deleteCustomTool } from './lib/chat-tool-config'
 import {
@@ -2648,14 +2649,22 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
     }
   )
 
-  // 使用系统文件管理器打开项目文件夹。路径只由主进程根据工作区 ID 解析，
-  // 避免 renderer 直接决定要打开的任意物理目录。
+  // 项目文件夹「打开方式」：主进程按平台探测本机可用应用，命令与应用
+  // 白名单固定在 main/lib/project-folder-openers；renderer 只提交
+  // workspaceId 与固定 openerId，路径解析与存在性检查留在主进程。
   ipcMain.handle(
-    AGENT_IPC_CHANNELS.OPEN_WORKSPACE_PROJECT_FOLDER,
-    async (_, id: string): Promise<void> => {
+    AGENT_IPC_CHANNELS.LIST_PROJECT_FOLDER_OPENERS,
+    (): import('@domi/shared').ProjectFolderOpener[] => listProjectFolderOpeners()
+  )
+
+  ipcMain.handle(
+    AGENT_IPC_CHANNELS.OPEN_WORKSPACE_PROJECT_FOLDER_WITH,
+    async (_, id: string, openerId: string): Promise<void> => {
+      if (typeof id !== 'string' || typeof openerId !== 'string') {
+        throw new Error('打开项目文件夹参数无效')
+      }
       const projectPath = resolveAgentWorkspaceProjectFolder(id)
-      const errorMessage = await shell.openPath(projectPath)
-      if (errorMessage) throw new Error(`无法打开项目文件夹：${errorMessage}`)
+      await openProjectFolderWith(openerId, projectPath)
     }
   )
 

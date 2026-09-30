@@ -83,7 +83,7 @@ export function RightWorkspaceToolbarV2({ tabs, activeTabId, scratchVisible, has
         <DropdownMenuTrigger asChild><button type="button" aria-label={t('addTool')} title={t('addTool')} aria-expanded={menuOpen} className="mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><Plus className="size-4" /></button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6} className="min-w-44" aria-label={t('addToolMenu')}>
           <DropdownMenuItem onSelect={onOpenSessionFiles} disabled={!onOpenSessionFiles} className="gap-2"><Blinds className="size-4" />{t('sessionFiles')}</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onOpenFiles} disabled={!onOpenFiles} className="gap-2"><FolderClosed className="size-4" />{t('projectFilesMenu')}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onOpenFiles} disabled={!onOpenFiles} className="gap-2"><FolderClosed className="size-4" />{t('files')}</DropdownMenuItem>
           <DropdownMenuItem onSelect={onOpenChanges} disabled={!onOpenChanges} className="gap-2"><GitCompareArrows className="size-4" />改动</DropdownMenuItem>
           <DropdownMenuItem onSelect={onAddBrowser} className="gap-2"><Globe2 className="size-4" />{t('newBrowser')}</DropdownMenuItem>
           <DropdownMenuItem onSelect={onOpenTerminal} className="gap-2"><SquareTerminal className="size-4" />{t('openTerminal')}</DropdownMenuItem>

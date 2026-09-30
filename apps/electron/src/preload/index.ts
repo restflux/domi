@@ -786,8 +786,11 @@ export interface ElectronAPI extends SideChatAPI {
   /** 在丢失的本地项目原路径新建空目录。 */
   restoreAgentWorkspaceProjectRoot: (id: string) => Promise<AgentWorkspace>
 
-  /** 使用系统文件管理器打开项目文件夹。 */
-  openAgentWorkspaceProjectFolder: (id: string) => Promise<void>
+  /** 列出本机可用的项目文件夹打开方式（文件管理器/编辑器/终端）。 */
+  listProjectFolderOpeners: () => Promise<import('@domi/shared').ProjectFolderOpener[]>
+
+  /** 使用指定应用打开项目文件夹（路径由主进程按工作区 ID 解析）。 */
+  openAgentWorkspaceProjectFolderWith: (id: string, openerId: string) => Promise<void>
 
   /** 删除 Agent 工作区 */
   deleteAgentWorkspace: (id: string) => Promise<void>
@@ -2230,8 +2233,12 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke(AGENT_IPC_CHANNELS.RESTORE_WORKSPACE_PROJECT_ROOT, id)
   },
 
-  openAgentWorkspaceProjectFolder: (id: string) => {
-    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.OPEN_WORKSPACE_PROJECT_FOLDER, id)
+  listProjectFolderOpeners: () => {
+    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.LIST_PROJECT_FOLDER_OPENERS)
+  },
+
+  openAgentWorkspaceProjectFolderWith: (id: string, openerId: string) => {
+    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.OPEN_WORKSPACE_PROJECT_FOLDER_WITH, id, openerId)
   },
 
   deleteAgentWorkspace: (id: string) => {

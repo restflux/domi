@@ -137,7 +137,7 @@ function ActiveRightSidePanel({
 
   const tabs: RightWorkspaceToolbarTab[] = [
     ...(isWorkbenchV2 ? [{ id: 'session-files' as const, tool: 'session-files' as const, label: '会话文件', closeable: true }] : []),
-    { id: 'files', tool: 'files', label: isWorkbenchV2 ? '项目文件' : '文件', closeable: isWorkbenchV2 },
+    { id: 'files', tool: 'files', label: '文件', closeable: isWorkbenchV2 },
     { id: 'changes', tool: 'changes', label: '改动', closeable: isWorkbenchV2 },
     ...(state.scratchVisible ? [{ id: 'scratch' as const, tool: 'scratch' as const, label: '草稿', closeable: true }] : []),
     ...workspaceTerminals.map((terminal) => ({

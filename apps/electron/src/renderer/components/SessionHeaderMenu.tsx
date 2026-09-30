@@ -4,6 +4,7 @@ import '@/i18n'
 import {
   Archive,
   ArchiveRestore,
+  Code2,
   Copy,
   Flag,
   FolderOpen,
@@ -14,6 +15,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  SquareTerminal,
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -30,17 +32,21 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import type {
   SessionHeaderMenuAction,
   SessionHeaderMenuEntry,
+  SessionHeaderMenuSubmenuItem,
 } from './session-header-menu-model.ts'
 
 interface SessionHeaderMenuProps {
   entries: SessionHeaderMenuEntry[]
-  onAction: (action: SessionHeaderMenuAction) => void
+  onAction: (action: SessionHeaderMenuAction, openerId?: string) => void
 }
 
 function menuIcon(action: SessionHeaderMenuAction, label: string): React.ReactNode {
@@ -69,6 +75,19 @@ function menuIcon(action: SessionHeaderMenuAction, label: string): React.ReactNo
   }
 }
 
+/** 子菜单项图标：文件管理器 / 编辑器 / 终端 */
+function subMenuItemIcon(kind: SessionHeaderMenuSubmenuItem['kind']): React.ReactNode {
+  switch (kind) {
+    case 'editor':
+      return <Code2 />
+    case 'terminal':
+      return <SquareTerminal />
+    case 'file-manager':
+    default:
+      return <FolderOpen />
+  }
+}
+
 export function SessionHeaderMenu({ entries, onAction }: SessionHeaderMenuProps): React.ReactElement {
   const pendingTreeOpenRef = React.useRef(false)
   const handleCloseAutoFocus = (event: Event): void => {
@@ -94,25 +113,49 @@ export function SessionHeaderMenu({ entries, onAction }: SessionHeaderMenuProps)
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="z-[9999] min-w-48 p-0.5" onCloseAutoFocus={handleCloseAutoFocus}>
-        {entries.map((entry, index) => entry.type === 'separator' ? (
-          <DropdownMenuSeparator key={`separator-${index}`} className="my-0.5" />
-        ) : (
-          <DropdownMenuItem
-            key={entry.action}
-            disabled={entry.disabled}
-            className={entry.destructive ? 'text-destructive focus:text-destructive' : undefined}
-            onSelect={() => {
-              if (entry.action === 'sessionTree') {
-                pendingTreeOpenRef.current = true
-                return
-              }
-              onAction(entry.action)
-            }}
-          >
-            {menuIcon(entry.action, entry.label)}
-            {entry.label}
-          </DropdownMenuItem>
-        ))}
+        {entries.map((entry, index) => {
+          if (entry.type === 'separator') {
+            return <DropdownMenuSeparator key={`separator-${index}`} className="my-0.5" />
+          }
+          if (entry.type === 'submenu') {
+            return (
+              <DropdownMenuSub key={`submenu-${entry.action}`}>
+                <DropdownMenuSubTrigger disabled={entry.disabled}>
+                  {menuIcon(entry.action, entry.label)}
+                  {entry.label}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="z-[9999] min-w-40 p-0.5">
+                  {entry.items.map((item) => (
+                    <DropdownMenuItem
+                      key={item.id}
+                      onSelect={() => onAction(entry.action, item.id)}
+                    >
+                      {subMenuItemIcon(item.kind)}
+                      {item.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )
+          }
+          return (
+            <DropdownMenuItem
+              key={entry.action}
+              disabled={entry.disabled}
+              className={entry.destructive ? 'text-destructive focus:text-destructive' : undefined}
+              onSelect={() => {
+                if (entry.action === 'sessionTree') {
+                  pendingTreeOpenRef.current = true
+                  return
+                }
+                onAction(entry.action)
+              }}
+            >
+              {menuIcon(entry.action, entry.label)}
+              {entry.label}
+            </DropdownMenuItem>
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   )

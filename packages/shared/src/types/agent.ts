@@ -58,6 +58,19 @@ export interface CreateAgentWorkspaceInput {
   projectRootPath?: string
 }
 
+/** 固定 id：系统文件管理器（访达 / 资源管理器 / 文件管理器），各平台始终可用 */
+export const FILE_MANAGER_OPENER_ID = 'file-manager'
+
+/** 项目文件夹快捷打开方式；由主进程检测本机可用应用后下发。 */
+export interface ProjectFolderOpener {
+  /** 稳定标识，经 OPEN_WORKSPACE_PROJECT_FOLDER_WITH 提交回主进程 */
+  id: string
+  /** 展示名称（如「访达」「VS Code」「终端」） */
+  label: string
+  /** 分类，用于菜单图标与排序 */
+  kind: 'file-manager' | 'editor' | 'terminal'
+}
+
 /** 创建项目后自动生成的首个 Agent 会话。 */
 export interface CreateAgentProjectResult {
   workspace: AgentWorkspace
@@ -2122,8 +2135,10 @@ export const AGENT_IPC_CHANNELS = {
   RELINK_WORKSPACE_PROJECT_ROOT: 'agent:relink-workspace-project-root',
   /** 在丢失的本地项目原路径重新创建空目录 */
   RESTORE_WORKSPACE_PROJECT_ROOT: 'agent:restore-workspace-project-root',
-  /** 使用系统文件管理器打开项目文件夹 */
-  OPEN_WORKSPACE_PROJECT_FOLDER: 'agent:open-workspace-project-folder',
+  /** 列出本机可用的项目文件夹打开方式 */
+  LIST_PROJECT_FOLDER_OPENERS: 'agent:list-project-folder-openers',
+  /** 使用指定应用打开项目文件夹（路径仍由主进程按工作区 ID 解析） */
+  OPEN_WORKSPACE_PROJECT_FOLDER_WITH: 'agent:open-workspace-project-folder-with',
   /** 删除工作区 */
   DELETE_WORKSPACE: 'agent:delete-workspace',
   /** 重排工作区顺序 */

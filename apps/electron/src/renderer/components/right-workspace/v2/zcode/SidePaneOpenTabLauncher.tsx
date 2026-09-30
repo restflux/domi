@@ -21,7 +21,7 @@ export function SidePaneOpenTabLauncher({
 }: SidePaneOpenTabLauncherProps): React.ReactElement {
   const items = [
     { id: 'session-files', label: '会话文件', icon: Blinds, onOpen: onOpenSessionFiles },
-    { id: 'files', label: '项目文件', icon: FolderClosed, onOpen: onOpenFiles },
+    { id: 'files', label: '文件', icon: FolderClosed, onOpen: onOpenFiles },
     { id: 'changes', label: '改动', icon: GitCompareArrows, onOpen: onOpenChanges },
     { id: 'terminal', label: '终端', icon: SquareTerminal, onOpen: onOpenTerminal },
     { id: 'browser', label: '浏览器', icon: Globe2, onOpen: onOpenBrowser },

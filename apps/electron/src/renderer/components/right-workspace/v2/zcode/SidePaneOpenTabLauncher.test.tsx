@@ -18,7 +18,7 @@ describe('v2 右侧工作区', () => {
     expect(html).toContain('data-side-pane-open-tab-item="browser"')
   })
 
-  test('会话文件与项目文件拆分为独立快捷入口，改动与草稿也可从这里直达', () => {
+  test('会话文件与文件拆分为独立快捷入口，改动与草稿也可从这里直达', () => {
     const html = renderToStaticMarkup(createElement(SidePaneOpenTabLauncher, {
       onOpenSessionFiles: () => undefined,
       onOpenFiles: () => undefined,
@@ -32,7 +32,7 @@ describe('v2 右侧工作区', () => {
     expect(html).toContain('data-side-pane-open-tab-item="changes"')
     expect(html).toContain('data-side-pane-open-tab-item="scratch"')
     expect(html).toContain('>会话文件<')
-    expect(html).toContain('>项目文件<')
+    expect(html).toContain('>文件<')
     expect(html).toContain('>改动<')
     expect(html).toContain('>草稿<')
   })

@@ -25,6 +25,7 @@ import { interfaceVariantAtom } from '@/atoms/theme'
 import { SessionHeaderMenu, SessionRenameDialog } from '@/components/SessionHeaderMenu.tsx'
 import { GeneratedGalleryDrawer } from '@/components/gallery/GeneratedGalleryDrawer'
 import { buildAgentSessionHeaderMenu, type SessionHeaderMenuAction } from '@/components/session-header-menu-model.ts'
+import { FILE_MANAGER_OPENER_ID, type ProjectFolderOpener } from '@domi/shared'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import { replaceAgentSessionInFreshnessOrder } from '@/lib/agent-session-list'
 import { detectIsWindows, WINDOW_CONTROLS_INSET_RIGHT } from '@/lib/platform'
@@ -63,6 +64,15 @@ export function AgentHeader({
   const setSessionCommand = useSetAtom(sessionHeaderCommandAtom)
   const [renameOpen, setRenameOpen] = React.useState(false)
   const [galleryOpen, setGalleryOpen] = React.useState(false)
+  // 本机可用的项目文件夹打开方式；探测失败时回退为普通菜单项。
+  const [projectFolderOpeners, setProjectFolderOpeners] = React.useState<ProjectFolderOpener[] | null>(null)
+  React.useEffect(() => {
+    let cancelled = false
+    window.electronAPI.listProjectFolderOpeners()
+      .then((openers) => { if (!cancelled) setProjectFolderOpeners(openers) })
+      .catch(() => { if (!cancelled) setProjectFolderOpeners(null) })
+    return () => { cancelled = true }
+  }, [])
 
   if (!session) return null
 
@@ -83,6 +93,7 @@ export function AgentHeader({
     canOpenProjectFolder,
     hasSessionPath: !!sessionPath,
     includeSessionTools: isModern,
+    projectFolderOpeners: projectFolderOpeners ?? undefined,
   })
 
   const rename = async (title: string): Promise<void> => {
@@ -110,7 +121,7 @@ export function AgentHeader({
     }
   }
 
-  const handleMenuAction = (action: SessionHeaderMenuAction): void => {
+  const handleMenuAction = (action: SessionHeaderMenuAction, openerId?: string): void => {
     if (action === 'rename') {
       setRenameOpen(true)
       return
@@ -124,7 +135,9 @@ export function AgentHeader({
       return
     }
     if (action === 'openProject' && workspace) {
-      void window.electronAPI.openAgentWorkspaceProjectFolder(workspace.id)
+      // 子菜单会提交具体 openerId；普通菜单项回退到系统文件管理器。
+      const targetOpenerId = openerId ?? FILE_MANAGER_OPENER_ID
+      void window.electronAPI.openAgentWorkspaceProjectFolderWith(workspace.id, targetOpenerId)
         .catch((error) => {
           toast.error(t('unableOpenProjectFolder'), {
             description: error instanceof Error ? error.message : undefined,
