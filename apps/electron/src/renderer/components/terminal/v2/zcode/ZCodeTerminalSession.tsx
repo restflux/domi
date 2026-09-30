@@ -519,6 +519,7 @@ export function TerminalSession({
         term,
         fitAddon,
         terminalId: "",
+        terminalClosed: false,
         cwd: cwd ?? "",
         // workspaceKey 用于 workspace tab 真正关闭时按 workspace 批量回收（对称下侧 openWorkspaceKeys）。
         workspaceKey: workspaceKey ?? cwd ?? "",
@@ -534,7 +535,7 @@ export function TerminalSession({
             logger.warn("[Terminal] persistent dispose disposer failed:", error);
           }
         }
-        if (entry.terminalId) {
+        if (entry.terminalId && !entry.terminalClosed) {
           void services.terminalService.dispose({ id: entry.terminalId });
         }
         try {
@@ -595,6 +596,9 @@ export function TerminalSession({
           // exit 订阅（进 registry，与原路径对称：有 onExit 则回调，否则写退出提示）
           registryDisposers.push(
             services.terminalService.onDynamicExit(id)((exitCode) => {
+              // PTY 已由 Main/utility 结束；registry 之后只需回收 xterm 和订阅，
+              // 避免在全局 state closed 事件后再次向 Main 发送 dispose。
+              entry.terminalClosed = true;
               const exitHandler = exitHandlerRef.current;
               logger.info("[Terminal] persistent session exited", {
                 autoClose: Boolean(exitHandler),

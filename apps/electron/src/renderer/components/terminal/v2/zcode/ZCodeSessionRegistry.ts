@@ -33,6 +33,8 @@ export interface SidePaneTerminalSessionEntry {
   term: XTerm;
   fitAddon: FitAddon;
   terminalId: string;
+  /** Main 已报告 PTY 退出后置 true，registry 回收 xterm 时不再重复 dispose PTY。 */
+  terminalClosed?: boolean;
   cwd: string;
   /**
    * 该 terminal 所属的 workspaceKey（= workspaceIdentity?.trim() || workspacePath）。
