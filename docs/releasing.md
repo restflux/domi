@@ -88,7 +88,7 @@ tag 构建全部通过后，workflow 使用 GitHub CLI：
 - 安装包版本、文件名与 tag 一致；
 - Release 资产只包含 Windows x64、Linux x64 和 `SHA256SUMS.txt`；
 - 在本地验证校验和；
-- Release Notes 说明主要功能、修复、支持平台和已知限制；
+- Release Notes 采用中英双版（先完整中文、分隔线后完整 English），说明主要功能、修复、支持平台和已知限制；
 - 未签名 Windows 包明确说明 SmartScreen；
 - 不承诺 macOS 二进制支持或自动更新。
 
