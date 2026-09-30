@@ -1,14 +1,25 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { join } from 'node:path'
 import type { SkillTriggerEvent, SkillUsageStats } from '@domi/shared'
-import {
+import type { SkillTriggerRoot, SkillTriggerRecorderDeps } from './skill-trigger-recorder'
+
+// 依赖链（agent-workspace-manager → channel-manager → codex-oauth-service）会命名导入 shell；
+// 必须先注册 mock 再动态加载被测模块，否则模块链接期直接报 "Export named 'shell' not found"。
+mock.module('electron', () => ({
+  shell: {},
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: (value: string) => Buffer.from(value),
+    decryptString: (value: Buffer) => value.toString('utf-8'),
+  },
+}))
+
+const {
   detectSkillTrigger,
   createSkillTriggerRecorder,
   readSessionSkillTriggers,
   readWorkspaceSkillUsage,
-  type SkillTriggerRoot,
-  type SkillTriggerRecorderDeps,
-} from './skill-trigger-recorder'
+} = await import('./skill-trigger-recorder')
 
 const WORKSPACE_SKILLS = 'C:\\data\\ws\\skills'
 const GLOBAL_SKILLS = 'C:\\Users\\me\\.agents\\skills'

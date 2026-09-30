@@ -14,9 +14,10 @@ describe('Agent attachment menu click-only state', () => {
 
   test('the attachment menu has no hover-open or delayed-close handlers', () => {
     const source = readFileSync(resolve(import.meta.dir, 'AgentView.tsx'), 'utf8')
+    // attach-content 现在位于工具项数组末尾（session-status 之后），以数组收尾处为界。
     const attachmentBlock = source.slice(
       source.indexOf("key: 'attach-content'"),
-      source.indexOf("key: 'session-status'"),
+      source.indexOf("...(!modernLayout ? [statusItem] : []),"),
     )
 
     expect(attachmentBlock).not.toContain('onPointerEnter')
@@ -30,7 +31,7 @@ describe('Agent attachment menu click-only state', () => {
     const source = readFileSync(resolve(import.meta.dir, 'AgentView.tsx'), 'utf8')
     const attachmentBlock = source.slice(
       source.indexOf("key: 'attach-content'"),
-      source.indexOf("key: 'session-status'"),
+      source.indexOf("...(!modernLayout ? [statusItem] : []),"),
     )
 
     expect(attachmentBlock).toContain('aria-label="附加文件或文件夹"')

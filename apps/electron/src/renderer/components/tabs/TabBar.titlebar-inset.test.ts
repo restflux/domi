@@ -21,5 +21,6 @@ test('Given macOS 现代侧栏收起 When 标签显示 Then 标题在顶部开�
 
 test('现代顶栏标签和右侧操作垂直居中，经典标签结构保持独立', () => {
   expect(source).toContain("isModern ? 'h-[46px] items-center' : 'h-[34px] items-end'")
-  expect(source).toContain("isModern ? 'items-center' : 'items-end pb-[3px]'")
+  // 垂直居中决策现在位于右侧操作区（TabBarActions）：现代布局整高居中，经典布局保持经典偏移。
+  expect(source).toContain("isModern ? 'relative h-full items-center pr-1' : 'absolute inset-y-0 items-end pb-[3px]'")
 })

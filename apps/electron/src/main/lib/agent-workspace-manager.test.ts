@@ -20,6 +20,9 @@ mock.module('electron', () => ({
     isPackaged: true,
     getPath: () => join(process.env.HOME ?? tempHome, 'Library', 'Application Support'),
   },
+  // 依赖链（image-generation/config → channel-manager → codex-oauth-service）会命名导入 shell；
+  // mock 缺少该导出会在模块链接期直接报 "Export named 'shell' not found"。
+  shell: {},
   safeStorage: {
     isEncryptionAvailable: () => false,
     encryptString: (value: string) => Buffer.from(value),
