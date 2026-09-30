@@ -111,6 +111,9 @@ function getRepositoryTemplate(projectSubdirectory?: string): string {
   mkdirSync(projectRoot, { recursive: true })
   git(projectRoot, 'config', 'user.name', 'Domi Test')
   git(projectRoot, 'config', 'user.email', 'domi@example.test')
+  // Windows CI runner 的全局 autocrlf 会在 worktree 检出时把 LF 转成 CRLF，
+  // 破坏对检出文件内容的字节级断言；仓库内显式关闭，保证跨平台字节一致。
+  git(projectRoot, 'config', 'core.autocrlf', 'false')
   writeFileSync(join(projectRoot, 'tracked.txt'), 'base\n')
   git(projectRoot, 'add', 'tracked.txt')
   git(projectRoot, 'commit', '-q', '-m', 'base')

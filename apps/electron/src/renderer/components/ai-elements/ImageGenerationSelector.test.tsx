@@ -9,6 +9,11 @@ import { TooltipProvider } from '../ui/tooltip'
 import { ChannelImageGenerationConfig } from '../settings/ChannelImageGenerationConfig'
 import { imageGenerationSelectionsAtom } from '../../atoms/image-generation-atoms'
 
+/** Windows CI checkout 按 autocrlf 转成 CRLF；断言跨行源码内容前统一归一化行尾。 */
+function readSource(path: string): string {
+  return readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+}
+
 test('活动生图按钮只保留图标，模型与渠道放在悬停信息', () => {
   const store = createStore()
   store.set(imageGenerationSelectionsAtom, { 'work:test': { channelId: 'channel', modelId: 'gpt-image-2.5-flare' } })
@@ -24,8 +29,8 @@ test('未选生图时不常驻工具栏，弹层锚点仍挂载在菜单外以�
   expect(html).toContain('aria-hidden="true"')
   expect(html).toContain('tabindex="-1"')
   expect(html).not.toContain('aria-label="图片生成"')
-  const work = readFileSync(resolve(import.meta.dir, '../agent/AgentView.tsx'), 'utf8')
-  const chat = readFileSync(resolve(import.meta.dir, '../chat/ChatInput.tsx'), 'utf8')
+  const work = readSource(resolve(import.meta.dir, '../agent/AgentView.tsx'))
+  const chat = readSource(resolve(import.meta.dir, '../chat/ChatInput.tsx'))
   expect(work).toContain('<ImageGenerationSelector scope={`work:${sessionId}`} inputText={inputContent} hideTrigger />')
   expect(work.indexOf('<ImageGenerationSelector scope={`work:${sessionId}`}')).toBeLessThan(work.indexOf("key: 'model-presentation-preset'"))
   expect(work).toContain('onOpenImageGeneration: imageSelections[`work:${sessionId}`] ? undefined')
@@ -37,9 +42,9 @@ test('未选生图时不常驻工具栏，弹层锚点仍挂载在菜单外以�
 })
 
 test('菜单动作先关闭外层弹层再打开独立生图面板', () => {
-  const plus = readFileSync(resolve(import.meta.dir, 'composer-plus-menu.tsx'), 'utf8')
-  const overflow = readFileSync(resolve(import.meta.dir, 'InputToolbarOverflow.tsx'), 'utf8')
-  const chat = readFileSync(resolve(import.meta.dir, '../chat/ChatInput.tsx'), 'utf8')
+  const plus = readSource(resolve(import.meta.dir, 'composer-plus-menu.tsx'))
+  const overflow = readSource(resolve(import.meta.dir, 'InputToolbarOverflow.tsx'))
+  const chat = readSource(resolve(import.meta.dir, '../chat/ChatInput.tsx'))
   expect(plus).toContain('closeThen(openImageGeneration)')
   expect(plus).toContain('onCloseAutoFocus={handleCloseAutoFocus}')
   expect(plus).not.toContain('tools.imageGeneration}')
@@ -49,15 +54,15 @@ test('菜单动作先关闭外层弹层再打开独立生图面板', () => {
   expect(overflow).toContain('event.preventDefault(); action()')
   expect(overflow).not.toContain('forceMount')
   expect(chat).toContain('onMenuSelect: () => setOpenImageScope(`chat:${conversationId}`)')
-  const option = readFileSync(resolve(import.meta.dir, 'ImageOptionSelect.tsx'), 'utf8')
+  const option = readSource(resolve(import.meta.dir, 'ImageOptionSelect.tsx'))
   expect(option).toContain('SelectContent className="z-[120]')
-  expect(readFileSync(resolve(import.meta.dir, 'ImageGenerationSelector.tsx'), 'utf8')).toContain('PopoverContent side="top" align="start" className="z-[110]')
+  expect(readSource(resolve(import.meta.dir, 'ImageGenerationSelector.tsx'))).toContain('PopoverContent side="top" align="start" className="z-[110]')
 })
 
 test('/image 空命令和无可用渠道时都有可见反馈，不丢弃输入或把命令送到普通模型', () => {
-  const work = readFileSync(resolve(import.meta.dir, '../agent/AgentView.tsx'), 'utf8')
-  const chat = readFileSync(resolve(import.meta.dir, '../chat/ChatView.tsx'), 'utf8')
-  const selector = readFileSync(resolve(import.meta.dir, 'ImageGenerationSelector.tsx'), 'utf8')
+  const work = readSource(resolve(import.meta.dir, '../agent/AgentView.tsx'))
+  const chat = readSource(resolve(import.meta.dir, '../chat/ChatView.tsx'))
+  const selector = readSource(resolve(import.meta.dir, 'ImageGenerationSelector.tsx'))
   for (const source of [work, chat]) {
     expect(source).toContain("toast.info('请在 /image 后输入图片描述')")
     expect(source).toContain("toast.error(preferredImage ? '所选生图渠道或模型已不可用，请重新选择' : '请先在渠道设置中启用图片生成')")

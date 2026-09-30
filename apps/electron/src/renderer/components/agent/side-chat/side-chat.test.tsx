@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { createStore, Provider } from 'jotai'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { agentChannelIdAtom, agentModelIdAtom, agentSidePanelOpenAtom, agentDiffPanelTabAtom } from '@/atoms/agent-atoms'
+import { agentChannelIdAtom, agentModelIdAtom, agentSidePanelOpenAtom, agentDiffPanelTabAtom, currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import { agentSideChatMapAtom } from '@/atoms/chat-atoms'
 import { openSideChatPanelAtom, sideChatDraftAtomFamily, sideChatViewAtomFamily, sideChatVisibleMapAtom, sideChatHandoffAtomFamily } from '@/atoms/side-chat-atoms'
 import { rightWorkspaceSessionStateMapAtom } from '@/atoms/right-workspace-atoms'
@@ -42,6 +42,8 @@ describe('Work 侧聊', () => {
   })
   test('带引用打开侧聊不发送，并保留输入草稿和旧 Chat 映射', () => {
     const store = createStore()
+    // 右侧栏开合按当前 Work 会话隔离（d383bfc），面板可见性跟随当前会话。
+    store.set(currentAgentSessionIdAtom, 'parent')
     store.set(agentSideChatMapAtom, new Map([['parent', 'legacy-chat']]))
     store.set(sideChatDraftAtomFamily('parent'), { text: '我还没写完', quotedText: '', model: null, focusRevision: 0 })
     store.set(openSideChatPanelAtom, { parentSessionId: 'parent', quotedText: '选定正文' })

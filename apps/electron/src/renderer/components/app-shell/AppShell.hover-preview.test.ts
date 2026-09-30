@@ -2,8 +2,13 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const shell = readFileSync(resolve(import.meta.dir, 'AppShell.tsx'), 'utf8')
-const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
+/** Windows CI checkout 按 autocrlf 转成 CRLF；断言跨行源码内容前统一归一化行尾。 */
+function readSource(path: string): string {
+  return readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+}
+
+const shell = readSource(resolve(import.meta.dir, 'AppShell.tsx'))
+const styles = readSource(resolve(import.meta.dir, '../../styles/globals.css'))
 
 test('现代折叠态悬浮预览不改写保存的折叠偏好，也不卸载完整导航能力', () => {
   expect(shell).toContain('sidebarCollapsed && !isClassic && sidebarPreviewOpen && !settingsOpen')
