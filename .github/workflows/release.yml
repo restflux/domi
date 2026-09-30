@@ -308,10 +308,28 @@ jobs:
           exe="$PWD/apps/electron/out/mac-arm64/Domi.app/Contents/MacOS/Domi"
           test -x "$exe" || { echo "未找到打包产物: $exe"; exit 1; }
           mkdir -p "$smoke_root/home" "$smoke_root/user-data"
+          # macOS 无 GNU timeout 命令，用后台 watchdog 实现同样的 30 秒超时。
           HOME="$smoke_root/home" \
-          timeout 30s "$exe" "--user-data-dir=$smoke_root/user-data" \
+          "$exe" "--user-data-dir=$smoke_root/user-data" \
             --disable-gpu \
-            --launch-smoke
+            --launch-smoke &
+          pid=$!
+          ( sleep 30; kill -9 "$pid" 2>/dev/null; exit 0 ) &
+          watchdog=$!
+          set +e
+          wait "$pid"
+          code=$?
+          set -e
+          kill "$watchdog" 2>/dev/null || true
+          wait "$watchdog" 2>/dev/null || true
+          if [ "$code" -eq 137 ] || [ "$code" -eq 143 ]; then
+            echo "Domi renderer 在 30 秒内未进入 ready-to-show"
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "Domi 启动 smoke 失败，退出码 $code"
+            exit 1
+          fi
 
       - name: 整理 macOS 发布资产
         shell: bash
