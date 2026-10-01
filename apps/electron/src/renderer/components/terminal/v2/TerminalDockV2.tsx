@@ -209,7 +209,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
           </div>
         </div>
         {open && error && <div className="shrink-0 bg-destructive/10 px-3 py-1 text-xs text-destructive">{error}</div>}
-        <div className={cn('min-h-0 flex-1 overflow-hidden rounded-lg bg-[#171717]', !open && 'hidden')}>
+        <div className={cn('min-h-0 flex-1 overflow-hidden rounded-lg bg-[var(--color-terminal-bg)]', !open && 'hidden')}>
           {terminals.length ? terminals.map((terminal) => <TabsContent key={terminal.terminalId} value={terminal.terminalId} forceMount className="!m-0 h-full min-h-0 flex-1 data-[state=inactive]:hidden"><ZCodeTerminalSurface terminal={terminal} visible={open && active?.terminalId === terminal.terminalId} /></TabsContent>) : <button type="button" className="flex h-full w-full items-center justify-center text-xs text-muted-foreground hover:text-foreground" onClick={() => void createTerminal()}><Plus className="mr-1 size-4" />{t('newTerminal')}</button>}
         </div>
       </Tabs>

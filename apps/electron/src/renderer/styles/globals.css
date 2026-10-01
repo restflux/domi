@@ -245,6 +245,61 @@
     --scroll-progress-thumb-active: hsl(var(--foreground) / 0.30);
   }
 
+  /* ===== 终端 v2 主题 token（对齐上游 --color-terminal-* 语义） =====
+   * terminalTheme.ts 从这些变量读取 xterm 主题；缺失时回退到深色 fallback。
+   * 浅色使用上游 light 终端配色（neutral/sky 语义）；深色保持 v2 现有观感。
+   * 特殊风格主题继承本层结果，不单独覆写终端色，保证终端可读性优先。
+   */
+  :root {
+    --color-terminal-bg: #fafafa;
+    --color-terminal-fg: #0a0a0a;
+    --color-terminal-cursor: #0a0a0a;
+    --color-terminal-cursor-accent: #fafafa;
+    --color-terminal-selection: rgba(14, 165, 233, 0.32);
+    --color-terminal-selection-inactive: rgba(14, 165, 233, 0.22);
+    --color-terminal-black: #404040;
+    --color-terminal-red: #ef4444;
+    --color-terminal-green: #22c55e;
+    --color-terminal-yellow: #eab308;
+    --color-terminal-blue: #0ea5e9;
+    --color-terminal-magenta: #d946ef;
+    --color-terminal-cyan: #06b6d4;
+    --color-terminal-white: #737373;
+    --color-terminal-bright-black: #737373;
+    --color-terminal-bright-red: #ef4444;
+    --color-terminal-bright-green: #22c55e;
+    --color-terminal-bright-yellow: #eab308;
+    --color-terminal-bright-blue: #0ea5e9;
+    --color-terminal-bright-magenta: #d946ef;
+    --color-terminal-bright-cyan: #06b6d4;
+    --color-terminal-bright-white: #0a0a0a;
+  }
+
+  .dark {
+    --color-terminal-bg: #171717;
+    --color-terminal-fg: #e5e5e5;
+    --color-terminal-cursor: #e5e5e5;
+    --color-terminal-cursor-accent: #171717;
+    --color-terminal-selection: rgba(125, 125, 125, 0.3);
+    --color-terminal-selection-inactive: rgba(125, 125, 125, 0.2);
+    --color-terminal-black: #1f2937;
+    --color-terminal-red: #ef4444;
+    --color-terminal-green: #22c55e;
+    --color-terminal-yellow: #eab308;
+    --color-terminal-blue: #3b82f6;
+    --color-terminal-magenta: #a855f7;
+    --color-terminal-cyan: #06b6d4;
+    --color-terminal-white: #e5e7eb;
+    --color-terminal-bright-black: #6b7280;
+    --color-terminal-bright-red: #f87171;
+    --color-terminal-bright-green: #4ade80;
+    --color-terminal-bright-yellow: #facc15;
+    --color-terminal-bright-blue: #60a5fa;
+    --color-terminal-bright-magenta: #c084fc;
+    --color-terminal-bright-cyan: #22d3ee;
+    --color-terminal-bright-white: #f9fafb;
+  }
+
   /* ===== 特殊风格主题 ===== */
 
   /* 晴空碧海 (ocean-light) */
