@@ -3611,6 +3611,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     },
     openForkPicker: () => setSlashForkOpen(true),
     setWorkflow: setSessionWorkflow,
+    openSideChat: () => store.set(openSideChatPanelAtom, { parentSessionId: sessionId, forceNew: true }),
   }), [store, sessionId, setSessionWorkflow])
 
   React.useEffect(() => {

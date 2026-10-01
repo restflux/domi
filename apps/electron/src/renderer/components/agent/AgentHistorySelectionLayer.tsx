@@ -1,4 +1,5 @@
 import { openSideChatPanelAtom } from '@/atoms/side-chat-atoms'
+import { addSideChatSelection } from '@/lib/side-chat-selections'
 /**
  * AgentHistorySelectionLayer — Agent 历史选区引用入口
  *
@@ -16,7 +17,7 @@ import { quotedSelectionMapAtom } from '@/atoms/preview-atoms'
 import { SelectionActionPopover } from '@/components/selection/SelectionActionPopover'
 import { SELECTION_ACTION_POPOVER_SELECTOR } from '@/lib/quoted-selection'
 
-const MAX_AGENT_HISTORY_QUOTED_CHARS = 2000
+const MAX_AGENT_HISTORY_QUOTED_CHARS = 8000
 
 interface AgentHistorySelection {
   text: string
@@ -204,7 +205,22 @@ export function AgentHistorySelectionLayer({
   const openSideChatPanel = useSetAtom(openSideChatPanelAtom)
   const handleOpenChatTab = React.useCallback(async (): Promise<void> => {
     if (!selection) return
-    openSideChatPanel({ parentSessionId: sessionId, quotedText: selection.text })
+    // ZCode 语义：划选进入侧聊是「引用」而不是一次性 quote ——多引、去重、限流。
+    const result = addSideChatSelection(sessionId, {
+      text: selection.text,
+      filePath: selection.sourceLabel,
+      sourceType: 'agent-history',
+      sourceLabel: selection.sourceLabel,
+      messageId: selection.messageId,
+      messageRole: selection.messageRole,
+      capturedAt: Date.now(),
+    })
+    if (!result.ok) {
+      toast.error(result.reason === 'single' ? '选段过长，无法加入侧聊引用' : result.reason === 'count' ? '最多同时引用 8 段内容' : '引用总长度超过限制，请先删减已有引用')
+    } else {
+      toast.success(result.duplicate ? '该选段已在侧聊引用中' : '已加入侧聊引用')
+    }
+    openSideChatPanel({ parentSessionId: sessionId })
     window.getSelection()?.removeAllRanges()
     clearSelection()
   }, [selection, openSideChatPanel, clearSelection, sessionId])

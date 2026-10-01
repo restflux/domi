@@ -11,8 +11,7 @@
  */
 
 import * as React from 'react'
-import { useAtom, useSetAtom } from 'jotai'
-import { useStore } from 'jotai'
+import { useAtom, useSetAtom, useStore } from 'jotai'
 import {
   tabsAtom,
   activeTabIdAtom,
@@ -26,6 +25,7 @@ import {
   unviewedCompletedSessionIdsAtom,
 } from '@/atoms/agent-atoms'
 import { agentSideChatMapAtom } from '@/atoms/chat-atoms'
+import { sideChatChildrenMapAtom, sideChatActiveChildMapAtom, sideChatVisibleMapAtom, sideChatPendingForceNewAtom, sideChatPendingFocusAtom } from '@/atoms/side-chat-atoms'
 import { useSyncActiveTabSideEffects } from '@/hooks/useSyncActiveTabSideEffects'
 
 interface UseCloseTabReturn {
@@ -44,6 +44,7 @@ export function useCloseTab(): UseCloseTabReturn {
   const setAgentSessions = useSetAtom(agentSessionsAtom)
   const setViewStateMap = useSetAtom(sessionViewStateMapAtom)
   const setSideChatMap = useSetAtom(agentSideChatMapAtom)
+  const setSideChatChildrenMap = useSetAtom(sideChatChildrenMapAtom)
 
   const clearIdleAgentCompletionNotice = React.useCallback((sessionId: string) => {
     const indicatorMap = store.get(agentSessionIndicatorMapAtom)
@@ -98,6 +99,37 @@ export function useCloseTab(): UseCloseTabReturn {
 
       if (closingTab.type === 'agent') {
         setSideChatMap((prev) => {
+          if (!prev.has(closingTab.sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(closingTab.sessionId)
+          return next
+        })
+        // 多开侧聊状态随父会话 tab 关闭一并清理；子会话实体由主进程删除链路负责。
+        setSideChatChildrenMap((prev) => {
+          if (!prev.has(closingTab.sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(closingTab.sessionId)
+          return next
+        })
+        store.set(sideChatActiveChildMapAtom, (prev) => {
+          if (!prev.has(closingTab.sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(closingTab.sessionId)
+          return next
+        })
+        store.set(sideChatVisibleMapAtom, (prev) => {
+          if (!prev.has(closingTab.sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(closingTab.sessionId)
+          return next
+        })
+        store.set(sideChatPendingForceNewAtom, (prev) => {
+          if (!prev.has(closingTab.sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(closingTab.sessionId)
+          return next
+        })
+        store.set(sideChatPendingFocusAtom, (prev) => {
           if (!prev.has(closingTab.sessionId)) return prev
           const next = new Map(prev)
           next.delete(closingTab.sessionId)

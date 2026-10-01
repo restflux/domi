@@ -35,6 +35,7 @@ import {
   conversationParallelModeAtom,
   agentSideChatMapAtom,
 } from '@/atoms/chat-atoms'
+import { sideChatChildrenMapAtom, sideChatActiveChildMapAtom, sideChatVisibleMapAtom, sideChatPendingForceNewAtom, sideChatPendingFocusAtom } from '@/atoms/side-chat-atoms'
 import {
   agentSessionsAtom,
   agentSDKMessagesCacheAtom,
@@ -1343,6 +1344,12 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
       }
       return changed ? map : prev
     })
+    // 多开侧聊状态随会话删除一并清理，避免残留指向已删子会话的指针。
+    store.set(sideChatChildrenMapAtom, deleteKey)
+    store.set(sideChatActiveChildMapAtom, deleteKey)
+    store.set(sideChatVisibleMapAtom, deleteKey)
+    store.set(sideChatPendingForceNewAtom, deleteKey)
+    store.set(sideChatPendingFocusAtom, deleteKey)
     setDiffPanelTab(deleteKey)
     setDiffRefreshVersion(deleteKey)
     setDiffUnseen(deleteKey)

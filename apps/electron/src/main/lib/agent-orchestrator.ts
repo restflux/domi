@@ -91,7 +91,7 @@ import {
 } from './builtin-mcp/chrome-devtools-intent'
 import { isBuiltinMcpUserEnabled } from './builtin-mcp/settings'
 import { buildPiBuiltinTools } from './adapters/pi-builtin-tools'
-import { claimSideChatLaunch, SIDE_CHAT_SYSTEM_PROMPT } from './side-chat/policy'
+import { claimSideChatLaunch, SIDE_CHAT_BOUNDARY_PROMPT } from './side-chat/policy'
 import { buildPiMcpTools } from './adapters/pi-mcp-tools'
 import type { AgentToolAnnotationsMap } from './agent-tool-annotations'
 import { buildAgentRuntimeEnv, mergeRuntimeEnv, type AgentRuntimeEnv } from './agent-runtime-env'
@@ -1544,7 +1544,8 @@ export class AgentOrchestrator {
       }
 
       // 10. 构建 Pi 内置工具、用户 MCP 和本轮动态 custom tools。
-      const mcpServers = sideChatParentSessionId ? {} : this.buildMcpServers(workspaceSlug, true)
+      // 侧聊已对齐完整会话：同一套内置工具、产品工具与工作区 MCP。
+      const mcpServers = this.buildMcpServers(workspaceSlug, true)
       const chromeDevtoolsMcpName = getBuiltinMcpName('chrome-devtools')
       const chromeDevtoolsMentioned = mentionedMcpServers?.some((name) => (
         name === 'chrome-devtools' || name === chromeDevtoolsMcpName
@@ -1554,7 +1555,7 @@ export class AgentOrchestrator {
         userMessage,
         chromeDevtoolsMentioned,
       )
-      if (!sideChatParentSessionId && chromeDevtoolsRequestedForRun) {
+      if (chromeDevtoolsRequestedForRun) {
         console.log('[Agent 编排] 正在启动浏览器调试工具 (chrome-devtools)')
         injectChromeDevtoolsMcpServer(mcpServers)
       }
@@ -1575,9 +1576,7 @@ export class AgentOrchestrator {
         : input.triggeredBy === 'bridge' || input.triggeredBy === 'channel'
           ? 'automation' as const
           : input.triggeredBy
-      const builtinToolResult = sideChatParentSessionId
-        ? { tools: [], toolAnnotations: {}, collaborationAvailable: false }
-        : await buildPiBuiltinTools(piSdk, {
+      const builtinToolResult = await buildPiBuiltinTools(piSdk, {
         imageGeneration: input.imageGeneration,
         imageGenerationRequested: explicitImageRequest,
         imageGenerationRun,
@@ -1598,7 +1597,7 @@ export class AgentOrchestrator {
         triggeredBy,
         ...(sessionTargetPrompt && { sessionTarget: sessionTargetPrompt }),
       })
-      const piBuiltinTools: unknown[] = [...builtinToolResult.tools, ...(sideChatParentSessionId ? [] : customTools ?? [])]
+      const piBuiltinTools: unknown[] = [...builtinToolResult.tools, ...(customTools ?? [])]
       const piToolAnnotations: AgentToolAnnotationsMap = { ...builtinToolResult.toolAnnotations }
       const collaborationAvailable = builtinToolResult.collaborationAvailable
 
@@ -1728,7 +1727,7 @@ export class AgentOrchestrator {
         ?? legacyWorkflow
         ?? persistedControls.workflow
       const planCommandWorkflow = resolveAgentPlanCommandWorkflow(requestedWorkflow, planCommand.matched)
-      let initialWorkflow: AgentWorkflow = sideChatParentSessionId ? 'read-only' : planCommandWorkflow.runWorkflow
+      let initialWorkflow: AgentWorkflow = planCommandWorkflow.runWorkflow
       this.sessionExecutionPolicies.set(sessionId, initialExecutionPolicy)
       this.sessionWorkflows.set(sessionId, initialWorkflow)
       const continuationWorkflow = resolveWorktreeContinuationRunWorkflow(initialWorkflow, trustedWorktreeContinuation)
@@ -1753,7 +1752,7 @@ export class AgentOrchestrator {
         bun: runtimeStatus?.bun ?? { available: false, version: null },
         environment: mergeRuntimeEnv(process.env, runtimeEnv.env),
       })
-      if (dependencyRuntime && !sideChatParentSessionId) {
+      if (dependencyRuntime) {
         const controller = new AbortController()
         this.dependencyPreparationControllers.set(sessionId, { generation: runGeneration, controller })
         const preparation = await getWorktreeDependencySnapshotService().prepare({
@@ -2268,14 +2267,17 @@ export class AgentOrchestrator {
           signal,
         }),
         sideChatParentSessionId,
-        systemPrompt: sideChatParentSessionId ? SIDE_CHAT_SYSTEM_PROMPT : systemPromptAppend + buildPiAdditionalDirectoriesPrompt(allAdditionalDirectories),
+        // 侧聊使用正常系统提示词 + 边界附录：完整会话能力，靠边界指令约束不接管父任务。
+        systemPrompt: systemPromptAppend
+          + (sideChatParentSessionId ? SIDE_CHAT_BOUNDARY_PROMPT : '')
+          + buildPiAdditionalDirectoriesPrompt(allAdditionalDirectories),
         ...(modelPresentationPreset !== 'standard' && { modelPresentationPreset }),
         resumeSessionId: existingSdkSessionId,
         piAgentDir: getSdkConfigDir(),
         piSessionDir: join(getSdkConfigDir(), 'sessions'),
         ...(workspaceSlug ? { rtkSessionDirectory: getAgentSessionWorkspacePath(workspaceSlug, sessionId) } : {}),
         ...(allAdditionalDirectories.length > 0 && { additionalDirectories: allAdditionalDirectories }),
-        ...(!sideChatParentSessionId && workspaceSlug ? { additionalSkillPaths: getEffectivePiSkillPaths(workspaceSlug) } : {}),
+        ...(workspaceSlug ? { additionalSkillPaths: getEffectivePiSkillPaths(workspaceSlug) } : {}),
         ...(skillTriggerRecorder ? {
           skillTriggerRecorder,
           onSkillTrigger: (trigger: SkillTriggerEvent) => {

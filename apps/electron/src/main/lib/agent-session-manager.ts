@@ -1170,6 +1170,171 @@ async function forkPiAgentSession(
   }
 }
 
+export type SideChatSeedSkipReason =
+  | 'child_missing'
+  | 'parent_missing'
+  | 'already_seeded'
+  | 'parent_no_pi_session'
+  | 'fork_point_missing'
+  | 'target_unresolved'
+  | 'fork_failed'
+
+export interface SideChatSeedOutcome {
+  forked: boolean
+  skipReason?: SideChatSeedSkipReason
+}
+
+/**
+ * ZCode 式侧聊上下文继承：把父会话完整 Pi transcript fork 到侧聊子会话，
+ * 再追加一条 UI 隐藏、模型可见的边界指令（继承历史仅供参考，不继续父任务）。
+ * 展示 JSONL 同步复制到 fork 点，侧聊时间线可直接呈现继承的对话。
+ * 任何失败都降级为空白子会话（等价旧简版行为），绝不阻断侧聊入口。
+ */
+export async function seedSideChatChildFromParent(
+  childId: string,
+  boundaryText: string,
+): Promise<SideChatSeedOutcome> {
+  const child = getAgentSessionMeta(childId)
+  if (!child) return { forked: false, skipReason: 'child_missing' }
+  const parent = child.sideChatParentSessionId
+    ? getAgentSessionMeta(child.sideChatParentSessionId)
+    : undefined
+  if (!parent) return { forked: false, skipReason: 'parent_missing' }
+  if (child.sdkSessionId || child.piSessionFile) return { forked: false, skipReason: 'already_seeded' }
+  if (!parent.sdkSessionId || !parent.piSessionFile || !existsSync(parent.piSessionFile)) {
+    return { forked: false, skipReason: 'parent_no_pi_session' }
+  }
+
+  // fork 点 = 父会话最后一条有 entry 映射的主线 assistant 消息；
+  // 运行中的 turn 尚未落 entry，天然被排除（与 ZCode 的 active turn 切片语义一致）。
+  const bindings = parent.piEntryBindings ?? {}
+  let forkEntryId: string | undefined
+  const parentMessagesPath = getAgentSessionMessagesPath(parent.id)
+  if (existsSync(parentMessagesPath)) {
+    for await (const msg of readStoredSDKMessages(parentMessagesPath)) {
+      if (msg.type !== 'assistant') continue
+      if ((msg as { parent_tool_use_id?: string | null }).parent_tool_use_id) continue
+      const entry = bindings[getStoredMessageUuid(msg) ?? '']
+      if (entry) forkEntryId = entry
+    }
+  }
+  if (!forkEntryId) return { forked: false, skipReason: 'fork_point_missing' }
+
+  let sourceDir: string
+  try {
+    const workspace = parent.workspaceId ? getAgentWorkspace(parent.workspaceId) : undefined
+    const { resolveProductionAgentSessionTarget } = await import('./agent-session-target.ts')
+    const target = await resolveProductionAgentSessionTarget({
+      sessionId: parent.id,
+      workspace,
+      agentCwdMode: getAgentCwdMode(parent),
+    })
+    sourceDir = target.cwd
+  } catch (error) {
+    console.warn('[Agent 会话] 侧聊继承父上下文时无法解析父会话工作目录，降级为空白侧聊:', error)
+    return { forked: false, skipReason: 'target_unresolved' }
+  }
+
+  const sessionDir = join(getSdkConfigDir(), 'sessions')
+  let branchFile: string | undefined
+  let piSessionFile: string | undefined
+  try {
+    const sdk = await import('@earendil-works/pi-coding-agent')
+    const sourceManager = sdk.SessionManager.open(parent.piSessionFile!, sessionDir, sourceDir)
+    branchFile = sourceManager.createBranchedSession(forkEntryId)
+    if (!branchFile || !existsSync(branchFile)) throw new Error('Pi 未能生成 branched session artifact')
+    const forkedManager = sdk.SessionManager.forkFrom(branchFile, sourceDir, sessionDir)
+    piSessionFile = forkedManager.getSessionFile()
+    if (!piSessionFile || !existsSync(piSessionFile)) throw new Error('Pi fork artifact 校验失败')
+
+    // 边界指令作为独立 user 消息进入 Pi transcript（模型可见）；不写展示 JSONL，时间线保持干净。
+    forkedManager.appendMessage({ role: 'user', content: boundaryText, timestamp: Date.now() })
+
+    updateAgentSessionMeta(childId, {
+      sdkSessionId: forkedManager.getSessionId(),
+      piSessionFile,
+      forkSourceSdkSessionId: parent.sdkSessionId,
+    })
+    // ZCode 语义：fork 只服务模型上下文，展示 JSONL 不复制父历史——
+    // 侧聊时间线从空白开始，只包含侧聊自己的消息；工作区同目录 fork 也无需路径重映射。
+    return { forked: true }
+  } catch (error) {
+    console.warn('[Agent 会话] 侧聊继承父上下文失败，降级为空白侧聊:', error)
+    removeFailedPiForkArtifacts({
+      artifacts: [branchFile, piSessionFile],
+      sessionDir,
+      sourceSessionFile: parent.piSessionFile!,
+    })
+    // 元数据回退：清掉可能已写入的 Pi 指针，子会话保持纯空白的旧简版行为。
+    try {
+      const partial = getAgentSessionMeta(childId)
+      if (partial?.sdkSessionId || partial?.piSessionFile) {
+        updateAgentSessionMeta(childId, { sdkSessionId: undefined, piSessionFile: undefined, piEntryBindings: undefined, forkSourceSdkSessionId: undefined })
+      }
+    } catch { /* 回退失败时保留现状；子会话仍可按空白侧聊使用 */ }
+    return { forked: false, skipReason: 'fork_failed' }
+  }
+}
+
+/**
+ * 旧侧聊数据显示历史清洗（一次性迁移）：修正前的子会话把父消息复制进了显示 JSONL。
+ * 删除规则：uuid 与父重合，或无 uuid 且 session_id 指向父会话（父 SDK 会话 ID / 父会话 ID，
+ * 覆盖 result 轮次统计与 system 验收通知等无 uuid 行）；侧聊自身消息 uuid 与 session_id
+ * 都指向子会话，不受影响；Pi session 不动，模型上下文不受影响。
+ */
+export function filterInheritedDisplayLines(
+  childContent: string,
+  parentUuids: ReadonlySet<string>,
+  parentSessionIds: ReadonlySet<string> = new Set(),
+): { content: string; removed: number } {
+  if (parentUuids.size === 0 && parentSessionIds.size === 0) return { content: childContent, removed: 0 }
+  const kept: string[] = []
+  let removed = 0
+  for (const line of childContent.split('\n')) {
+    if (!line.trim()) continue
+    const parsed = parseStoredLine(line)
+    if (parsed) {
+      if (typeof parsed.uuid === 'string' && parentUuids.has(parsed.uuid)) { removed += 1; continue }
+      if (parsed.uuid === undefined
+        && typeof parsed.session_id === 'string' && parentSessionIds.has(parsed.session_id)) { removed += 1; continue }
+    }
+    kept.push(line)
+  }
+  if (removed === 0) return { content: childContent, removed: 0 }
+  return { content: kept.length > 0 ? `${kept.join('\n')}\n` : '', removed }
+}
+
+function parseStoredLine(line: string): { uuid?: unknown; session_id?: unknown } | undefined {
+  try {
+    const value: unknown = JSON.parse(line)
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as { uuid?: unknown; session_id?: unknown } : undefined
+  } catch { return undefined }
+}
+
+function storedLineUuid(line: string): string | undefined {
+  const uuid = parseStoredLine(line)?.uuid
+  return typeof uuid === 'string' ? uuid : undefined
+}
+
+export function pruneSideChatInheritedDisplayHistory(childId: string, parentSessionId: string): number {
+  const childPath = getAgentSessionMessagesPath(childId)
+  const parentPath = getAgentSessionMessagesPath(parentSessionId)
+  if (!existsSync(childPath) || !existsSync(parentPath)) return 0
+  const parentUuids = new Set<string>()
+  for (const line of readFileSync(parentPath, 'utf8').split('\n')) {
+    const uuid = storedLineUuid(line)
+    if (uuid) parentUuids.add(uuid)
+  }
+  // 无 uuid 的父记录（result/system）靠 session_id 归属识别：父 SDK 会话 ID + 父会话 ID。
+  const parentMeta = getAgentSessionMeta(parentSessionId)
+  const parentSessionIds = new Set<string>([parentSessionId])
+  if (parentMeta?.sdkSessionId) parentSessionIds.add(parentMeta.sdkSessionId)
+  const result = filterInheritedDisplayLines(readFileSync(childPath, 'utf8'), parentUuids, parentSessionIds)
+  if (result.removed === 0) return 0
+  writeTextFileAtomic(childPath, result.content)
+  return result.removed
+}
+
 /**
  * 回滚尚未向 renderer 发布的 Pi fork。
  * 新 Isolated checkout 在此阶段没有 Agent 运行；先精确 Discard owner checkout，再走普通删除释放 binding。

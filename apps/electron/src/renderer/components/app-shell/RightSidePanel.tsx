@@ -1,4 +1,5 @@
-import { sideChatVisibleMapAtom } from '@/atoms/side-chat-atoms'
+import { sideChatVisibleMapAtom, sideChatChildrenMapAtom, sideChatActiveChildMapAtom, applySideChatChildrenList, setActiveSideChatChildAtom, sideChatPendingForceNewAtom, sideChatPendingFocusAtom, sideChatOperationAtomFamily, sideChatDraftAtomFamily, type SideChatDraft } from '@/atoms/side-chat-atoms'
+import { startSideChatPolling } from '@/components/agent/side-chat/side-chat-polling'
 import { SideChatPanel } from '@/components/agent/side-chat/SideChatPanel'
 /**
  * RightSidePanel — Work 会话的统一右侧工作区。
@@ -8,7 +9,7 @@ import { SideChatPanel } from '@/components/agent/side-chat/SideChatPanel'
  */
 
 import * as React from 'react'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai'
 import { toast } from 'sonner'
 import { appModeAtom } from '@/atoms/app-mode'
 import { interfaceVariantAtom } from '@/atoms/theme'
@@ -42,6 +43,8 @@ import {
   openRightWorkspaceV2OptionalTab,
   resolveAvailableRightWorkspaceTabId,
   resolveClosedTabFallback,
+  sideChatChildFromTab,
+  sideChatTabId,
   terminalIdFromTab,
   terminalTabId,
   toolFromRightWorkspaceTab,
@@ -122,6 +125,12 @@ function ActiveRightSidePanel({
   const sessionPath = sessionPathMap.get(currentSessionId) ?? null
   const previewFile = previewFileMap.get(currentSessionId) ?? null
   const sideChatConversationId = sideChatMap.get(currentSessionId) ?? null
+  const sideChatChildren = useAtomValue(sideChatChildrenMapAtom).get(currentSessionId) ?? []
+  const [sideChatChildrenMap, setSideChatChildrenMap] = useAtom(sideChatChildrenMapAtom)
+  const sideChatActiveChildMap = useAtomValue(sideChatActiveChildMapAtom)
+  const setActiveSideChatChild = useSetAtom(setActiveSideChatChildAtom)
+  const setSideChatPendingForceNew = useSetAtom(sideChatPendingForceNewAtom)
+  const store = useStore()
   const browserStates = getOwnerBrowserStates(browserStateMap, currentSessionId)
   const workspaceTerminals = React.useMemo(
     () => selectWorkspaceTerminals(terminalStates.values(), currentSessionId),
@@ -153,7 +162,15 @@ function ActiveRightSidePanel({
       closeable: true,
     })),
     ...(previewFile ? [{ id: 'preview' as const, tool: 'preview' as const, label: getPreviewTitle(previewFile.filePath) ?? '预览', closeable: true }] : []),
-    ...((sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) ? [{ id: 'side-chat' as const, tool: 'side-chat' as const, label: '侧边聊天', closeable: true }] : []),
+    // ZCode 式多开：每个侧聊子会话是工作区标签条上的独立实例 tab。
+    ...((sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) || sideChatChildren.length > 0
+      ? sideChatChildren.map((view, index) => ({
+        id: sideChatTabId(view.sessionId),
+        tool: 'side-chat' as const,
+        label: `侧聊 ${index + 1}`,
+        closeable: true,
+      }))
+      : []),
   ]
   // v2 文件与改动仅由用户按需打开；v1 始终展示原有固定标签。
   const visibleTabs = visibleRightWorkspaceTabs(tabs, isWorkbenchV2, state)
@@ -165,6 +182,45 @@ function ActiveRightSidePanel({
   const activeTerminal = activeTerminalId ? terminalStates.get(activeTerminalId) : undefined
   const activeTabExpanded = resolveRightWorkspaceFocus(workspaceFocus, currentSessionId, activeTabId)
   const fileSourceFilter = fileSourceFilterMap[currentSessionId] ?? 'session'
+  const sideChatFeatureVisible = (sideChatVisibleMap.get(currentSessionId) ?? Boolean(sideChatConversationId)) || sideChatChildren.length > 0
+
+  // 侧聊子会话列表的唯一同步源：首次打开创建（fork 继承），之后周期拉取；
+  // forceNew（/side、/btw）与聚焦意图也在此消费，激活对应实例 tab。
+  React.useEffect(() => {
+    if (!sideChatFeatureVisible) return
+    let revision = 0
+    return startSideChatPolling({
+      open: (forceNew) => window.electronAPI.openSideChat({ parentSessionId: currentSessionId, ...(forceNew ? { forceNew: true } : {}) }),
+      list: () => window.electronAPI.listSideChats(currentSessionId),
+      onList: (views) => {
+        revision += 1
+        setSideChatChildrenMap((current) => applySideChatChildrenList(current, currentSessionId, views))
+        const activeChild = store.get(sideChatActiveChildMapAtom).get(currentSessionId)
+        const activeValid = views.some(view => view.sessionId === activeChild)
+        const last = views[views.length - 1]
+        const targetChild = activeValid ? activeChild : last?.sessionId
+        if (!activeValid && targetChild) setActiveSideChatChild({ parentSessionId: currentSessionId, childSessionId: targetChild })
+        const pendingFocus = store.get(sideChatPendingFocusAtom).get(currentSessionId)
+        if (pendingFocus && targetChild) {
+          store.set(sideChatPendingFocusAtom, new Map(store.get(sideChatPendingFocusAtom)).set(currentSessionId, false))
+          setWorkspaceStateMap((current) => activateSessionRightWorkspaceTab(current, currentSessionId, sideChatTabId(targetChild)))
+          store.set(sideChatDraftAtomFamily(targetChild), (draft: SideChatDraft) => ({ ...draft, focusRevision: draft.focusRevision + 1 }))
+        }
+      },
+      onError: (cause) => { console.error('[RightSidePanel] 同步侧聊列表失败:', cause) },
+      revision: () => revision,
+      isSending: () => {
+        const child = store.get(sideChatActiveChildMapAtom).get(currentSessionId)
+        return child ? store.get(sideChatOperationAtomFamily(child)).sending : false
+      },
+      consumeForceNew: () => {
+        const pendingMap = store.get(sideChatPendingForceNewAtom)
+        if (!pendingMap.get(currentSessionId)) return false
+        store.set(sideChatPendingForceNewAtom, new Map(pendingMap).set(currentSessionId, false))
+        return true
+      },
+    })
+  }, [sideChatFeatureVisible, currentSessionId, store, setSideChatChildrenMap, setActiveSideChatChild, setWorkspaceStateMap])
 
   React.useEffect(() => {
     if (workspaceFocus?.sessionId !== currentSessionId || (workspaceFocus.tabId ?? workspaceFocus.tool) === activeTabId) return
@@ -215,6 +271,16 @@ function ActiveRightSidePanel({
     if (tool === 'browser') {
       const browser = browserStates.at(-1)
       if (browser) setActiveTab(browserTabId(browser.browserSessionId))
+      return
+    }
+    if (tool === 'side-chat') {
+      // 侧聊工具入口聚焦最近一个实例 tab；没有实例时先打开面板由同步器创建。
+      const last = sideChatChildren[sideChatChildren.length - 1]
+      if (last) {
+        setActiveTab(sideChatTabId(last.sessionId))
+        return
+      }
+      setSideChatVisibleMap((current) => new Map(current).set(currentSessionId, true))
       return
     }
     setActiveTab(tool)
@@ -306,6 +372,28 @@ function ActiveRightSidePanel({
       return
     }
 
+    // 侧聊实例 tab：关闭并删除对应子会话；运行中被拒时保留 tab。
+    const sideChatChildId = sideChatChildFromTab(tabId)
+    if (sideChatChildId) {
+      void window.electronAPI.closeSideChat({ parentSessionId: currentSessionId, childSessionId: sideChatChildId })
+        .then((remaining) => {
+          setSideChatChildrenMap((current) => applySideChatChildrenList(current, currentSessionId, remaining))
+          const activeChild = sideChatActiveChildMap.get(currentSessionId)
+          if (!activeChild || activeChild === sideChatChildId) {
+            const last = remaining[remaining.length - 1]
+            if (last) setActiveSideChatChild({ parentSessionId: currentSessionId, childSessionId: last.sessionId })
+          }
+          if (remaining.length === 0) {
+            setSideChatVisibleMap((current) => new Map(current).set(currentSessionId, false))
+            if (activeTabId === tabId) setActiveTab(fallbackTabId)
+          }
+        })
+        .catch((error: unknown) => {
+          toast.error('关闭侧聊失败', { description: error instanceof Error ? error.message : '请先停止运行中的侧聊再关闭。' })
+        })
+      return
+    }
+
     if (tabId === 'scratch') {
       setWorkspaceStateMap((current) => {
         const next = new Map(current)
@@ -380,13 +468,17 @@ function ActiveRightSidePanel({
             <TerminalPane terminal={activeTerminal} />
           ) : activeTool === 'terminal' && isWorkbenchV2 ? null : activeTool === 'preview' ? (
             <PreviewTabContent sessionId={currentSessionId} mode="workspace" />
-          ) : activeTool === 'side-chat' ? (
-            <SideChatPanel key={currentSessionId} parentSessionId={currentSessionId} />
-          ) : activeTool === 'scratch' ? (
+          ) : activeTool === 'side-chat' ? null : activeTool === 'scratch' ? (
             <ScratchPadWorkspace />
           ) : isWorkbenchV2 ? null : (
             sidePanelNode
           )}
+          {tabs.filter((tab) => tab.tool === 'side-chat').map((tab) => {
+            const childSessionId = sideChatChildFromTab(tab.id)
+            return childSessionId
+              ? <div key={tab.id} className={activeTabId === tab.id ? 'h-full' : 'hidden'}><SideChatPanel key={tab.id} parentSessionId={currentSessionId} childSessionId={childSessionId} /></div>
+              : null
+          })}
           {isWorkbenchV2 && tabs.filter((tab) => tab.tool === 'terminal').map((tab) => {
             const terminalId = terminalIdFromTab(tab.id)
             const session = terminalId ? terminalStates.get(terminalId) : undefined

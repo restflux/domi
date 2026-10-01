@@ -1500,9 +1500,10 @@ interface MigrationExportResult {
  */
 const electronAPI: ElectronAPI = {
   openSideChat: (input) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.OPEN, input),
-  getSideChat: (parentSessionId) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.GET, parentSessionId),
+  listSideChats: (parentSessionId) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.LIST, parentSessionId),
+  closeSideChat: (input) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.CLOSE, input),
   sendSideChat: (input) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.SEND, input),
-  stopSideChat: (parentSessionId) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.STOP, parentSessionId),
+  stopSideChat: (input) => ipcRenderer.invoke(SIDE_CHAT_IPC_CHANNELS.STOP, typeof input === 'string' ? { parentSessionId: input } : input),
   browser: {
     open: (input) => ipcRenderer.invoke(BROWSER_IPC_CHANNELS.OPEN, input),
     activate: (input) => ipcRenderer.invoke(BROWSER_IPC_CHANNELS.ACTIVATE, input),

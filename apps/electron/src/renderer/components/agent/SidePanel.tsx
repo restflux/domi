@@ -29,6 +29,7 @@ import {
 import { DiffPanelTabBar } from '@/components/diff/DiffPanelTabBar'
 import { DiffChangesList } from '@/components/diff/DiffChangesList'
 import { SideChatPanel } from './side-chat/SideChatPanel'
+import { sideChatChildrenMapAtom, sideChatActiveChildMapAtom } from '@/atoms/side-chat-atoms'
 import {
   agentSidePanelOpenAtom,
   agentFileSourceFilterMapAtom,
@@ -97,6 +98,12 @@ export function SidePanel({
 }: SidePanelProps): React.ReactElement {
   // 侧面板状态（普通浅色现代界面新用户默认收起，已保存的偏好优先），开关固定在顶部 TabBar。
   const isOpen = useAtomValue(agentSidePanelOpenAtom)
+  // 旧版界面无实例标签条：渲染当前活动（或最近一个）侧聊子会话。
+  const legacySideChatChildren = useAtomValue(sideChatChildrenMapAtom).get(sessionId) ?? []
+  const legacySideChatActive = useAtomValue(sideChatActiveChildMapAtom).get(sessionId)
+  const legacySideChatChildId = legacySideChatChildren.some(view => view.sessionId === legacySideChatActive)
+    ? legacySideChatActive!
+    : legacySideChatChildren[legacySideChatChildren.length - 1]?.sessionId
   const isWindows = React.useMemo(() => detectIsWindows(), [])
 
   // Tab 系统
@@ -628,7 +635,9 @@ export function SidePanel({
           )}
 
           {effectiveActiveTab === 'chat' ? (
-            <SideChatPanel key={sessionId} parentSessionId={sessionId} />
+            legacySideChatChildId
+              ? <SideChatPanel key={legacySideChatChildId} parentSessionId={sessionId} childSessionId={legacySideChatChildId} />
+              : <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-xs text-muted-foreground">正在打开侧聊…</div>
           ) : effectiveActiveTab === 'changes' ? (
             usesSessionTarget && !hasBoundSessionTarget ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">

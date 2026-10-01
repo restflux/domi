@@ -6,6 +6,8 @@
  * `/plan` 是当前任务的一次性 Plan First 入口；/direct /read-only 仅保留兼容快捷命令。
  */
 import { registerSlashCommand } from './registry'
+import type { SlashCommandContext } from './types'
+import { allPendingPermissionRequestsAtom, allPendingAskUserRequestsAtom } from '@/atoms/agent-atoms'
 import type { AgentWorkflow } from '@domi/shared'
 
 export interface SlashCommandHost {
@@ -17,6 +19,8 @@ export interface SlashCommandHost {
   openForkPicker: () => void
   /** 直接切换持久工作方式（Plan First 只能由当前任务的 /plan 进入）。 */
   setWorkflow: (workflow: Exclude<AgentWorkflow, 'plan-first'>) => void
+  /** ZCode 式 /side /btw：强制新开一个继承当前上下文的侧聊。 */
+  openSideChat: () => void
 }
 
 let host: SlashCommandHost | null = null
@@ -118,5 +122,31 @@ export function registerBuiltinSlashCommands(): void {
     group: 'session',
     behavior: 'execute',
     execute: () => host?.openForkPicker(),
+  })
+
+  // ZCode 语义：/side 与 /btw 都强制新开侧聊；父会话有待处理的权限/问答请求时不可用。
+  const sideChatAvailable = (ctx: SlashCommandContext): boolean => {
+    const permissions = ctx.getState(allPendingPermissionRequestsAtom)
+    if (permissions?.get(ctx.sessionId)?.length) return false
+    const askUser = ctx.getState(allPendingAskUserRequestsAtom)
+    return !askUser?.get(ctx.sessionId)?.length
+  }
+  registerSlashCommand({
+    id: 'side',
+    label: '新开侧聊',
+    description: '继承当前对话上下文，新开一个只读侧聊',
+    group: 'session',
+    behavior: 'execute',
+    isAvailable: sideChatAvailable,
+    execute: () => host?.openSideChat(),
+  })
+  registerSlashCommand({
+    id: 'btw',
+    label: '顺便问一下（新开侧聊）',
+    description: '在不打断主任务的情况下提问，同 /side',
+    group: 'session',
+    behavior: 'execute',
+    isAvailable: sideChatAvailable,
+    execute: () => host?.openSideChat(),
   })
 }

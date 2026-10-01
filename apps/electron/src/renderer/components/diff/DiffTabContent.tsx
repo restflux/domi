@@ -1,4 +1,5 @@
 import { openSideChatPanelAtom } from '@/atoms/side-chat-atoms'
+import { addSideChatSelection } from '@/lib/side-chat-selections'
 /**
  * DiffTabContent — 单文件 Diff 或纯文件预览内容
  *
@@ -1145,7 +1146,16 @@ export function DiffTabContent({ filePath, dirPath, sessionId, gitRoot, sessionT
   const openSideChatPanel = useSetAtom(openSideChatPanelAtom)
   const handleOpenSelectionChat = React.useCallback(async (): Promise<void> => {
     if (!previewSelection) return
-    openSideChatPanel({ parentSessionId: sessionId, quotedText: previewSelection.text })
+    const result = addSideChatSelection(sessionId, {
+      text: previewSelection.text,
+      filePath: previewSelection.filePath,
+      sourceType: 'file',
+      sourceLabel: previewSelection.filePath,
+      capturedAt: Date.now(),
+    })
+    if (!result.ok) toast.error(result.reason === 'single' ? '选段过长，无法加入侧聊引用' : result.reason === 'count' ? '最多同时引用 8 段内容' : '引用总长度超过限制，请先删减已有引用')
+    else toast.success(result.duplicate ? '该选段已在侧聊引用中' : '已加入侧聊引用')
+    openSideChatPanel({ parentSessionId: sessionId })
     window.getSelection()?.removeAllRanges()
     clearPreviewSelection()
   }, [previewSelection, openSideChatPanel, clearPreviewSelection, sessionId])

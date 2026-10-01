@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { createSideChatResourceLoader } from './pi-side-chat-resource-loader'
 import { spawn } from 'node:child_process'
 import type { Dispatcher } from 'undici'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
@@ -2354,7 +2353,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       let contextCompactorLifecycleActive = true
       const contextCompactorSettings = resolvePiContextCompactorSettings({
         ...input.contextCompactor?.settings,
-        enabled: !input.sideChatParentSessionId && (contextCompactorMode === 'observe' || contextCompactorMode === 'enhance'),
+        enabled: contextCompactorMode === 'observe' || contextCompactorMode === 'enhance',
       })
       const productToolRuntimeState: DomiProductToolRuntimeState = { tasks: new Map(), nextTaskId: 1 }
       const getContextCompactorHostSnapshot = async (signal: AbortSignal): Promise<PiContextCompactorHostSnapshot> => {
@@ -2407,13 +2406,13 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         input.rtkSessionDirectory,
         input.protectedTarget,
       )
-      const productTools = input.sideChatParentSessionId ? [] : buildDomiProductToolDefinitions(sdk, input, productToolRuntimeState)
+      const productTools = buildDomiProductToolDefinitions(sdk, input, productToolRuntimeState)
       const adapterReadOnlyToolDefinitions = new Map<string, ToolDefinition>(
         [...builtinTools, ...productTools]
           .filter((tool) => isParallelReadOnlyPiToolName(tool.name))
           .map((tool) => [tool.name, tool] as const),
       )
-      const customTools = input.sideChatParentSessionId ? builtinTools.filter(tool => ['read', 'grep', 'find', 'ls'].includes(tool.name)) : filterToolsForModelPresentation([
+      const customTools = filterToolsForModelPresentation([
         buildCurrentSessionCompactionTool(
           sdk,
           () => { compactContextRequested = true },
@@ -2512,13 +2511,8 @@ export class PiAgentAdapter implements AgentProviderAdapter {
             }]
           : []),
       ]
-      const resourceLoader = input.sideChatParentSessionId ? createSideChatResourceLoader(sdk, {
-        cwd,
-        agentDir: input.piAgentDir,
-        settingsManager,
-        systemPrompt: input.systemPrompt,
-        extensionFactories: modelExtensionFactories,
-      }) : createTrustedPiResourceLoader(
+      // 侧聊已对齐完整会话：与主会话同一套受信资源加载器（项目指令、Skills、扩展与系统提示词）。
+      const resourceLoader = createTrustedPiResourceLoader(
         sdk,
         this.extensionTrustStore,
         cwd,

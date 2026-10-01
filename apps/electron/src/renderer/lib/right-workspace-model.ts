@@ -12,7 +12,7 @@ export interface RightWorkspaceAvailability {
   hasSideChat: boolean
 }
 
-export type RightWorkspaceTabId = RightWorkspaceTool | `browser:${string}` | `terminal:${string}`
+export type RightWorkspaceTabId = RightWorkspaceTool | `browser:${string}` | `terminal:${string}` | `side-chat:${string}`
 
 export type RightWorkspaceOptionalTab = 'files' | 'session-files' | 'changes'
 
@@ -41,9 +41,19 @@ export function terminalIdFromTab(tabId: RightWorkspaceTabId): string | null {
   return tabId.startsWith('terminal:') ? tabId.slice('terminal:'.length) : null
 }
 
+/** 侧聊多开：每个子会话是右侧工作区标签条上的独立实例 tab（ZCode 式）。 */
+export function sideChatTabId(childSessionId: string): `side-chat:${string}` {
+  return `side-chat:${childSessionId}`
+}
+
+export function sideChatChildFromTab(tabId: RightWorkspaceTabId): string | null {
+  return tabId.startsWith('side-chat:') ? tabId.slice('side-chat:'.length) : null
+}
+
 export function toolFromRightWorkspaceTab(tabId: RightWorkspaceTabId): RightWorkspaceTool {
   if (tabId.startsWith('browser:')) return 'browser'
   if (tabId.startsWith('terminal:')) return 'terminal'
+  if (tabId.startsWith('side-chat:')) return 'side-chat'
   return tabId as RightWorkspaceTool
 }
 

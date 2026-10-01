@@ -14,14 +14,28 @@ export interface SideChatImageInput {
   data: string
 }
 
-export interface SideChatOpenInput { parentSessionId: string }
+export interface SideChatOpenInput {
+  parentSessionId: string
+  /** 斜杠命令等入口强制新开一个侧聊；划选入口复用当前活动侧聊。 */
+  forceNew?: boolean
+}
 export interface SideChatSendInput {
   parentSessionId: string
+  /** 多开侧聊的目标子会话；缺省时由宿主解析当前活动子会话。 */
+  childSessionId?: string
   message: string
   channelId?: string
   modelId?: string
   quotedText?: string
   images?: SideChatImageInput[]
+}
+export interface SideChatStopInput {
+  parentSessionId: string
+  childSessionId?: string
+}
+export interface SideChatCloseInput {
+  parentSessionId: string
+  childSessionId: string
 }
 export interface SideChatView {
   parentSessionId: string
@@ -32,11 +46,15 @@ export interface SideChatView {
   modelId?: string
 }
 export interface SideChatAPI {
+  /** 打开（或新建）侧聊并返回活动子会话视图。 */
   openSideChat(input: SideChatOpenInput): Promise<SideChatView>
-  getSideChat(parentSessionId: string): Promise<SideChatView | null>
+  /** 列出父会话下全部侧聊子会话，按创建顺序排列。 */
+  listSideChats(parentSessionId: string): Promise<SideChatView[]>
+  /** 关闭并删除一个侧聊子会话；返回剩余列表。运行中的子会话拒绝关闭。 */
+  closeSideChat(input: SideChatCloseInput): Promise<SideChatView[]>
   sendSideChat(input: SideChatSendInput): Promise<void>
-  stopSideChat(parentSessionId: string): Promise<void>
+  stopSideChat(input: SideChatStopInput): Promise<void>
 }
 export const SIDE_CHAT_IPC_CHANNELS = {
-  OPEN: 'side-chat:open', GET: 'side-chat:get', SEND: 'side-chat:send', STOP: 'side-chat:stop',
+  OPEN: 'side-chat:open', LIST: 'side-chat:list', CLOSE: 'side-chat:close', SEND: 'side-chat:send', STOP: 'side-chat:stop',
 } as const
