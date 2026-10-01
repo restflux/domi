@@ -3541,7 +3541,11 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
           : target.kind === 'isolated'
             ? '已创建 Worktree 分叉'
             : '已创建分叉会话',
-        { description: meta.title },
+        {
+          description: target.kind === 'isolated'
+            ? `${meta.title}；未提交修改保留在原 Worktree`
+            : meta.title,
+        },
       )
     } catch (error) {
       console.error('[AgentView] 分叉会话失败:', error)
@@ -3564,22 +3568,27 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   }, [sessionId, agentChannelId, agentModelId, sessionMetaChannelId, openSession, setAgentSessions])
 
   const handleFork = React.useCallback((upToMessageUuid: string): void => {
-    void forkSessionFromMessage(upToMessageUuid, sessionTargetState.snapshot?.checkout.kind === 'isolated'
-      ? { kind: 'isolated-copy' }
+    const checkoutKind = sessionTargetState.snapshot?.checkout.kind
+    void forkSessionFromMessage(upToMessageUuid, checkoutKind === 'local' || checkoutKind === 'isolated'
+      ? { kind: 'isolated', confirmDirty: true }
       : { kind: 'inherit' })
   }, [forkSessionFromMessage, sessionTargetState.snapshot?.checkout.kind])
 
   const handleForkToWorktree = React.useCallback((upToMessageUuid: string): void => {
-    if (sessionTargetState.snapshot?.checkout.kind !== 'local') return
+    const checkoutKind = sessionTargetState.snapshot?.checkout.kind
+    if (checkoutKind !== 'local' && checkoutKind !== 'isolated') return
     setForkToWorktreeTargetUuid(upToMessageUuid)
   }, [sessionTargetState.snapshot?.checkout.kind])
 
   const handleForkToWorktreeConfirm = React.useCallback(async (): Promise<void> => {
     const targetUuid = forkToWorktreeTargetUuid
     if (!targetUuid) return
-    await forkSessionFromMessage(targetUuid, { kind: 'isolated', confirmDirty: true })
+    const sourceIsolated = sessionTargetState.snapshot?.checkout.kind === 'isolated'
+    await forkSessionFromMessage(targetUuid, sourceIsolated
+      ? { kind: 'isolated-copy' }
+      : { kind: 'isolated', confirmDirty: true })
     setForkToWorktreeTargetUuid(null)
-  }, [forkSessionFromMessage, forkToWorktreeTargetUuid])
+  }, [forkSessionFromMessage, forkToWorktreeTargetUuid, sessionTargetState.snapshot?.checkout.kind])
 
   // ===== Slash 命令宿主（/ 菜单 → 会话控制） =====
   const [slashStatusOpen, setSlashStatusOpen] = React.useState(false)
@@ -4677,6 +4686,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
             onRestoreProjectRoot={() => setRestoreProjectRootDialogOpen(true)}
             onFork={handleFork}
             onForkToWorktree={sessionTargetState.snapshot?.checkout.kind === 'local'
+              || sessionTargetState.snapshot?.checkout.kind === 'isolated'
               ? handleForkToWorktree
               : undefined}
             onRewind={handleRewindRequest}
@@ -5074,10 +5084,18 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Fork 到新 Worktree？</AlertDialogTitle>
+          <AlertDialogTitle>
+            {sessionTargetState.snapshot?.checkout.kind === 'isolated'
+              ? '复制当前 Worktree？'
+              : 'Fork 到新 Worktree？'}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            Domi 会从当前提交的 HEAD 创建 managed Worktree，并把截至此消息的对话复制到新子会话。当前 Local 会话及其 Session Target 保持不变；Local 中的未提交修改不会复制到新 Worktree。
-            {sessionTargetState.snapshot?.dirty ? ' 当前检测到 Local 存在未提交修改，请确认它们继续留在原工作区。' : ''}
+            {sessionTargetState.snapshot?.checkout.kind === 'isolated'
+              ? 'Domi 会把当前 Worktree 的 staged、unstaged 和 untracked 修改复制到新的独立 Worktree，并把截至此消息的对话复制到新子会话。原 Worktree 保持不变。'
+              : 'Domi 会从当前提交的 HEAD 创建 managed Worktree，并把截至此消息的对话复制到新子会话。当前 Local 会话及其 Session Target 保持不变；Local 中的未提交修改不会复制到新 Worktree。'}
+            {sessionTargetState.snapshot?.checkout.kind === 'local' && sessionTargetState.snapshot.dirty
+              ? ' 当前检测到 Local 存在未提交修改，请确认它们继续留在原工作区。'
+              : ''}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -5089,7 +5107,11 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
               void handleForkToWorktreeConfirm()
             }}
           >
-            {forkingSession ? '创建中…' : 'Fork 到 Worktree'}
+            {forkingSession
+              ? '创建中…'
+              : sessionTargetState.snapshot?.checkout.kind === 'isolated'
+                ? '复制当前 Worktree'
+                : 'Fork 到 Worktree'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

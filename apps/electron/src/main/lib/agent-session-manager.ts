@@ -1041,8 +1041,10 @@ async function forkPiAgentSession(
     throw new Error('可信 Pi handoff fork point 仅允许创建 Isolated Target')
   }
   const forkTitle = forkTargetChoice.kind === 'isolated-copy'
-    ? `${sourceMeta.title} (worktree copy)`
-    : input.target?.kind === 'isolated'
+    ? forkTargetChoice.preserveWorkingTree
+      ? `${sourceMeta.title} (worktree copy)`
+      : `${sourceMeta.title} (worktree)`
+    : forkTargetChoice.kind === 'isolated'
       ? `${sourceMeta.title} (worktree)`
       : `${sourceMeta.title} (fork)`
   const newMeta = createAgentSession(forkTitle, sourceMeta.channelId, sourceMeta.workspaceId, forkModelId, sourceCwdMode)
@@ -1069,6 +1071,7 @@ async function forkPiAgentSession(
         forkTargetChoice.parentSessionId,
         newMeta.id,
         forkTargetChoice.expectedSourceRevision,
+        { preserveWorkingTree: forkTargetChoice.preserveWorkingTree },
       )
     } else {
       await bindProductionAgentSessionTargetForLaunch({

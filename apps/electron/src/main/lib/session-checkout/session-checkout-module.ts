@@ -30,6 +30,7 @@ import { collectSessionProjectArtifactPaths } from '../session-project-artifacts
 import { createManagedWorktreePathCandidates } from './managed-worktree-path.ts'
 import type {
   CheckoutLease,
+  CloneIsolatedTargetOptions,
   ListManagedWorktreesInput,
   ManageManagedWorktreeInput,
   MarkReadyForReviewInput,
@@ -57,6 +58,12 @@ import type {
 interface ResolvedSessionProject {
   session: SessionCheckoutSessionRecord
   project: SessionCheckoutProjectRecord
+}
+
+interface IsolatedForkSeed {
+  headOid: string
+  baseOid: string
+  sourceRef: string
 }
 
 /** applyEngine.inspectReview 的返回类型；供共享诊断 memo 使用。 */
@@ -2729,6 +2736,7 @@ export function createSessionCheckoutModule(
     sourceSessionId: string,
     childSessionId: string,
     expectedSourceRevision: number,
+    options: CloneIsolatedTargetOptions = {},
   ): Promise<SessionTargetView> {
     requireSession(childSessionId)
     if (getPersistedBinding(childSessionId)) {
@@ -2775,6 +2783,27 @@ export function createSessionCheckoutModule(
     if (!validated) {
       throw new SessionCheckoutError('recovery_required', '源 Worktree 身份无法确认')
     }
+    const sourceSnapshot = await dependencies.git.inspect(sourceRecord.managedRoot)
+    if (!sourceSnapshot) throw new SessionCheckoutError('recovery_required', '源 Worktree 当前 Git 状态不可用')
+    const local = await dependencies.git.inspect(sourceRecord.localRoot)
+    if (!local) throw new SessionCheckoutError('not_git_repository', '源 Worktree 的 Local Checkout 不可用')
+
+    if (options.preserveWorkingTree === false) {
+      return await bindTarget(
+        childSessionId,
+        { kind: 'isolated' },
+        { expectedCurrentOid: local.headOid, dirtyConfirmed: true },
+        0,
+        Date.now(),
+        undefined,
+        {
+          headOid: sourceSnapshot.headOid,
+          baseOid: sourceSnapshot.headOid,
+          sourceRef: sourceRecord.sourceRef,
+        },
+      )
+    }
+
     if (!dependencies.applyEngine.captureHandoffSnapshot) {
       throw new SessionCheckoutError('operation_not_allowed', '当前 Apply engine 不支持复制 Fork snapshot')
     }
@@ -2788,8 +2817,6 @@ export function createSessionCheckoutModule(
         captured.error.message,
       )
     }
-    const local = await dependencies.git.inspect(sourceRecord.localRoot)
-    if (!local) throw new SessionCheckoutError('not_git_repository', '源 Worktree 的 Local Checkout 不可用')
     const artifactPrefix = `forks/${createHash('sha256')
       .update([sourceSessionId, childSessionId, captured.isolatedFingerprint].join('\0'))
       .digest('hex')
@@ -4259,6 +4286,7 @@ export function createSessionCheckoutModule(
     createAttempt = 0,
     requestStartedAt = Date.now(),
     expectedProjectId?: string,
+    isolatedForkSeed?: IsolatedForkSeed,
   ): Promise<SessionTargetView> {
       const bindStartedAt = requestStartedAt
       const session = requireSession(sessionId)
@@ -4447,6 +4475,7 @@ export function createSessionCheckoutModule(
       }
       const managedRoot = join(managedGitRoot, projectRelativePath)
       const seedSnapshot = verifiedIsolatedProof?.seedSnapshot
+      const isolatedSeed = seedSnapshot ?? isolatedForkSeed
       const record: ManagedCheckoutRecord = {
         checkoutId,
         projectId: project.id,
@@ -4457,9 +4486,9 @@ export function createSessionCheckoutModule(
         managedGitRoot: resolve(managedGitRoot),
         gitCommonDir: snapshot.commonDir,
         gitDir: '',
-        baseOid: seedSnapshot?.baseOid ?? selectedSource?.oid ?? snapshot.headOid,
+        baseOid: isolatedSeed?.baseOid ?? selectedSource?.oid ?? snapshot.headOid,
         ...(seedSnapshot?.applyBaseOid ? { applyBaseOid: seedSnapshot.applyBaseOid } : {}),
-        sourceRef: seedSnapshot?.sourceRef ?? selectedSource?.ref ?? snapshot.headRef,
+        sourceRef: isolatedSeed?.sourceRef ?? selectedSource?.ref ?? snapshot.headRef,
         phase: 'preparing',
         delivery: { state: 'working', iteration: nextIteration },
         journal: {
@@ -4476,8 +4505,8 @@ export function createSessionCheckoutModule(
         projectName: project.name,
         target: { kind: 'isolated', checkoutId },
         ownerSessionId: sessionId,
-        sourceRef: seedSnapshot?.sourceRef ?? selectedSource?.ref ?? snapshot.headRef,
-        sourceOid: seedSnapshot?.baseOid ?? selectedSource?.oid ?? snapshot.headOid,
+        sourceRef: isolatedSeed?.sourceRef ?? selectedSource?.ref ?? snapshot.headRef,
+        sourceOid: isolatedSeed?.baseOid ?? selectedSource?.oid ?? snapshot.headOid,
         revision: 1,
       }
       const preparingRegistry = dependencies.registry.read()
@@ -4492,7 +4521,7 @@ export function createSessionCheckoutModule(
         await dependencies.git.createDetachedWorktree(
           localGitRoot,
           managedGitRoot,
-          seedSnapshot?.headOid ?? selectedSource?.oid ?? snapshot.headOid,
+          isolatedSeed?.headOid ?? selectedSource?.oid ?? snapshot.headOid,
         )
         const createdAt = Date.now()
         createTimingRecorded = true
@@ -4656,8 +4685,8 @@ export function createSessionCheckoutModule(
         { operation: 'bind', sessionIds: choice.kind === 'inherit' ? [sessionId, choice.parentSessionId] : [sessionId] },
       ))
     },
-    cloneIsolatedTarget: (sourceSessionId, childSessionId, expectedSourceRevision) => withBindingLock(
-      () => cloneIsolatedTarget(sourceSessionId, childSessionId, expectedSourceRevision),
+    cloneIsolatedTarget: (sourceSessionId, childSessionId, expectedSourceRevision, options) => withBindingLock(
+      () => cloneIsolatedTarget(sourceSessionId, childSessionId, expectedSourceRevision, options),
       { operation: 'cloneIsolatedTarget', sessionIds: [sourceSessionId, childSessionId] },
     ),
     bindVerifiedIsolated: (sessionId, proof) => {

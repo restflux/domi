@@ -33,7 +33,7 @@ import {
   isDestructiveGitCommand,
   isKnownReadOnlyCommand,
 } from './execution-policy/shell-command-classifier.ts'
-import { normalizeToolAction } from './execution-policy/tool-action-normalizer.ts'
+import { normalizeToolAction, type NormalizedToolAction } from './execution-policy/tool-action-normalizer.ts'
 import { isWithinWorkspace, normalizeMsysPath, resolvePortablePath } from './execution-policy/workspace-boundary.ts'
 
 export type PiExecutionAuthorizationRequest =
@@ -61,6 +61,8 @@ export interface PiExecutionControllerOptions {
   workspaceId?: string
   /** 当前 checkout 的 Workspace Boundary root。 */
   workspaceRoot: string
+  /** Fork 来源的已验证 cwd；只用于阻止子会话误写父 Worktree，不收紧普通外部路径。 */
+  forkSourceDir?: string
   /** 已由 Session Checkout 宿主解析的目标身份；权限策略不得从路径名称猜测。 */
   sessionTarget?: {
     kind: 'local' | 'isolated'
@@ -232,6 +234,47 @@ async function shellCommandTouchesLocal(
   return false
 }
 
+/**
+ * Fork 子会话只拦截已知父 Worktree 的变更路径；Full Access 对其他外部路径仍保持原语义。
+ * 只读 shell 不在这里拦截，当前 target 的常规 Workspace Boundary 仍由后续策略处理。
+ */
+async function findForkSourceMutationPath(
+  action: NormalizedToolAction,
+  workspaceRoot: string,
+  canonicalWorkspaceRoot: string,
+  canonicalForkSourceRoot: string,
+  analysis?: ShellAnalysis,
+): Promise<string | undefined> {
+  let paths: string[]
+  if (action.kind === 'file') {
+    if (action.operation === 'read') return undefined
+    paths = action.paths
+  } else if (action.kind === 'shell') {
+    if (isKnownReadOnlyCommand(action.command, analysis)) return undefined
+    paths = [
+      ...action.paths,
+      ...extractCommandPathCandidates(action.command, analysis),
+    ]
+  } else {
+    paths = action.paths
+  }
+
+  for (const rawPath of paths) {
+    try {
+      const canonical = await canonicalizePath(
+        resolvePortablePath(normalizeMsysPath(rawPath), workspaceRoot),
+      )
+      if (
+        isWithinWorkspace(canonical, canonicalForkSourceRoot)
+        && !isWithinWorkspace(canonical, canonicalWorkspaceRoot)
+      ) return canonical
+    } catch {
+      // 路径无法解析时交给既有工具/执行策略处理，不扩大这条窄保护的范围。
+    }
+  }
+  return undefined
+}
+
 export async function createPiExecutionController(
   options: PiExecutionControllerOptions,
 ): Promise<PiExecutionAuthorize> {
@@ -239,7 +282,22 @@ export async function createPiExecutionController(
   const canonicalPlanSidecarDir = await canonicalizePath(options.planSidecarDir)
   const canonicalWorkspaceRoot = await canonicalizePath(options.workspaceRoot)
   const canonicalLocalBaselineRoot = await canonicalizePath(options.localBaselineRoot)
+  let canonicalForkSourceRoot: string | undefined
+  if (options.forkSourceDir) {
+    try {
+      canonicalForkSourceRoot = await canonicalizePath(options.forkSourceDir)
+    } catch {
+      // 源 Worktree 已被清理时没有可误写的路径，不阻断 child 当前 target 启动。
+      canonicalForkSourceRoot = undefined
+    }
+  }
   const isolatedFromLocal = !isWithinWorkspace(canonicalWorkspaceRoot, canonicalLocalBaselineRoot)
+  const forkSourceIsSeparate = options.sessionTarget?.kind === 'isolated'
+    && canonicalForkSourceRoot !== undefined
+    && !(
+      isWithinWorkspace(canonicalWorkspaceRoot, canonicalForkSourceRoot)
+      && isWithinWorkspace(canonicalForkSourceRoot, canonicalWorkspaceRoot)
+    )
   const canonicalSessionWorkbenchRoot = options.sessionWorkbenchRoot
     ? await canonicalizePath(options.sessionWorkbenchRoot)
     : undefined
@@ -315,6 +373,21 @@ export async function createPiExecutionController(
         : { behavior: 'deny', message: 'PlanFocusedValidation 仅允许由 Domi 产品注册的可信只读工具调用。' }
     }
     const normalizedAction = normalizeToolAction(toolName, toolInput, canonicalShellAnalysis)
+    if (forkSourceIsSeparate && canonicalForkSourceRoot) {
+      const forkSourceMutationPath = await findForkSourceMutationPath(
+        normalizedAction,
+        options.workspaceRoot,
+        canonicalWorkspaceRoot,
+        canonicalForkSourceRoot,
+        canonicalShellAnalysis,
+      )
+      if (forkSourceMutationPath) {
+        return {
+          behavior: 'deny',
+          message: '当前 Fork 已切换到独立 Worktree，不能修改父 Worktree；请使用当前 Session Target 的相对路径。',
+        }
+      }
+    }
     if (options.sessionTarget?.kind === 'isolated'
       && options.sessionTarget.ownership === 'inherited'
       && normalizedAction.kind === 'shell'

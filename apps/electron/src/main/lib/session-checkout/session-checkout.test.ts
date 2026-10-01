@@ -4506,7 +4506,42 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(git(childLease.cwd, 'status', '--porcelain=v1', '-z')).toBe(sourceStatus)
     expect(readFileSync(join(childLease.cwd, 'tracked.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('fork unstaged\n')
     expect(readFileSync(join(childLease.cwd, 'fork-untracked.bin'))).toEqual(Buffer.from([0, 1, 2, 255]))
+
+    rmSync(join(childLease.cwd, 'tracked.txt'))
+    expect(existsSync(join(sourceLease.cwd, 'tracked.txt'))).toBe(true)
+    expect(readFileSync(join(sourceLease.cwd, 'tracked.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('fork unstaged\n')
+    expect(git(sourceLease.cwd, 'status', '--porcelain=v1', '-z')).toBe(sourceStatus)
     expect((await context.module.inspect('session-1')).collaborators ?? []).toEqual([])
+  })
+
+  test('Given a dirty Isolated session When clean Fork clones its target Then child starts at committed HEAD without dirty content', async () => {
+    const context = createContext()
+    const source = await context.module.bind('session-1', { kind: 'isolated' })
+    const sourceLease = await context.module.lease('session-1')
+    writeFileSync(join(sourceLease.cwd, 'tracked.txt'), 'fork dirty\n')
+    git(sourceLease.cwd, 'add', 'tracked.txt')
+    writeFileSync(join(sourceLease.cwd, 'tracked.txt'), 'fork unstaged\n')
+    writeFileSync(join(sourceLease.cwd, 'fork-untracked.txt'), 'must stay in parent\n')
+    const sourceStatus = git(sourceLease.cwd, 'status', '--porcelain=v1', '-z')
+
+    const child = await context.module.cloneIsolatedTarget(
+      'session-1',
+      'child-session',
+      source.revision,
+      { preserveWorkingTree: false },
+    )
+
+    expect(child.checkout.kind).toBe('isolated')
+    expect(child.checkout.id).not.toBe(source.checkout.id)
+    const childLease = await context.module.lease('child-session')
+    expect(childLease.cwd).not.toBe(sourceLease.cwd)
+    expect(git(childLease.cwd, 'status', '--porcelain=v1', '-z')).toBe('')
+    expect(readFileSync(join(childLease.cwd, 'tracked.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('base\n')
+    expect(existsSync(join(childLease.cwd, 'fork-untracked.txt'))).toBe(false)
+
+    rmSync(join(childLease.cwd, 'tracked.txt'))
+    expect(existsSync(join(sourceLease.cwd, 'tracked.txt'))).toBe(true)
+    expect(readFileSync(join(sourceLease.cwd, 'tracked.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('fork unstaged\n')
     expect(git(sourceLease.cwd, 'status', '--porcelain=v1', '-z')).toBe(sourceStatus)
   })
 

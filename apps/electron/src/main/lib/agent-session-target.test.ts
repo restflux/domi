@@ -206,10 +206,9 @@ describe('Pi Fork Session Target 策略', () => {
     revision: 1,
   }
 
-  test('Given 未指定目标 When Fork Pi 会话 Then 兼容继承父 Session Target', () => {
+  test('Given 未指定目标 When 普通 Fork Pi 会话 Then 创建 clean Isolated Target', () => {
     expect(resolvePiForkTargetChoice('parent-session', undefined, localTarget)).toEqual({
-      kind: 'inherit',
-      parentSessionId: 'parent-session',
+      kind: 'isolated',
     })
   })
 
@@ -264,17 +263,24 @@ describe('Pi Fork Session Target 策略', () => {
       kind: 'isolated-copy',
       parentSessionId: 'parent-session',
       expectedSourceRevision: 7,
+      preserveWorkingTree: true,
     })
   })
 
-  test('Given Isolated 父目标 When 请求从 Local HEAD 另建 Worktree Then 拒绝含糊来源语义', () => {
-    expect(() => resolvePiForkTargetChoice('parent-session', {
+  test('Given Isolated 父目标 When 普通 Fork 请求新 Worktree Then 创建 clean 独立 Target', () => {
+    expect(resolvePiForkTargetChoice('parent-session', {
       kind: 'isolated',
       confirmDirty: false,
     }, {
       ...localTarget,
       checkout: { ...localTarget.checkout, id: 'checkout-a', kind: 'isolated' },
-    })).toThrow('仅支持从 Local Checkout')
+      revision: 8,
+    })).toEqual({
+      kind: 'isolated-copy',
+      parentSessionId: 'parent-session',
+      expectedSourceRevision: 8,
+      preserveWorkingTree: false,
+    })
   })
 })
 

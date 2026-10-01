@@ -617,6 +617,58 @@ describe('PiExecutionController', () => {
     }
   })
 
+  test('Given a clean Fork child When Full Access targets the known parent Worktree Then only the parent path is denied', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pi-fork-source-boundary-'))
+    const localRoot = join(root, 'local')
+    const childRoot = join(root, 'child')
+    const parentRoot = join(root, 'parent')
+    const externalRoot = join(root, 'external')
+    await mkdir(localRoot)
+    await mkdir(childRoot)
+    await mkdir(parentRoot)
+    await mkdir(externalRoot)
+    const parentFile = join(parentRoot, 'changed.ts')
+    const externalFile = join(externalRoot, 'allowed.txt')
+    await writeFile(parentFile, 'parent')
+    await writeFile(externalFile, 'external')
+
+    try {
+      const authorize = await createPiExecutionController({
+        sessionId: 'fork-child-session',
+        workspaceRoot: childRoot,
+        forkSourceDir: parentRoot,
+        localBaselineRoot: localRoot,
+        sessionTarget: { kind: 'isolated', ownership: 'owner' },
+        planSidecarDir: join(root, 'plans'),
+        interaction: 'interactive',
+        getExecutionPolicy: () => 'full-access',
+        getWorkflow: () => 'direct',
+        requestApproval: async () => 'approved',
+        audit: () => undefined,
+        askUser: async (input) => ({ behavior: 'allow', updatedInput: input }),
+        exitPlan: async (input) => ({ behavior: 'allow', updatedInput: input }),
+        onWorkflowChanged: () => true,
+      })
+
+      const deleteParent = { command: `rm "${parentFile}"` }
+      expect((await authorize({ type: 'tool', toolName: 'Bash', input: deleteParent, options: toolOptions() })).behavior)
+        .toBe('deny')
+      const relativeDeleteParent = { command: 'rm "../parent/changed.ts"' }
+      expect((await authorize({ type: 'tool', toolName: 'Bash', input: relativeDeleteParent, options: toolOptions() })).behavior)
+        .toBe('deny')
+
+      const writeParent = { file_path: parentFile, content: 'must stay' }
+      expect((await authorize({ type: 'tool', toolName: 'Write', input: writeParent, options: toolOptions() })).behavior)
+        .toBe('deny')
+
+      const writeExternal = { file_path: externalFile, content: 'still allowed by Full Access' }
+      expect(await authorize({ type: 'tool', toolName: 'Write', input: writeExternal, options: toolOptions() }))
+        .toEqual({ behavior: 'allow', updatedInput: writeExternal })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test('Given Isolated Full Access When Bash targets the isolated checkout by absolute path in any spelling Then it is allowed, while Local paths in any spelling stay denied', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pi-path-spelling-'))
     const localRoot = join(root, 'local')

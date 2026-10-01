@@ -1831,6 +1831,7 @@ export class AgentOrchestrator {
               ...(workspaceId && { workspaceId }),
               workspaceRoot: executionWorkspaceRoot,
               localBaselineRoot,
+              ...(sessionMeta?.forkSourceDir ? { forkSourceDir: sessionMeta.forkSourceDir } : {}),
               ...(sessionTargetPrompt && { sessionTarget: sessionTargetPrompt }),
               ...(workspaceSlug && {
                 sessionWorkbenchRoot: getAgentSessionWorkspacePath(workspaceSlug, sessionId),

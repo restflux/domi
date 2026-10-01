@@ -156,6 +156,11 @@ export interface MarkReadyForReviewInput {
   suggestedCommitMessage: string
 }
 
+/** Fork 当前 Isolated Worktree 时是否保留源工作树的未提交状态。 */
+export interface CloneIsolatedTargetOptions {
+  preserveWorkingTree?: boolean
+}
+
 /** Session Checkout Module 对业务调用方暴露的完整核心接口。 */
 export interface SessionCheckoutModule {
   inspect(sessionId: string): Promise<SessionTargetView>
@@ -175,8 +180,13 @@ export interface SessionCheckoutModule {
   ): Promise<T>
   bind(sessionId: string, choice: SessionTargetBindChoice, expectedProjectId?: string): Promise<SessionTargetView>
   listBranches?(sessionId: string): Promise<{ current: string | null; local: string[] }>
-  /** 将已有 Isolated Worktree 的稳定 Git 状态复制为 child 自己拥有的独立 target。 */
-  cloneIsolatedTarget(sourceSessionId: string, childSessionId: string, expectedSourceRevision: number): Promise<SessionTargetView>
+  /** 将已有 Isolated Worktree 复制为 child 自己拥有的独立 target。 */
+  cloneIsolatedTarget(
+    sourceSessionId: string,
+    childSessionId: string,
+    expectedSourceRevision: number,
+    options?: CloneIsolatedTargetOptions,
+  ): Promise<SessionTargetView>
   /** 仅 main 内部 handoff 使用：在同一 binding lock 内校验最终 HEAD/dirty snapshot 并创建。 */
   bindVerifiedIsolated(sessionId: string, proof: VerifiedIsolatedBindProof): Promise<SessionTargetView>
   /** 已交付 owner 会话确认需要修改代码时，惰性创建下一轮 Isolated Checkout。 */

@@ -68,15 +68,42 @@ export async function resolveAgentSessionTarget(
 
 export type PiForkResolvedTargetChoice =
   | Extract<SessionTargetBindChoice, { kind: 'inherit' | 'local' | 'isolated' }>
-  | { kind: 'isolated-copy'; parentSessionId: string; expectedSourceRevision: number }
+  | {
+      kind: 'isolated-copy'
+      parentSessionId: string
+      expectedSourceRevision: number
+      /** 普通 Fork 使用 clean 模式；显式复制当前 Worktree 才保留未提交内容。 */
+      preserveWorkingTree: boolean
+    }
 
-/** 将 Fork 意图收敛成明确的 bind 或 Isolated snapshot copy；不在调用方散落来源规则。 */
+function resolveCleanIsolatedFork(parentSessionId: string, sourceTarget: SessionTargetView): PiForkResolvedTargetChoice {
+  if (sourceTarget.checkout.kind !== 'isolated') {
+    return { kind: 'isolated' }
+  }
+  return {
+    kind: 'isolated-copy',
+    parentSessionId,
+    expectedSourceRevision: sourceTarget.revision,
+    preserveWorkingTree: false,
+  }
+}
+
+/** 将普通 Fork 收敛为 clean Isolated Target；共享与 snapshot copy 必须显式请求。 */
 export function resolvePiForkTargetChoice(
   parentSessionId: string,
   requestedTarget: ForkSessionTargetChoice | undefined,
   sourceTarget: SessionTargetView,
 ): PiForkResolvedTargetChoice {
-  if (!requestedTarget || requestedTarget.kind === 'inherit') {
+  if (!requestedTarget) {
+    if (sourceTarget.checkout.kind === 'local' && sourceTarget.dirty) {
+      throw new SessionCheckoutError(
+        'dirty_confirmation_required',
+        'Local Checkout 存在未提交修改；普通 Fork 将从已提交 HEAD 创建且不会复制这些修改。',
+      )
+    }
+    return resolveCleanIsolatedFork(parentSessionId, sourceTarget)
+  }
+  if (requestedTarget.kind === 'inherit') {
     return { kind: 'inherit', parentSessionId }
   }
   if (requestedTarget.kind === 'local') {
@@ -93,13 +120,11 @@ export function resolvePiForkTargetChoice(
       kind: 'isolated-copy',
       parentSessionId,
       expectedSourceRevision: sourceTarget.revision,
+      preserveWorkingTree: true,
     }
   }
-  if (sourceTarget.checkout.kind !== 'local') {
-    throw new SessionCheckoutError(
-      'operation_not_allowed',
-      'Fork 到新 Worktree 仅支持从 Local Checkout 发起；Isolated 会话请复制当前 Worktree。',
-    )
+  if (sourceTarget.checkout.kind === 'isolated') {
+    return resolveCleanIsolatedFork(parentSessionId, sourceTarget)
   }
   if (sourceTarget.dirty && !requestedTarget.confirmDirty) {
     throw new SessionCheckoutError(

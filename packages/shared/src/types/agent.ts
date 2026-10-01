@@ -1483,12 +1483,13 @@ export interface MoveSessionToWorkspaceInput {
   targetWorkspaceId: string
 }
 
-/** Fork 后的 Session Target 策略；省略时兼容为继承父会话。 */
+/** Fork 后的 Session Target 策略；普通 Fork 默认创建 clean Isolated Target，inherit 必须显式请求。 */
 export type ForkSessionTargetChoice =
   | { kind: 'inherit' }
   | { kind: 'local' }
+  /** 创建 clean Isolated Target，不复制源 Worktree 的未提交内容。 */
   | { kind: 'isolated'; confirmDirty: boolean }
-  /** 从已有 Isolated Worktree 的当前 Git 状态创建独立副本。 */
+  /** 从已有 Isolated Worktree 的当前 Git 状态创建独立 snapshot 副本。 */
   | { kind: 'isolated-copy' }
 
 /** Fork（分叉）会话输入 */
