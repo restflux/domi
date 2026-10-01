@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import type { TerminalSessionView } from '@domi/shared'
-import { countRunningTerminals, getDockTerminalCloseAction, getTerminalTabTitle, selectDockTerminals, selectWorkspaceTerminals, terminalStatusLabel } from './terminal-dock-model.ts'
+import {
+  buildZCodeDockTerminalInput,
+  countRunningTerminals,
+  formatTerminalTabTitle,
+  getDockTerminalCloseAction,
+  getPathLeaf,
+  getTerminalTabTitle,
+  getZCodeTerminalTabTitle,
+  resolveTerminalToggleAction,
+  selectDockTerminals,
+  selectWorkspaceTerminals,
+  terminalStatusLabel,
+} from './terminal-dock-model.ts'
 
 const terminal = (status: TerminalSessionView['status'], exitCode?: number): TerminalSessionView => ({
   terminalId: status, ownerSessionId: 's1', kind: 'agent-run', presentation: 'workspace', title: 'Dev', cwd: '/repo',
@@ -40,5 +52,25 @@ describe('terminal dock model', () => {
     expect(getDockTerminalCloseAction([first], 'first')).toBe('close-panel')
     expect(getDockTerminalCloseAction([first, second], 'first')).toBe('close-session')
     expect(getDockTerminalCloseAction([first], 'missing')).toBe('none')
+  })
+
+  test('ZCode tab titles use the project leaf and per-owner ordinal', () => {
+    const domiTerminal = { ...terminal('running'), cwd: '/Users/dev/Projects/open/domi' }
+    expect(getPathLeaf('/Users/dev/Projects/open/domi')).toBe('domi')
+    expect(getPathLeaf('C:\\repos\\domi\\')).toBe('domi')
+    expect(getPathLeaf('')).toBe('')
+    expect(formatTerminalTabTitle('domi', 1)).toBe('domi')
+    expect(formatTerminalTabTitle('domi', 3)).toBe('domi 3')
+    expect(getZCodeTerminalTabTitle(domiTerminal, 1)).toBe('domi')
+    expect(getZCodeTerminalTabTitle(domiTerminal, 2)).toBe('domi 2')
+    // cwd 为空时回退宿主 title，与上游 getPathLeaf(cwd) || title 一致。
+    expect(getZCodeTerminalTabTitle({ ...domiTerminal, cwd: '' }, 1)).toBe('Dev')
+  })
+
+  test('toggle shortcut resolves ZCode panel actions including lazy create', () => {
+    expect(resolveTerminalToggleAction(false, false, 0)).toBe('none')
+    expect(resolveTerminalToggleAction(true, true, 3)).toBe('collapse')
+    expect(resolveTerminalToggleAction(true, false, 2)).toBe('open')
+    expect(resolveTerminalToggleAction(true, false, 0)).toBe('open-and-create')
   })
 })

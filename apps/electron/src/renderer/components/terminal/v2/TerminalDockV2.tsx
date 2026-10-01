@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '@/i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDown, ChevronUp, Plus, Square, X } from 'lucide-react'
-import type { TerminalCreateInput, TerminalProfile, TerminalSessionView } from '@domi/shared'
+import type { TerminalProfile, TerminalSessionView } from '@domi/shared'
 import { Button } from '@/components/ui/button.tsx'
 import {
   terminalActiveIdMapAtom,
@@ -13,7 +13,10 @@ import {
   terminalShellLabelMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
-import { countRunningTerminals, getDockTerminalCloseAction, getTerminalTabTitle, selectDockTerminals } from '../terminal-dock-model.ts'
+import { getDockTerminalCloseAction, getZCodeTerminalTabTitle, selectDockTerminals, buildZCodeDockTerminalInput } from '../terminal-dock-model.ts'
+
+// 保留旧导出路径，终端 Dock 测试继续从这里导入创建请求构建器。
+export { buildZCodeDockTerminalInput }
 import { ZCodeTerminalSurface } from './zcode/ZCodeTerminalSurface.tsx'
 import { TerminalTabTrigger } from './zcode/TerminalTabTrigger.tsx'
 import { getDockPanelState, reduceTerminalPanelState } from './terminal-panel-state.ts'
@@ -22,10 +25,6 @@ import { cn } from '@/lib/utils.ts'
 
 const MIN_HEIGHT = 150
 const MAX_HEIGHT = 560
-
-export function buildZCodeDockTerminalInput(ownerSessionId: string, profile: TerminalProfile): TerminalCreateInput {
-  return { ownerSessionId, profile, presentation: 'dock', engine: 'zcode', cols: 100, rows: 28 }
-}
 
 export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): React.ReactElement | null {
   const { t } = useTranslation('workspace', { i18n })
@@ -45,10 +44,10 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
   const [creating, setCreating] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const open = openMap.get(ownerSessionId) ?? false
-  const runningCount = countRunningTerminals(terminals)
   const activeId = activeMap.get(ownerSessionId)
   const panelState = getDockPanelState({ open, activeTerminalId: activeId }, terminals, ownerSessionId)
   const active = terminals.find((terminal) => terminal.terminalId === panelState.activeTerminalId)
+  const activeShellLabel = active ? shellLabels.get(active.terminalId)?.trim() : undefined
 
   React.useEffect(() => {
     if (panelState.activeTerminalId === activeId) return
@@ -176,10 +175,10 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
         }} className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex h-8 shrink-0 items-center gap-2">
           <div className="shrink-0 truncate text-xs font-medium">{t('terminal')}</div>
-          {runningCount > 0 && <span className="shrink-0 text-[11px] text-muted-foreground">{t('runningCount', { count: runningCount })}</span>}
+          {open && activeShellLabel && <span className="shrink-0 text-[11px] text-muted-foreground">{activeShellLabel}</span>}
           <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <TabsList className="flex !h-7 w-max justify-start gap-1 rounded-none bg-transparent p-0">
-              {terminals.map((terminal) => { const title = getTerminalTabTitle(terminal, shellLabels.get(terminal.terminalId)); return <TerminalTabTrigger key={terminal.terminalId} id={terminal.terminalId} title={title} closeLabel={`${t('close')}${title}`} active={active?.terminalId === terminal.terminalId} status={terminal.status} onClose={(id) => { if (id === terminal.terminalId) void closeTerminal(terminal) }} /> })}
+              {terminals.map((terminal, index) => { const title = getZCodeTerminalTabTitle(terminal, index + 1); return <TerminalTabTrigger key={terminal.terminalId} id={terminal.terminalId} title={title} closeLabel={`${t('close')}${title}`} active={active?.terminalId === terminal.terminalId} status={terminal.status} onClose={(id) => { if (id === terminal.terminalId) void closeTerminal(terminal) }} /> })}
             </TabsList>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -194,9 +193,17 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
               setOpenMap((current) => new Map(current).set(ownerSessionId, nextPanelState.open))
             }} aria-label={`${t('close')}${t('terminal')}`} data-zcode-terminal-close="true"><X className="size-4" /></Button>}
             <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => {
-              const nextPanelState = open
-                ? reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'close-panel' })
-                : reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'open' })
+              if (open) {
+                const nextPanelState = reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'close-panel' })
+                setOpenMap((current) => new Map(current).set(ownerSessionId, nextPanelState.open))
+                return
+              }
+              // ZCode ensureWorkspaceTerminalState：面板重新可见但还没有终端时懒创建第一个终端。
+              if (terminals.length === 0) {
+                void createTerminal()
+                return
+              }
+              const nextPanelState = reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'open' })
               setOpenMap((current) => new Map(current).set(ownerSessionId, nextPanelState.open))
             }} aria-label={open ? t('collapseTerminal') : t('expandTerminal')}>{open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}</Button>
           </div>

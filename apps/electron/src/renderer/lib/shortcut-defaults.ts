@@ -213,6 +213,15 @@ export const DEFAULT_SHORTCUTS: ShortcutDefinition[] = [
     category: 'navigation',
   },
   {
+    id: 'toggle-terminal',
+    name: '切换终端面板',
+    description: '显示或隐藏当前会话的底部终端面板；面板内无终端时自动新建一个',
+    // 与 ZCode SHORTCUT_COMMANDS 的 toggleTerminal（CmdOrCtrl+j）保持同键位。
+    defaultMac: 'Cmd+J',
+    defaultWin: 'Ctrl+J',
+    category: 'app',
+  },
+  {
     id: 'toggle-right-panel',
     name: '切换文件面板',
     description: '显示或隐藏右侧文件面板',

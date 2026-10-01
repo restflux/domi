@@ -7,7 +7,7 @@ import { TerminalDockV2, buildZCodeDockTerminalInput } from './TerminalDockV2'
 
 const terminal = (terminalId: string, ownerSessionId: string): TerminalSessionView => ({
   terminalId, ownerSessionId, kind: 'user-shell', presentation: 'dock', title: terminalId,
-  cwd: '/tmp', profile: 'bash', status: 'running', startedAt: 1,
+  cwd: '/proj/alpha', profile: 'bash', status: 'running', startedAt: 1,
 })
 
 test('Given the v2 Dock When creating an interactive shell Then it selects ZCode backend without changing the owner or presentation', () => {
@@ -25,9 +25,10 @@ test('Given multiple owners and terminals When rendering v2 Dock Then only owner
   ]))
   store.set(terminalDockOpenMapAtom, new Map([['owner', true]]))
   const html = renderToStaticMarkup(<Provider store={store}><TerminalDockV2 ownerSessionId="owner" /></Provider>)
-  expect(html).toContain('aria-label="切换到first"')
-  expect(html).toContain('aria-label="关闭first"')
-  expect(html).toContain('aria-label="关闭second"')
+  // ZCode 标题规则：首个 tab 只显示项目名，第二个起追加 owner 内序号。
+  expect(html).toContain('aria-label="切换到alpha"')
+  expect(html).toContain('aria-label="关闭alpha"')
+  expect(html).toContain('aria-label="关闭alpha 2"')
   expect(html).toContain('data-zcode-terminal-close="true"')
   expect(html).not.toContain('关闭other')
   // ZCode forceMount：切到第二标签时，第一标签的 xterm DOM 保留，不随 tab 重建。

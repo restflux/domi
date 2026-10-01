@@ -2,6 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { DEFAULT_SHORTCUTS } from './shortcut-defaults'
 
 describe('native zoom shortcuts', () => {
+  test('binds the ZCode toggleTerminal shortcut to Cmd/Ctrl+J', () => {
+    expect(DEFAULT_SHORTCUTS.find((shortcut) => shortcut.id === 'toggle-terminal')).toMatchObject({
+      defaultMac: 'Cmd+J',
+      defaultWin: 'Ctrl+J',
+    })
+  })
+
   test('includes readonly zoom controls for every Electron menu role', () => {
     expect(DEFAULT_SHORTCUTS.find((shortcut) => shortcut.id === 'zoom-in')).toMatchObject({
       defaultMac: 'Cmd+Plus',

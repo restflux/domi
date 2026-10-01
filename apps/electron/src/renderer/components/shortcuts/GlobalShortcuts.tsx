@@ -49,6 +49,16 @@ import {
 } from '@/atoms/chat-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
 import { draftSessionIdsAtom } from '@/atoms/draft-session-atoms'
+import {
+  terminalActiveIdMapAtom,
+  terminalDockOpenMapAtom,
+  terminalDockProfileMapAtom,
+  terminalStateMapAtom,
+} from '@/atoms/terminal-atoms.ts'
+import {
+  buildZCodeDockTerminalInput,
+  resolveTerminalToggleAction,
+} from '@/components/terminal/terminal-dock-model.ts'
 import { useCreateSession } from '@/hooks/useCreateSession'
 import { useShortcut } from '@/hooks/useShortcut'
 import { useCloseTab } from '@/hooks/useCloseTab'
@@ -244,6 +254,47 @@ export function GlobalShortcuts(): null {
   // ===== 快速任务窗口 → 创建会话并自动发送 =====
 
   const store = useStore()
+
+  // Cmd+J / Ctrl+J → 切换当前会话的底部终端面板（ZCode toggleTerminal 同键位）
+  useShortcut(
+    'toggle-terminal',
+    useCallback(() => {
+      const ownerSessionId = store.get(currentAgentSessionIdAtom)
+      const panelOpen = ownerSessionId
+        ? (store.get(terminalDockOpenMapAtom).get(ownerSessionId) ?? false)
+        : false
+      const hasDockTerminal = ownerSessionId
+        ? [...store.get(terminalStateMapAtom).values()].some(
+          (terminal) => terminal.ownerSessionId === ownerSessionId
+            && terminal.kind === 'user-shell'
+            && terminal.presentation === 'dock',
+        )
+        : false
+      const action = resolveTerminalToggleAction(Boolean(ownerSessionId), panelOpen, hasDockTerminal ? 1 : 0)
+      if (action === 'none' || !ownerSessionId) return
+
+      if (action === 'collapse') {
+        // ZCode close-panel：只收起面板，保留 active 选择与 PTY。
+        store.set(terminalDockOpenMapAtom, (current) => new Map(current).set(ownerSessionId, false))
+        return
+      }
+
+      // 打开面板；对应 ensureWorkspaceTerminalState 的懒创建语义：
+      // 面板可见但 workspace 还没有任何终端时先创建第一个终端。
+      store.set(terminalDockOpenMapAtom, (current) => new Map(current).set(ownerSessionId, true))
+      if (action === 'open-and-create') {
+        const profile = store.get(terminalDockProfileMapAtom).get(ownerSessionId) ?? 'default'
+        void window.electronAPI.terminal.create(buildZCodeDockTerminalInput(ownerSessionId, profile))
+          .then((terminal) => {
+            store.set(terminalStateMapAtom, (current) => new Map(current).set(terminal.terminalId, terminal))
+            store.set(terminalActiveIdMapAtom, (current) => new Map(current).set(ownerSessionId, terminal.terminalId))
+          })
+          .catch((error) => {
+            console.error('[终端] 快捷键新建终端失败:', error)
+          })
+      }
+    }, [store]),
+  )
 
   useEffect(() => {
     const cleanup = window.electronAPI.onQuickTaskOpenSession(async (data) => {

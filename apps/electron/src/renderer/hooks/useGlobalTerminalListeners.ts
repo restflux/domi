@@ -88,6 +88,13 @@ export function useGlobalTerminalListeners(): void {
         store.set(rightWorkspaceFocusAtom, (current) => (
           reconcileClosedWorkspaceFocus(current, change.ownerSessionId, change.terminalId, remainingWorkspaceTerminalIds)
         ))
+        store.set(terminalDockOpenMapAtom, (current) => {
+          // 上游 exitTerminalSession：当前 workspace 最后一个 tab 的 PTY 退出时收起面板；
+          // 进程已死，没有可保活的 session，面板重新打开时由懒创建新终端。
+          if (remainingDockTerminals.length > 0) return current
+          if (!(current.get(change.ownerSessionId) ?? false)) return current
+          return new Map(current).set(change.ownerSessionId, false)
+        })
         store.set(terminalActiveIdMapAtom, (current) => {
           const nextPanelState = reduceTerminalPanelState(
             { open: store.get(terminalDockOpenMapAtom).get(change.ownerSessionId) ?? false, activeTerminalId: current.get(change.ownerSessionId) },
