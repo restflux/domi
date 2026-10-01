@@ -11,6 +11,8 @@ export const terminalActiveIdMapAtom = atom<Map<string, string>>(new Map())
 export const terminalDockHeightMapAtom = atom<Map<string, number>>(new Map())
 /** ZCode Terminal panelState 中按 workspace 记忆的下次创建 profile。 */
 export const terminalDockProfileMapAtom = atom<Map<string, TerminalProfile>>(new Map())
+/** ZCode Terminal 在 PTY ready 后解析出的 shell 名称；仅影响 v2 tab 展示，不改变 PTY 所有权。 */
+export const terminalShellLabelMapAtom = atom<Map<string, string>>(new Map())
 
 export const currentSessionTerminalsAtom = atom<TerminalSessionView[]>((get) => {
   const sessionId = get(currentAgentSessionIdAtom)

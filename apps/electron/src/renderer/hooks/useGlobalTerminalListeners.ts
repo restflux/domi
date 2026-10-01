@@ -6,6 +6,7 @@ import {
   terminalActiveIdMapAtom,
   terminalDockOpenMapAtom,
   terminalServiceUrlsMapAtom,
+  terminalShellLabelMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
 import { currentAgentSessionIdAtom } from '@/atoms/agent-atoms.ts'
@@ -58,6 +59,12 @@ export function useGlobalTerminalListeners(): void {
       if ('closed' in change) {
         sidePaneTerminalSessionRegistry.release(JSON.stringify([change.ownerSessionId, change.terminalId]))
         clearServiceOutput(change.terminalId)
+        store.set(terminalShellLabelMapAtom, (current) => {
+          if (!current.has(change.terminalId)) return current
+          const next = new Map(current)
+          next.delete(change.terminalId)
+          return next
+        })
         store.set(terminalActiveIdMapAtom, (current) => {
           const activeId = current.get(change.ownerSessionId)
           if (activeId !== change.terminalId) return current

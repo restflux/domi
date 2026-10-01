@@ -35,7 +35,7 @@ import {
 } from '@/atoms/right-workspace-atoms'
 import { previewFileMapAtom } from '@/atoms/preview-atoms'
 import { scratchPadSaveStateAtom } from '@/atoms/tab-atoms'
-import { terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
+import { terminalShellLabelMapAtom, terminalStateMapAtom } from '@/atoms/terminal-atoms.ts'
 import {
   browserSessionIdFromTab,
   browserTabId,
@@ -61,7 +61,7 @@ import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { BrowserPanelV2 } from '@/components/browser/v2/BrowserPanelV2'
 import { TerminalPane } from '@/components/terminal/TerminalPane.tsx'
 import { ZCodeTerminalSurface } from '@/components/terminal/v2/zcode/ZCodeTerminalSurface.tsx'
-import { selectWorkspaceTerminals } from '@/components/terminal/terminal-dock-model.ts'
+import { getTerminalTabTitle, selectWorkspaceTerminals } from '@/components/terminal/terminal-dock-model.ts'
 import { PreviewTabContent } from '@/components/diff/PreviewTabContent'
 import { ScratchPadWorkspace } from '@/components/scratch-pad/ScratchPadView'
 import { RightWorkspaceHeader } from '@/components/right-workspace/RightWorkspaceHeader'
@@ -118,6 +118,7 @@ function ActiveRightSidePanel({
   const setFileSourceFilterMap = useSetAtom(agentFileSourceFilterMapAtom)
   const scratchSaveState = useAtomValue(scratchPadSaveStateAtom)
   const terminalStates = useAtomValue(terminalStateMapAtom)
+  const terminalShellLabels = useAtomValue(terminalShellLabelMapAtom)
   const [workspaceFocus, setWorkspaceFocus] = useAtom(rightWorkspaceFocusAtom)
   const isWindows = React.useMemo(() => detectIsWindows(), [])
   const creatingTerminalRef = React.useRef<ManualTerminalCreationGuard>({ pending: false })
@@ -152,7 +153,7 @@ function ActiveRightSidePanel({
     ...workspaceTerminals.map((terminal) => ({
       id: terminalTabId(terminal.terminalId),
       tool: 'terminal' as const,
-      label: terminal.title,
+      label: getTerminalTabTitle(terminal, terminalShellLabels.get(terminal.terminalId)),
       closeable: true,
     })),
     ...browserStates.map((browser, index) => ({

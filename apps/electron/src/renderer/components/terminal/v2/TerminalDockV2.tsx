@@ -10,9 +10,10 @@ import {
   terminalDockHeightMapAtom,
   terminalDockOpenMapAtom,
   terminalDockProfileMapAtom,
+  terminalShellLabelMapAtom,
   terminalStateMapAtom,
 } from '@/atoms/terminal-atoms.ts'
-import { countRunningTerminals, selectDockTerminals } from '../terminal-dock-model.ts'
+import { countRunningTerminals, getDockTerminalCloseAction, getTerminalTabTitle, selectDockTerminals } from '../terminal-dock-model.ts'
 import { ZCodeTerminalSurface } from './zcode/ZCodeTerminalSurface.tsx'
 import { TerminalTabTrigger } from './zcode/TerminalTabTrigger.tsx'
 import { Tabs, TabsList, TabsContent } from '@/components/ui/tabs.tsx'
@@ -28,6 +29,7 @@ export function buildZCodeDockTerminalInput(ownerSessionId: string, profile: Ter
 export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): React.ReactElement | null {
   const { t } = useTranslation('workspace', { i18n })
   const terminalStates = useAtomValue(terminalStateMapAtom)
+  const shellLabels = useAtomValue(terminalShellLabelMapAtom)
   const terminals = React.useMemo(
     () => selectDockTerminals(terminalStates.values(), ownerSessionId),
     [ownerSessionId, terminalStates],
@@ -97,12 +99,15 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
   }, [creating, ownerSessionId, profile, setActiveMap, setOpenMap, setStates])
 
   const closeTerminal = React.useCallback(async (terminal: TerminalSessionView) => {
-    // ZCode 关闭最后一个 session 时同时关闭 panel；PTY 仍由 Main/utility 负责回收。
-    if (terminals.length === 1) {
+    const action = getDockTerminalCloseAction(terminals, terminal.terminalId)
+    if (action === 'none') return
+    if (action === 'close-panel') {
+      // ZCode 关闭最后一个 tab 时只收起面板，保留 PTY/session 供再次打开时复用。
       setOpenMap((current) => new Map(current).set(ownerSessionId, false))
+      return
     }
     await window.electronAPI.terminal.close({ ownerSessionId, terminalId: terminal.terminalId })
-  }, [ownerSessionId, setOpenMap, terminals.length])
+  }, [ownerSessionId, setOpenMap, terminals])
 
   const updateHeight = React.useCallback((nextHeight: number): void => {
     setHeightMap((current) => new Map(current).set(ownerSessionId, nextHeight))
@@ -144,7 +149,7 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
           {runningCount > 0 && <span className="shrink-0 text-[11px] text-muted-foreground">{t('runningCount', { count: runningCount })}</span>}
           <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <TabsList className="flex !h-7 w-max justify-start gap-1 rounded-none bg-transparent p-0">
-              {terminals.map((terminal) => <TerminalTabTrigger key={terminal.terminalId} id={terminal.terminalId} title={terminal.title} closeLabel={`${t('close')}${terminal.title}`} active={active?.terminalId === terminal.terminalId} status={terminal.status} onClose={(id) => { if (id === terminal.terminalId) void closeTerminal(terminal) }} />)}
+              {terminals.map((terminal) => { const title = getTerminalTabTitle(terminal, shellLabels.get(terminal.terminalId)); return <TerminalTabTrigger key={terminal.terminalId} id={terminal.terminalId} title={title} closeLabel={`${t('close')}${title}`} active={active?.terminalId === terminal.terminalId} status={terminal.status} onClose={(id) => { if (id === terminal.terminalId) void closeTerminal(terminal) }} /> })}
             </TabsList>
           </div>
           <div className="flex shrink-0 items-center gap-1">

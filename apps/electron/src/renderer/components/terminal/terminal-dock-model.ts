@@ -37,6 +37,27 @@ export function resolveClosedDockTerminalId(
   return remainingIds[Math.max(0, closedIndex - 1)] ?? remainingIds[0]
 }
 
+/**
+ * 对齐 ZCode getTerminalSessionCloseAction：最后一个 tab 的关闭动作是收起面板，
+ * 不主动关闭 PTY；只有多个 tab 时才关闭对应 session。
+ */
+export type DockTerminalCloseAction = 'none' | 'close-panel' | 'close-session'
+
+export function getDockTerminalCloseAction(
+  terminals: readonly TerminalSessionView[],
+  terminalId: string,
+): DockTerminalCloseAction {
+  if (!terminals.some((terminal) => terminal.terminalId === terminalId)) return 'none'
+  return terminals.length === 1 ? 'close-panel' : 'close-session'
+}
+
+/**
+ * ZCode 在 shell ready 后用探测到的 shell 名称刷新 tab；宿主返回的 title 仍作为稳定回退。
+ */
+export function getTerminalTabTitle(terminal: TerminalSessionView, shellLabel?: string): string {
+  return shellLabel?.trim() || terminal.title
+}
+
 export function terminalStatusLabel(terminal: TerminalSessionView): string {
   if (terminal.sourceTarget?.stale) return '上一轮'
   if (terminal.status === 'starting') return '启动中'

@@ -3,6 +3,7 @@ import { useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import type { TerminalSessionView } from '@domi/shared'
 import { applyBrowserStateChange, browserStateMapAtom } from '@/atoms/browser-atoms.ts'
+import { terminalShellLabelMapAtom } from '@/atoms/terminal-atoms.ts'
 import { activateSessionRightWorkspaceTab, rightWorkspaceOpenAtom, rightWorkspaceSessionStateMapAtom } from '@/atoms/right-workspace-atoms.ts'
 import { browserTabId } from '@/lib/right-workspace-model.ts'
 import { TerminalSession } from './ZCodeTerminalSession.tsx'
@@ -20,13 +21,19 @@ export function ZCodeTerminalSurface({ terminal, visible, resizing = false }: ZC
   const setBrowserStates = useSetAtom(browserStateMapAtom)
   const setWorkspaceStates = useSetAtom(rightWorkspaceSessionStateMapAtom)
   const setWorkspaceOpen = useSetAtom(rightWorkspaceOpenAtom)
+  const setShellLabels = useSetAtom(terminalShellLabelMapAtom)
   const services = React.useMemo(() => typeof window !== 'undefined'
     ? { terminalService: createZCodeTerminalPort(terminal, window.electronAPI.terminal) }
     : null, [terminal.ownerSessionId, terminal.terminalId])
 
-  const onShellLabelChange = React.useCallback(() => {
-    // 宿主标题由 TerminalSessionView 维护。保持函数引用稳定，避免状态更新时重启 PTY effect。
-  }, [])
+  const onShellLabelChange = React.useCallback((sessionId: string, shellLabel: string | null): void => {
+    setShellLabels((current) => {
+      const next = new Map(current)
+      if (shellLabel?.trim()) next.set(sessionId, shellLabel.trim())
+      else next.delete(sessionId)
+      return next
+    })
+  }, [setShellLabels])
 
   const openLink = React.useCallback(async (url: string): Promise<void> => {
     try {
