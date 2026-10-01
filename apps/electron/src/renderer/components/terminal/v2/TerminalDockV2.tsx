@@ -16,6 +16,7 @@ import {
 import { countRunningTerminals, getDockTerminalCloseAction, getTerminalTabTitle, selectDockTerminals } from '../terminal-dock-model.ts'
 import { ZCodeTerminalSurface } from './zcode/ZCodeTerminalSurface.tsx'
 import { TerminalTabTrigger } from './zcode/TerminalTabTrigger.tsx'
+import { getDockPanelState, reduceTerminalPanelState } from './terminal-panel-state.ts'
 import { Tabs, TabsList, TabsContent } from '@/components/ui/tabs.tsx'
 import { cn } from '@/lib/utils.ts'
 
@@ -46,7 +47,18 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
   const open = openMap.get(ownerSessionId) ?? false
   const runningCount = countRunningTerminals(terminals)
   const activeId = activeMap.get(ownerSessionId)
-  const active = terminals.find((terminal) => terminal.terminalId === activeId) ?? terminals[0]
+  const panelState = getDockPanelState({ open, activeTerminalId: activeId }, terminals, ownerSessionId)
+  const active = terminals.find((terminal) => terminal.terminalId === panelState.activeTerminalId)
+
+  React.useEffect(() => {
+    if (panelState.activeTerminalId === activeId) return
+    setActiveMap((current) => {
+      const next = new Map(current)
+      if (panelState.activeTerminalId) next.set(ownerSessionId, panelState.activeTerminalId)
+      else next.delete(ownerSessionId)
+      return next
+    })
+  }, [activeId, ownerSessionId, panelState.activeTerminalId, setActiveMap])
 
   React.useEffect(() => {
     let cancelled = false
@@ -89,14 +101,18 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
     try {
       const terminal = await window.electronAPI.terminal.create(buildZCodeDockTerminalInput(ownerSessionId, profile))
       setStates((current) => new Map(current).set(terminal.terminalId, terminal))
-      setActiveMap((current) => new Map(current).set(ownerSessionId, terminal.terminalId))
-      setOpenMap((current) => new Map(current).set(ownerSessionId, true))
+      const nextPanelState = reduceTerminalPanelState(
+        { open: openMap.get(ownerSessionId) ?? false, activeTerminalId: activeMap.get(ownerSessionId) },
+        { type: 'create', terminalId: terminal.terminalId },
+      )
+      setActiveMap((current) => new Map(current).set(ownerSessionId, nextPanelState.activeTerminalId!))
+      setOpenMap((current) => new Map(current).set(ownerSessionId, nextPanelState.open))
     } catch (cause) {
       setError(cause instanceof Error && cause.message ? cause.message : t('terminalCreateFailed'))
     } finally {
       setCreating(false)
     }
-  }, [creating, ownerSessionId, profile, setActiveMap, setOpenMap, setStates])
+  }, [activeMap, creating, openMap, ownerSessionId, profile, setActiveMap, setOpenMap, setStates])
 
   const closeTerminal = React.useCallback(async (terminal: TerminalSessionView) => {
     const action = getDockTerminalCloseAction(terminals, terminal.terminalId)
@@ -106,8 +122,19 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
       setOpenMap((current) => new Map(current).set(ownerSessionId, false))
       return
     }
+    const remaining = terminals.filter((item) => item.terminalId !== terminal.terminalId).map((item) => item.terminalId)
+    const nextPanelState = reduceTerminalPanelState(
+      { open, activeTerminalId: activeId },
+      { type: 'close-session', terminalId: terminal.terminalId, previousIds: terminals.map((item) => item.terminalId), remainingIds: remaining },
+    )
     await window.electronAPI.terminal.close({ ownerSessionId, terminalId: terminal.terminalId })
-  }, [ownerSessionId, setOpenMap, terminals])
+    setActiveMap((current) => {
+      const next = new Map(current)
+      if (nextPanelState.activeTerminalId) next.set(ownerSessionId, nextPanelState.activeTerminalId)
+      else next.delete(ownerSessionId)
+      return next
+    })
+  }, [activeId, open, ownerSessionId, setActiveMap, setOpenMap, terminals])
 
   const updateHeight = React.useCallback((nextHeight: number): void => {
     setHeightMap((current) => new Map(current).set(ownerSessionId, nextHeight))
@@ -143,7 +170,10 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
   return (
     <section className="relative flex shrink-0 flex-col overflow-hidden border-t border-border/60 bg-background p-2 pb-1 titlebar-no-drag" style={{ height: open ? height : 46 }} aria-label={t('terminalPanel')} data-zcode-terminal-dock="">
       {open && <div className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize" onPointerDown={startResize} />}
-      <Tabs value={active?.terminalId ?? ''} onValueChange={(terminalId) => setActiveMap((current) => new Map(current).set(ownerSessionId, terminalId))} className="flex min-h-0 flex-1 flex-col gap-2">
+      <Tabs value={active?.terminalId ?? ''} onValueChange={(terminalId) => {
+          const nextPanelState = reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'select', terminalId })
+          setActiveMap((current) => new Map(current).set(ownerSessionId, nextPanelState.activeTerminalId!))
+        }} className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex h-8 shrink-0 items-center gap-2">
           <div className="shrink-0 truncate text-xs font-medium">{t('terminal')}</div>
           {runningCount > 0 && <span className="shrink-0 text-[11px] text-muted-foreground">{t('runningCount', { count: runningCount })}</span>}
@@ -159,8 +189,16 @@ export function TerminalDockV2({ ownerSessionId }: { ownerSessionId: string }): 
             </select>}
             {open && <Button type="button" variant="ghost" size="icon" className="size-7" disabled={creating} onClick={() => void createTerminal()} aria-label={t('newTerminal')}><Plus className="size-4" /></Button>}
             {open && active?.status === 'running' && <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => void window.electronAPI.terminal.interrupt({ ownerSessionId, terminalId: active.terminalId })} aria-label={t('interruptTerminal')}><Square className="size-3" /></Button>}
-            {open && <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => setOpenMap((current) => new Map(current).set(ownerSessionId, false))} aria-label={`${t('close')}${t('terminal')}`} data-zcode-terminal-close="true"><X className="size-4" /></Button>}
-            <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => setOpenMap((current) => new Map(current).set(ownerSessionId, !open))} aria-label={open ? t('collapseTerminal') : t('expandTerminal')}>{open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}</Button>
+            {open && <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => {
+              const nextPanelState = reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'close-panel' })
+              setOpenMap((current) => new Map(current).set(ownerSessionId, nextPanelState.open))
+            }} aria-label={`${t('close')}${t('terminal')}`} data-zcode-terminal-close="true"><X className="size-4" /></Button>}
+            <Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => {
+              const nextPanelState = open
+                ? reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'close-panel' })
+                : reduceTerminalPanelState({ open, activeTerminalId: activeId }, { type: 'open' })
+              setOpenMap((current) => new Map(current).set(ownerSessionId, nextPanelState.open))
+            }} aria-label={open ? t('collapseTerminal') : t('expandTerminal')}>{open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}</Button>
           </div>
         </div>
         {open && error && <div className="shrink-0 bg-destructive/10 px-3 py-1 text-xs text-destructive">{error}</div>}

@@ -14,14 +14,20 @@ import {
   accumulateTerminalServiceOutput,
   type TerminalServiceOutputState,
 } from '@/components/terminal/running-terminals-model.ts'
-import { resolveClosedDockTerminalId, selectDockTerminals } from '@/components/terminal/terminal-dock-model.ts'
+import { selectDockTerminals } from '@/components/terminal/terminal-dock-model.ts'
 import {
   activateSessionRightWorkspaceTab,
+  rightWorkspaceFocusAtom,
   rightWorkspaceOpenAtom,
   rightWorkspaceSessionStateMapAtom,
 } from '@/atoms/right-workspace-atoms.ts'
 import { terminalTabId } from '@/lib/right-workspace-model.ts'
 import { sidePaneTerminalSessionRegistry } from '@/components/terminal/v2/zcode/ZCodeSessionRegistry.ts'
+import {
+  reconcileClosedWorkspaceFocus,
+  reconcileClosedWorkspaceTerminal,
+  reduceTerminalPanelState,
+} from '@/components/terminal/v2/terminal-panel-state.ts'
 
 export function useGlobalTerminalListeners(): void {
   const store = useStore()
@@ -65,16 +71,35 @@ export function useGlobalTerminalListeners(): void {
           next.delete(change.terminalId)
           return next
         })
-        store.set(terminalActiveIdMapAtom, (current) => {
-          const activeId = current.get(change.ownerSessionId)
-          if (activeId !== change.terminalId) return current
-          const previousIds = selectDockTerminals(previousState.values(), change.ownerSessionId)
-            .map((terminal) => terminal.terminalId)
-          const remainingIds = selectDockTerminals(store.get(terminalStateMapAtom).values(), change.ownerSessionId)
-            .map((terminal) => terminal.terminalId)
-          const nextId = resolveClosedDockTerminalId(previousIds, remainingIds, change.terminalId, activeId)
+        const previousDockTerminals = selectDockTerminals(previousState.values(), change.ownerSessionId)
+        const remainingDockTerminals = selectDockTerminals(store.get(terminalStateMapAtom).values(), change.ownerSessionId)
+        const remainingWorkspaceTerminalIds = Array.from(store.get(terminalStateMapAtom).values())
+          .filter((terminal) => terminal.ownerSessionId === change.ownerSessionId && terminal.presentation === 'workspace' && terminal.terminalId !== change.terminalId)
+          .map((terminal) => terminal.terminalId)
+        store.set(rightWorkspaceSessionStateMapAtom, (current) => {
+          const currentState = current.get(change.ownerSessionId)
+          if (!currentState) return current
+          const nextState = reconcileClosedWorkspaceTerminal(currentState, change.terminalId, remainingWorkspaceTerminalIds)
+          if (nextState === currentState) return current
           const next = new Map(current)
-          if (nextId) next.set(change.ownerSessionId, nextId)
+          next.set(change.ownerSessionId, nextState)
+          return next
+        })
+        store.set(rightWorkspaceFocusAtom, (current) => (
+          reconcileClosedWorkspaceFocus(current, change.ownerSessionId, change.terminalId, remainingWorkspaceTerminalIds)
+        ))
+        store.set(terminalActiveIdMapAtom, (current) => {
+          const nextPanelState = reduceTerminalPanelState(
+            { open: store.get(terminalDockOpenMapAtom).get(change.ownerSessionId) ?? false, activeTerminalId: current.get(change.ownerSessionId) },
+            {
+              type: 'close-session',
+              terminalId: change.terminalId,
+              previousIds: previousDockTerminals.map((terminal) => terminal.terminalId),
+              remainingIds: remainingDockTerminals.map((terminal) => terminal.terminalId),
+            },
+          )
+          const next = new Map(current)
+          if (nextPanelState.activeTerminalId) next.set(change.ownerSessionId, nextPanelState.activeTerminalId)
           else next.delete(change.ownerSessionId)
           return next
         })
