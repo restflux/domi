@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+本文件为在本仓库工作的 AI Agent 提供项目指令与约束。
 
 **重要提示：**
 - 当功能发生变化时，请保持此文件和 `README.md` 同步更新。请更新文档以反映当前状态，但是需要经过我的允许后再修改。
@@ -14,7 +14,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## 项目概述
 
-Domi 是基于 Proma 演进的 Personal Coding Workbench，采用 Electron 桌面应用架构。Domi 使用独立安装身份、本地数据目录、`@domi/*` workspace package 和 `DOMI_*` 活动环境变量，不连接 Proma 官方更新通道，也不向用户仓库注入上游 Git/PR 推广标识。旧 `.proma` 数据和旧推广标识只允许在显式迁移或拒绝识别路径中读取，不得继续作为 Domi 的主动写入格式。
+Domi 是 Personal Coding Workbench，采用 Electron 桌面应用架构，使用独立安装身份、本地数据目录、`@domi/*` workspace package 和 `DOMI_*` 活动环境变量。
 
 Agent Runtime 固定为 Pi。用户可选的持久工作方式只有研究与执行：新会话默认执行，底层统一使用当前 Windows 用户权限且没有 OS 沙箱；研究通过只读 Workflow 限制项目写入，并可申请仅当前 run 生效的本次执行。所有工具调用仍经过宿主最终门禁；owner Isolated 的执行 run 可自动完成 managed Worktree 内部 Git 整理，并可在用户明确要求 push 时申请绑定 checkout/remote/ref、仅由宿主 push 工具消费的进程内会话授权。Managed Web、Pi Extension Trust 和脱敏 audit 均为宿主能力。
 
@@ -134,25 +134,11 @@ bun run generate:icons    # 生成应用图标
 
 ## 技术栈
 
-| 层级 | 技术 | 版本 |
-|------|------|------|
-| **运行时** | Bun | 1.2.5+ |
-| **语言** | TypeScript | 5.0.0+ |
-| **桌面框架** | Electron | 43.2.0 |
-| **前端框架** | React | 18.3.1 |
-| **状态管理** | Jotai | 2.17.1 |
-| **UI 组件** | Radix UI | 最新 |
-| **样式** | Tailwind CSS | 3.4.17 |
-| **富文本编辑器** | TipTap | 3.19.0 |
-| **代码高亮** | Shiki | 3.22.0 |
-| **Markdown** | React Markdown | 10.1.0 |
-| **图表** | Beautiful Mermaid | 最新 |
-| **数学公式** | KaTeX | 0.16+ |
-| **构建工具** | Vite | 6.0.3 |
-| **打包工具** | esbuild | 0.24.0+ |
-| **分发工具** | Electron Builder | 25.1.8 |
-| **Agent SDK** | `@earendil-works/pi-*` | 0.85.1 |
-| **飞书 SDK** | @larksuiteoapi/node-sdk | 最新 |
+选型约束（版本一律以各 package.json 为准，不在此维护副本）：
+
+- 运行时 Bun、语言 TypeScript 严格模式、桌面 Electron、前端 React 18 + Tailwind + Radix UI、状态管理 Jotai、构建 Vite + esbuild、分发 electron-builder。
+- Agent SDK 统一 `@earendil-works/pi-*`，版本与 external 打包要求见「打包配置注意事项」。
+- 富文本 TipTap、图表 Mermaid、公式 KaTeX、代码高亮 Shiki。
 
 ## 核心架构
 
@@ -187,23 +173,23 @@ bun run generate:icons    # 生成应用图标
 
 | 服务 | 职责 |
 |------|------|
-| `agent-orchestrator.ts` | Agent 核心编排层（71KB）：并发守卫、渠道查找、环境变量构建、SDK 路径解析、消息持久化、事件流处理、错误处理、自动标题生成 |
+| `agent-orchestrator.ts` | Agent 核心编排层：并发守卫、渠道查找、环境变量构建、SDK 路径解析、消息持久化、事件流处理、错误处理、自动标题生成 |
 | `agent-session-manager.ts` | Agent 会话管理：SDK 消息持久化、会话元数据 CRUD、JSONL 存储 |
-| `agent-prompt-builder.ts` | Agent 系统提示词构建（18KB）：动态上下文构建、内置 Agent 构建、工作区上下文注入 |
+| `agent-prompt-builder.ts` | Agent 系统提示词构建：动态上下文构建、内置 Agent 构建、工作区上下文注入 |
 | `agent-permission-service.ts` | Agent 权限管理：工具权限检查、权限模式管理 |
 | `agent-ask-user-service.ts` | Agent 用户交互：AskUser 请求处理 |
 | `agent-exit-plan-service.ts` | Agent 退出计划服务 |
-| `agent-workspace-manager.ts` | 工作区管理（16KB）：MCP Server 配置、Skills 配置、工作区 CRUD |
-| `chat-service.ts` | Chat 流式调用编排（20KB）：Provider 适配器集成、消息持久化、AbortController |
-| `conversation-manager.ts` | 对话管理（13KB）：对话 CRUD、JSONL 消息存储、置顶、上下文分割 |
-| `channel-manager.ts` | 渠道管理（16KB）：渠道 CRUD、API Key AES-256-GCM 加密（safeStorage）、连接测试、模型获取 |
+| `agent-workspace-manager.ts` | 工作区管理：MCP Server 配置、Skills 配置、工作区 CRUD |
+| `chat-service.ts` | Chat 流式调用编排：Provider 适配器集成、消息持久化、AbortController |
+| `conversation-manager.ts` | 对话管理：对话 CRUD、JSONL 消息存储、置顶、上下文分割 |
+| `channel-manager.ts` | 渠道管理：渠道 CRUD、API Key AES-256-GCM 加密（safeStorage）、连接测试、模型获取 |
 | `browser/` | Main-owned `WebContentsView` Browser Session、Profile/URL/权限策略、公开网络与严格 loopback 地址、缩放/适应宽度，以及基于短生命周期 ref 的有界 Snapshot、点击、普通文本输入、滚动与文本提取；Work 消息链接复用同会话 Browser，不向 Renderer 暴露任意 CDP/selector/脚本 |
 
 #### 集成服务
 
 | 服务 | 职责 |
 |------|------|
-| `feishu-bridge.ts` | 飞书集成（68KB）：消息同步、任务通知、OAuth 认证 |
+| `feishu-bridge.ts` | 飞书集成：消息同步、任务通知、OAuth 认证 |
 
 #### 工具与文件
 
@@ -224,34 +210,13 @@ bun run generate:icons    # 生成应用图标
 | `user-profile-service.ts` | 用户档案持久化 |
 | `settings-service.ts` | 应用设置持久化（主题等） |
 
-Domi 的自动更新主进程 wiring 与设置 UI 已移除或不可达，不得恢复 Proma 官方更新通道。`AboutSettings` 只说明版本、环境和源码或外部二进制构建的手动更新方式。
+Domi 的 `AboutSettings` 只说明版本、环境和源码或外部二进制构建的手动更新方式。
 
 ### AI Provider 适配器（`packages/core/src/providers/`）
 
-基于适配器模式的多 Provider 支持，通过注册表统一管理：
-
-#### 核心架构
-- `ProviderAdapter` 接口：定义统一的 `sendMessage()` 流式方法
-- `provider-registry.ts`：Provider 注册表，按 `providerId` 查找适配器
-- `sse-reader.ts`：通用 SSE 流读取器（fetch + ReadableStream）
-
-#### 支持的 Provider
-
-| Provider | 适配器 | API 协议 | 特性 |
-|----------|--------|----------|------|
-| **Anthropic** | `anthropic-adapter.ts` | Messages API | extended_thinking、多模态 |
-| **OpenAI** | `openai-adapter.ts` | Chat Completions | 标准 OpenAI 协议 |
-| **DeepSeek** | `anthropic-adapter.ts` | Messages API | Anthropic 兼容 |
-| **智谱 AI** | `openai-adapter.ts` | Chat Completions | OpenAI 兼容 |
-| **MiniMax** | `anthropic-adapter.ts` | Messages API | Anthropic 兼容 |
-| **豆包** | `openai-adapter.ts` | Chat Completions | OpenAI 兼容 |
-| **通义千问** | `openai-adapter.ts` | Chat Completions | OpenAI 兼容 |
-| **Google** | `google-adapter.ts` | Generative Language API | Gemini 系列 |
-| **Custom** | `openai-adapter.ts` | Chat Completions | 自定义 OpenAI 兼容端点 |
-
-#### 多模态支持
-- **图片**：各 Provider 格式不同，适配器自动转换
-- **文档**：提取文本后注入 `<file>` XML 标签
+- 架构：`ProviderAdapter` 统一 `sendMessage()` 流式接口、`provider-registry.ts` 按 `providerId` 查找、`sse-reader.ts` 通用 SSE 读取器。
+- 新增 Provider 优先复用 Anthropic / OpenAI 兼容适配器；具体 Provider 映射以注册表为准，不在此维护副本。
+- 多模态：图片各 Provider 格式由适配器转换；文档提取文本后注入 `<file>` XML 标签。
 
 ### Jotai 状态管理（`renderer/atoms/`）
 
@@ -264,19 +229,18 @@ Domi 的自动更新主进程 wiring 与设置 UI 已移除或不可达，不得
 | `settings-tab.ts` | 设置面板当前标签页 |
 | `theme.ts` | 主题模式（light / dark / system） |
 | `user-profile.ts` | 用户档案（姓名 + 头像） |
-Domi 没有 updater atom；不要新增或恢复指向 Proma 官方更新通道的更新状态。
 
 ### 渲染进程组件架构（`renderer/components/`）
 
-- **`app-shell/`**：三面板布局（左侧导航 | 中间主任务 | Right Workspace）；左侧负责项目/会话导航，右侧以顶部工具带统一承载文件、改动、Browser、动态 Preview 与辅助问答，文件 Preview 和 Browser 不再进入 MainArea 分屏
-- **`chat/`**：聊天核心 — ChatView（消息加载/流式订阅）、ChatHeader（模型选择/上下文设置）、ChatInput（Tiptap 富文本编辑器）、ChatMessages（消息列表/自动滚动）、ParallelChatMessages（并排模式）
-- **`agent/`**：Work 模式 — AgentView（纯展示 + 交互，IPC 监听已提升到全局）、AgentHeader（渠道/模型选择）、AgentMessages（消息列表 + 工具活动）、ToolActivityItem（工具调用展示）、WorkspaceSelector（工作区切换）、PermissionBanner/AskUserBanner（权限/问答请求 UI）；现代输入框上方的 Worktree 验收状态条以显眼主按钮提供预览、保存、撤回与开启下一轮操作；当前下一轮请求须经简洁确认弹窗，过期请求不再重复显示消息正文；验收正文只在消息区显示，详情弹窗保留文件、验证记录与确认流程，不重复正文或建议提交信息
-- **`settings/`**：设置面板 — GeneralSettings（用户档案）、AppearanceSettings（主题）、ChannelSettings（渠道管理）、ChannelForm（Provider 配置）、AgentSettings（Agent 渠道/工作区/MCP）、McpServerForm（MCP 服务器配置）、AboutSettings（版本、环境与手动更新说明）、FeishuSettings（飞书集成）；含 `primitives/` 可复用表单组件
-- **`right-workspace/`**：右侧工作区 — RightWorkspaceToolbar（旧版：紧凑图标与窄宽度“更多”菜单；v2：独立扁平工具标签）、RightWorkspaceHeader（上下文标题、文件来源、草稿聚焦与动态关闭）；整区折叠入口固定在 MainArea 右上角，按 Work Session 隔离活动工具和 Preview 返回目标，草稿正文继续全局持久化，Browser 切换仅隐藏原生 View，显式关闭才释放 Session。外观 `interfaceVariant: workbench-v2` 只切换右侧标签、终端和浏览器呈现，左侧导航沿用现代界面；底层 Jotai Session/Browser/Terminal 状态及 Main 所有权不切换。
-- **`file-browser/`**：文件浏览器 — FileBrowser（会话文件与项目根目录文件树浏览）
-- **`terminal/`**：底部内置终端 — xterm Dock、多终端 Tab、用户 Shell 与 Agent Run 状态展示；文件树/改动目录可按授权 cwd 打开，完成的 Agent Tab 仅在同 Session/Target revision/cwd/profile 下复用；Main/utility process 持有 PTY。`terminal/v2/` 是 ZCode 终端的完整移植（固定来源 zai-org/ZCode@29628c9，Apache-2.0）：第一方 TerminalSession（复制粘贴/右键菜单/IME/链接/resize-fit-focus）、xterm 常驻与重挂载、ZCode 面板与标签生命周期（含懒创建与退出收起）、`toggle-terminal` 快捷键（Cmd/Ctrl+J）与「项目名+序号」标签标题，配色经 `--color-terminal-*` token 随主题深浅切换；PTY 仍由 Domi Main/utility 持有，owner/session/target 边界不变；v1 TerminalDock 保留为回退。
+- **`app-shell/`**：三面板布局（左侧导航 | 中间主任务 | Right Workspace）；右侧以顶部工具带承载文件、改动、Browser、动态 Preview 与辅助问答，文件 Preview 和 Browser 不进入 MainArea 分屏
+- **`chat/`**：聊天核心 — ChatView、ChatHeader、ChatInput（Tiptap）、ChatMessages、ParallelChatMessages（并排模式，Map 结构支持多对话并行）
+- **`agent/`**：Work 模式 — AgentView 只做展示与交互（IPC 监听在全局 hooks）、AgentHeader、AgentMessages、ToolActivityItem、WorkspaceSelector、PermissionBanner/AskUserBanner；输入框上方的 Worktree 验收状态条提供预览/保存/撤回/下一轮，下一轮须经确认弹窗；验收正文只在消息区显示，详情弹窗不重复正文或建议提交信息
+- **`settings/`**：GeneralSettings、AppearanceSettings、ChannelSettings、ChannelForm、AgentSettings、McpServerForm、AboutSettings、FeishuSettings；含 `primitives/` 可复用表单组件
+- **`right-workspace/`**：右侧工作区；整区折叠入口固定在 MainArea 右上角，按 Work Session 隔离活动工具和 Preview 返回目标，草稿正文全局持久化，Browser 切换仅隐藏原生 View，显式关闭才释放 Session；`interfaceVariant: workbench-v2` 只切换右侧标签、终端和浏览器呈现，左侧导航沿用现代界面，底层 Jotai Session/Browser/Terminal 状态及 Main 所有权不切换
+- **`file-browser/`**：文件浏览器（会话文件与项目根目录文件树）
+- **`terminal/`**：底部内置终端；文件树/改动目录可按授权 cwd 打开，完成的 Agent Tab 仅在同 Session/Target revision/cwd/profile 下复用；Main/utility process 持有 PTY。`terminal/v2/` 是 ZCode 终端的第一方移植（固定来源 zai-org/ZCode@29628c9，Apache-2.0），以其为主体持续对齐上游，不做脱离上游的自研迭代；PTY 仍由 Domi Main/utility 持有，owner/session/target 边界不变；v1 TerminalDock 保留为回退。
 - **`ai-elements/`**：AI 展示组件 — Markdown 渲染、代码块、Mermaid 图、推理折叠、上下文分割线、富文本输入
-- **`ui/`**：Radix UI 组件（现代化设计，CSS 变量主题）
+- **`ui/`**：Radix UI 组件（CSS 变量主题）
 
 ### 全局 Hooks（`renderer/hooks/`）
 
@@ -292,8 +256,6 @@ Domi 没有 updater atom；不要新增或恢复指向 Proma 官方更新通道�
 | `ThemeInitializer` | 从主进程加载主题设置、监听系统主题变化、同步到 DOM |
 | `AgentSettingsInitializer` | 加载 Agent 渠道/模型/工作区设置、订阅 MCP/文件变化事件 |
 | `AgentListenersInitializer` | 挂载 `useGlobalAgentListeners`，全局 Agent IPC 监听 |
-
-Domi 没有 `UpdaterInitializer`，主进程也不初始化 Proma updater。
 
 ### 本地文件存储（正式版 `~/.domi/`，开发版 `~/.domi-dev/`）
 
@@ -354,7 +316,7 @@ Domi 没有 `UpdaterInitializer`，主进程也不初始化 Proma updater。
 - electron-builder 前必须运行 `bun run sync:runtime-deps`；`scripts/sync-runtime-deps.ts` 会把 Pi external 依赖的生产闭包同步到 `apps/electron/node_modules/`。
 - `electron-builder.yml` 通过 `node_modules/**/*` 收集同步后的运行时闭包，再排除 Electron、builder、esbuild、文档、示例和 sourcemap 等构建期内容；内部 `@domi/*` 已被 bundle，不随 node_modules 重复打包。
 - Domi CLI 由 `build:cli` 编译到 `resources/bin/`，默认 Skills 从 `default-skills/` 作为 `extraResources` 打包。修改这些路径时必须同时验证打包后的资源定位。
-- Domi 不配置 Proma 官方 `publish` provider。Windows CI 快车道每次 push 完成 typecheck、M0 测试、build、runtime dependency sync、未签名打包并实际启动 `out/win-unpacked/Domi.exe` 做 smoke；全量测试基线由每日 schedule 或手动 workflow_dispatch 运行，不阻塞发布节奏。
+- Windows CI 快车道每次 push 完成 typecheck、M0 测试、build、runtime dependency sync、未签名打包并实际启动 `out/win-unpacked/Domi.exe` 做 smoke；全量测试基线由每日 schedule 或手动 workflow_dispatch 运行，不阻塞发布节奏。
 - 二进制发布范围为 Windows x64 NSIS、Linux x64 AppImage/deb、macOS arm64 未签名（ad-hoc）DMG；macOS 包无 notarization，用户首次打开需右键「打开」，x64 与正式签名待证书与验证环境就绪后补。Release workflow 只能创建 Draft Release，不得自动公开；稳定版本核验后公开为正式 Release，只有 alpha、beta、rc 或明确测试版本才标记为 Pre-release。Release Notes 使用中英双版（先完整中文、分隔线后完整 English），只描述 Domi 自身能力，不引用其他产品名称作为风格或出处。
 
 **修改打包配置时的检查清单：**
@@ -363,7 +325,7 @@ Domi 没有 `UpdaterInitializer`，主进程也不初始化 Proma updater。
 2. 运行 `bun run electron:build` 和 `bun run --cwd apps/electron sync:runtime-deps`。
 3. 检查同步后的 Pi runtime 依赖存在，安装树无 `claude-agent-sdk*` / `claude.exe`，且 `@domi/*` workspace symlink 不进入安装包。
 4. Windows 运行 electron-builder 后启动 `out/win-unpacked/Domi.exe`；macOS/Linux 按平台分级验证。
-5. 不添加自动发布、自动安装或 Proma 官方更新通道。
+5. 不添加自动发布与自动安装通道。
 
 ## 代码风格
 
@@ -396,7 +358,7 @@ Domi 没有 `UpdaterInitializer`，主进程也不初始化 Proma updater。
 
 修改任何 `default-skills/<skill>/` 内容时，**必须同步递增该 Skill `SKILL.md` frontmatter 的 `version` 字段**（patch +1）。
 
-**为什么**：`seedDefaultSkills()` 与 `upgradeDefaultSkillsInWorkspaces()` 通过 semver 比较决定是否将 bundle 中的 Skill 同步到老用户的 `~/.domi/default-skills/` 与 `~/.domi/agent-workspaces/<slug>/skills/`。**version 不变 = 老用户拿不到新内容**。默认 Skill 不得指导 Agent 直接读写 `~/.proma/`；旧 Proma 数据只能通过显式迁移流程导入。
+**为什么**：`seedDefaultSkills()` 与 `upgradeDefaultSkillsInWorkspaces()` 通过 semver 比较决定是否将 bundle 中的 Skill 同步到老用户的 `~/.domi/default-skills/` 与 `~/.domi/agent-workspaces/<slug>/skills/`。**version 不变 = 老用户拿不到新内容**。
 
 **早期实现曾用"无条件 cpSync"绕开这个约束**，但每次启动同步 4MB+ 文件会阻塞主进程导致启动卡顿，已恢复为 semver 比较（见 `config-paths.ts:seedDefaultSkills`、`agent-workspace-manager.ts:upgradeDefaultSkillsInWorkspaces`）。
 
@@ -456,53 +418,3 @@ React UI 更新与 JSONL 持久化
 - 生图模型独立于主对话模型；`ImageGenerationSelection` 只持久化渠道引用、模型和参数，不包含凭据。普通 API 渠道显式配置图片协议，OAuth/订阅不可自动复用。
 - 显式选择随请求固定并进入独立 deferred run，重试/队列不能继承另一条请求的模型；旧工具名保留供历史消息与权限门禁识别，基础使用不要求打开 MCP。
 - 不将 `/models` 成功表述成生图可用；不自动付费试生成、不静默跨渠道回退。默认保存会话附件，workspace 输出仍遵守原有路径授权。
-
-### 共享类型（`@domi/shared`）
-
-- `AgentEvent`：Agent 事件（text / tool_start / tool_result / done / error）
-- `AgentSessionMeta`：会话元数据（id / title / channelId / workspaceId）
-- `AgentMessage`：持久化消息（role + content blocks）
-- `AgentSendInput`：发送请求输入
-- `AGENT_IPC_CHANNELS`：Agent 相关 IPC 通道常量
-- `WorkspaceCapabilities`：工作区能力（MCP Server 列表 + Skills 列表）
-
-## 创作参考
-
-遵循 [craft-agents-oss](https://github.com/craftship/craft-agents-oss) 的模式：
-
-- **会话管理**：收件箱/归档工作流
-- **权限模式**：由 Domi 宿主统一表达和持久化，不直接照搬底层 SDK 的命名
-- **Agent SDK**：Pi 是唯一 Agent Runtime；版本与文档入口以 `apps/electron/package.json` 和所安装包为准
-- **MCP 集成**：Model Context Protocol 用于外部数据源
-- **凭证存储**：AES-256-GCM 加密
-- **配置位置**：正式版 `~/.domi/`、开发版 `~/.domi-dev/`（类似 `~/.craft-agent/`）
-
-## 核心特性
-
-### 已实现功能
-
-- ✅ **多 Provider 支持**：Anthropic、OpenAI、DeepSeek、Kimi、智谱、MiniMax、豆包、通义千问、Google、自定义端点
-- ✅ **Agent SDK 集成**：Pi-only Runtime，保留 Anthropic / Claude 模型 Provider
-- ✅ **飞书集成**：消息同步、任务通知、OAuth 认证（68KB 核心服务）
-- ✅ **工作区管理**：多工作区隔离、MCP Server 配置、Skills 管理
-- ✅ **Work 工作方式**：研究 / 执行两档持久模式、本次执行 run lease 与 Plan 生命周期；底层统一当前用户权限，关键宿主事务保持独立确认
-- ✅ **宿主安全门禁**：Canonical Shell Analysis、Workspace Boundary、Local Baseline、owner Isolated target provenance、Local 写回事务、Managed Web secret/私网防护
-- ✅ **跨项目会话交接**：未绑定 Target 的草稿可迁移项目；已执行会话统一通过“交接到新会话”选择当前或其他项目，由来源模型基于持久化证据生成可复制 handoff，并在目标 Local / 新 Isolated Worktree 创建继任会话，绝不改写来源项目与 Checkout 绑定
-- ✅ **Pi Extension Trust**：按项目 canonical path + SHA-256 显式授权、变化失效与撤销
-- ✅ **本地审计**：策略、Managed Web 和 Pi run timing 脱敏写入 JSONL
-- ✅ **手动更新说明**：About 页面说明源码或外部二进制构建的手动更新方式；自动更新 intentionally disabled
-- ✅ **代理支持**：系统代理检测与配置
-- ✅ **文档解析**：PDF、Office、文本文件提取
-- ✅ **内置终端基础**：用户 Shell、目录 cwd 入口与经 Execution Policy 的 Agent 可见长任务终端；用户终端不向 Agent 暴露，Agent Tab 复用受 Session Target 与 shell/cwd 不变量约束
-- ✅ **多模态支持**：图片、文档附件
-- ✅ **Chat 工具**：内置工具系统 + 动态加载
-- ✅ **内置浏览器 Host 与原子操作**：用户可见的 `WebContentsView`、Work 消息链接路由、项目/临时 Profile 隔离、公开网络与严格 loopback URL/权限边界、聚焦模式、紧凑工具栏、缩放与可选适应宽度，以及固定 isolated-world 的单元素选择和 Main-only 有界 Snapshot/ref、点击、普通文本输入、滚动与文本提取；网页元素引用不采集表单值、不保存 selector / XPath，外部交互需要当前 run 的宿主确认并写入脱敏审计
-
-### 架构亮点
-
-- **并发守卫**：同一会话防止并行请求冲突
-- **全局监听**：Agent IPC 监听器永不销毁，确保后台会话不丢失
-- **权限排队**：按 sessionId 隔离权限请求，支持多会话并行
-- **文件监听**：项目根目录、会话文件、附加目录、MCP 配置与 Chat 工具实时监控
-- **事件流处理**：SDK 消息流式转换与累积
-- **错误映射**：SDK 错误统一转换为应用错误
