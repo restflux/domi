@@ -20,9 +20,10 @@ const PDFJS_PACKAGE = 'pdfjs-dist'
 
 /** 文件大小限制：50MB */
 const MAX_FILE_SIZE = 50 * 1024 * 1024
-const MAX_XLSX_SHEETS = 8
-const MAX_XLSX_ROWS = 200
-const MAX_XLSX_COLUMNS = 40
+/** XLSX 预览渲染上限：exceljs 可全量读取，这里限制的是 HTML 渲染成本 */
+const MAX_XLSX_SHEETS = 32
+const MAX_XLSX_ROWS = 2000
+const MAX_XLSX_COLUMNS = 128
 const MAX_PPTX_SLIDES = 80
 
 // ─── 临时文件 ───
@@ -206,10 +207,6 @@ function getDirectChildElementsByLocalName(root: Element | Document, localName: 
   return result
 }
 
-function getFirstTextByLocalName(root: Element, localName: string): string {
-  return getElementsByLocalName(root, localName)[0]?.textContent ?? ''
-}
-
 function readZipText(zip: AdmZip, path: string): string | null {
   const entry = zip.getEntry(path)
   return entry ? entry.getData().toString('utf-8') : null
@@ -236,80 +233,6 @@ function parseRelationships(zip: AdmZip, relsPath: string, baseDir: string): Map
   return rels
 }
 
-function parseSharedStrings(zip: AdmZip): string[] {
-  const sharedXml = readZipText(zip, 'xl/sharedStrings.xml')
-  if (!sharedXml) return []
-
-  const doc = parseXml(sharedXml)
-  return getElementsByLocalName(doc, 'si').map((si) => (
-    getElementsByLocalName(si, 't').map((node) => node.textContent ?? '').join('')
-  ))
-}
-
-function isDateNumFmtId(numFmtId: number): boolean {
-  return (
-    (numFmtId >= 14 && numFmtId <= 22) ||
-    (numFmtId >= 27 && numFmtId <= 36) ||
-    (numFmtId >= 45 && numFmtId <= 47) ||
-    (numFmtId >= 50 && numFmtId <= 58)
-  )
-}
-
-function isDateFormatCode(formatCode: string): boolean {
-  const normalized = formatCode
-    .replace(/"[^"]*"/g, '')
-    .replace(/\\./g, '')
-    .replace(/\[[^\]]*]/g, '')
-    .toLowerCase()
-  return /[ymdhHsS]/.test(normalized)
-}
-
-function parseXlsxDateStyleIndexes(zip: AdmZip): Set<number> {
-  const stylesXml = readZipText(zip, 'xl/styles.xml')
-  const dateStyleIndexes = new Set<number>()
-  if (!stylesXml) return dateStyleIndexes
-
-  const doc = parseXml(stylesXml)
-  const customFormats = new Map<number, string>()
-  for (const numFmt of getElementsByLocalName(doc, 'numFmt')) {
-    const id = Number(numFmt.getAttribute('numFmtId'))
-    const code = numFmt.getAttribute('formatCode') ?? ''
-    if (Number.isFinite(id) && code) customFormats.set(id, code)
-  }
-
-  const cellXfs = getElementsByLocalName(doc, 'cellXfs')[0]
-  if (!cellXfs) return dateStyleIndexes
-
-  getDirectChildElementsByLocalName(cellXfs, 'xf').forEach((xf, index) => {
-    const numFmtId = Number(xf.getAttribute('numFmtId'))
-    if (!Number.isFinite(numFmtId)) return
-    const customFormatCode = customFormats.get(numFmtId)
-    if (isDateNumFmtId(numFmtId) || (customFormatCode && isDateFormatCode(customFormatCode))) {
-      dateStyleIndexes.add(index)
-    }
-  })
-
-  return dateStyleIndexes
-}
-
-function formatExcelSerialDate(rawValue: string): string {
-  const serial = Number(rawValue)
-  if (!Number.isFinite(serial)) return rawValue
-
-  const millis = Math.round((serial - 25569) * 86400 * 1000)
-  const date = new Date(millis)
-  if (Number.isNaN(date.getTime())) return rawValue
-
-  const year = date.getUTCFullYear()
-  if (year < 1900 || year > 9999) return rawValue
-
-  const pad = (value: number) => String(value).padStart(2, '0')
-  const dateText = `${year}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`
-  const hasTime = Math.abs(serial - Math.floor(serial)) > 0.000001
-  if (!hasTime) return dateText
-  return `${dateText} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
-}
-
 function columnIndexFromCellRef(cellRef: string): number {
   const letters = cellRef.match(/[A-Za-z]+/)?.[0]?.toUpperCase()
   if (!letters) return 0
@@ -331,96 +254,116 @@ function columnNameFromIndex(index: number): string {
   return name
 }
 
-function getXlsxCellText(cell: Element, sharedStrings: string[], dateStyleIndexes: Set<number>): string {
-  const type = cell.getAttribute('t')
-  if (type === 'inlineStr') {
-    return getElementsByLocalName(cell, 't').map((node) => node.textContent ?? '').join('')
+/** exceljs 单元格值 → 展示文本：公式取计算结果，富文本拼接，日期统一格式化 */
+function xlsxCellText(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (value instanceof Date) return formatXlsxDate(value)
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    if (Array.isArray(obj.richText)) {
+      return obj.richText
+        .map((part) => (typeof (part as { text?: unknown }).text === 'string' ? (part as { text: string }).text : ''))
+        .join('')
+    }
+    if ('result' in obj) return xlsxCellText(obj.result)
+    if (typeof obj.text === 'string') return obj.text
+    if ('error' in obj) return String(obj.error)
+    if ('sharedFormula' in obj) return ''
   }
-
-  const value = getFirstTextByLocalName(cell, 'v')
-  if (!value) return ''
-
-  if (type === 's') {
-    const sharedIndex = Number(value)
-    return Number.isInteger(sharedIndex) ? sharedStrings[sharedIndex] ?? '' : ''
-  }
-  if (type === 'b') return value === '1' ? 'TRUE' : 'FALSE'
-
-  const styleIndex = Number(cell.getAttribute('s'))
-  if (!type && Number.isInteger(styleIndex) && dateStyleIndexes.has(styleIndex)) {
-    return formatExcelSerialDate(value)
-  }
-
-  return value
+  return String(value)
 }
 
-function parseXlsxSheetRows(
-  zip: AdmZip,
-  sheetPath: string,
-  sharedStrings: string[],
-  dateStyleIndexes: Set<number>,
-): { rows: string[][]; truncatedRows: boolean; truncatedColumns: boolean } {
-  const sheetXml = readZipText(zip, sheetPath)
-  if (!sheetXml) return { rows: [], truncatedRows: false, truncatedColumns: false }
+function formatXlsxDate(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const dateText = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  if (date.getHours() || date.getMinutes() || date.getSeconds()) {
+    return `${dateText} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  }
+  return dateText
+}
 
-  const doc = parseXml(sheetXml)
-  const rows: string[][] = []
-  let truncatedRows = false
-  let truncatedColumns = false
+interface XlsxMergePlan {
+  spanByKey: Map<string, { rowspan: number; colspan: number }>
+  covered: Set<string>
+}
 
-  for (const row of getElementsByLocalName(doc, 'row')) {
-    if (rows.length >= MAX_XLSX_ROWS) {
-      truncatedRows = true
-      break
-    }
-
-    const values: string[] = []
-    for (const cell of getDirectChildElementsByLocalName(row, 'c')) {
-      const cellRef = cell.getAttribute('r') ?? ''
-      const colIndex = columnIndexFromCellRef(cellRef)
-      if (colIndex >= MAX_XLSX_COLUMNS) {
-        truncatedColumns = true
-        continue
+/** 解析 exceljs merges（如 "A1:B2"）为起点 span 映射与覆盖单元格集合 */
+function parseXlsxMerges(merges: unknown): XlsxMergePlan {
+  const spanByKey = new Map<string, { rowspan: number; colspan: number }>()
+  const covered = new Set<string>()
+  if (!Array.isArray(merges)) return { spanByKey, covered }
+  for (const range of merges) {
+    if (typeof range !== 'string') continue
+    const match = range.match(/^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/)
+    if (!match) continue
+    // columnIndexFromCellRef 返回 0-based；统一换算到 exceljs 的 1-based 行列号
+    const startCol = columnIndexFromCellRef(`${match[1]}1`) + 1
+    const endCol = columnIndexFromCellRef(`${match[3]}1`) + 1
+    const startRow = Number(match[2])
+    const endRow = Number(match[4])
+    const rowspan = endRow - startRow + 1
+    const colspan = endCol - startCol + 1
+    if (rowspan < 1 || colspan < 1) continue
+    spanByKey.set(`${startRow}:${startCol}`, { rowspan, colspan })
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        if (row === startRow && col === startCol) continue
+        covered.add(`${row}:${col}`)
       }
-      values[colIndex] = getXlsxCellText(cell, sharedStrings, dateStyleIndexes)
     }
-
-    while (values.length > 0 && !values[values.length - 1]) values.pop()
-    if (values.some((value) => value.trim().length > 0)) rows.push(values)
   }
-
-  return { rows, truncatedRows, truncatedColumns }
+  return { spanByKey, covered }
 }
 
-function renderXlsxTable(rows: string[][]): string {
-  if (rows.length === 0) {
+/** 渲染单个工作表为 HTML 表格；合并单元格用 rowspan/colspan 表达，覆盖区域跳过 */
+function renderXlsxTable(
+  cellText: Map<string, string>,
+  merges: XlsxMergePlan,
+  maxRow: number,
+  maxCol: number,
+): string {
+  let hasData = false
+  for (let row = 1; row <= maxRow && !hasData; row++) {
+    for (let col = 1; col <= maxCol; col++) {
+      if (cellText.has(`${row}:${col}`)) {
+        hasData = true
+        break
+      }
+    }
+  }
+  if (!hasData && merges.spanByKey.size === 0) {
     return '<div class="office-empty">这个工作表没有可预览的数据</div>'
   }
 
-  const columnCount = Math.max(...rows.map((row) => row.length), 1)
-  const headerCells = Array.from({ length: columnCount }, (_, index) => (
+  const headerCells = Array.from({ length: maxCol }, (_, index) => (
     `<th>${escapeHtml(columnNameFromIndex(index))}</th>`
   )).join('')
-  const bodyRows = rows.map((row, rowIndex) => {
-    const cells = Array.from({ length: columnCount }, (_, index) => (
-      `<td>${escapeHtml(row[index] ?? '')}</td>`
-    )).join('')
-    return `<tr><th class="office-row-heading">${rowIndex + 1}</th>${cells}</tr>`
-  }).join('')
+  const bodyRows: string[] = []
+  for (let row = 1; row <= maxRow; row++) {
+    const cells: string[] = []
+    for (let col = 1; col <= maxCol; col++) {
+      const key = `${row}:${col}`
+      if (merges.covered.has(key)) continue
+      const span = merges.spanByKey.get(key)
+      const spanAttrs = span ? ` rowspan="${span.rowspan}" colspan="${span.colspan}"` : ''
+      cells.push(`<td${spanAttrs}>${escapeHtml(cellText.get(key) ?? '')}</td>`)
+    }
+    bodyRows.push(`<tr><th class="office-row-heading">${row}</th>${cells.join('')}</tr>`)
+  }
 
-  return `<div class="office-table-wrap"><table><thead><tr><th></th>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></div>`
+  return `<div class="office-table-wrap"><table><thead><tr><th></th>${headerCells}</tr></thead><tbody>${bodyRows.join('')}</tbody></table></div>`
 }
 
-function convertXlsxToHtml(filePath: string, resolvedPath: string): OfficePreviewResult {
-  const zip = new AdmZip(resolvedPath)
-  const workbookXml = readZipText(zip, 'xl/workbook.xml')
-  if (!workbookXml) throw new Error('Invalid XLSX: workbook.xml missing')
-
-  const workbookDoc = parseXml(workbookXml)
-  const relationships = parseRelationships(zip, 'xl/_rels/workbook.xml.rels', 'xl')
-  const sharedStrings = parseSharedStrings(zip)
-  const dateStyleIndexes = parseXlsxDateStyleIndexes(zip)
-  const sheets = getElementsByLocalName(workbookDoc, 'sheet')
+/** 用 exceljs 将 XLSX 转成可内联展示的 HTML 预览；支持公式计算结果与合并单元格 */
+async function convertXlsxToHtml(filePath: string, resolvedPath: string): Promise<OfficePreviewResult> {
+  const ExcelJS = await import('exceljs')
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.readFile(resolvedPath)
+  const sheets = workbook.worksheets
+  if (sheets.length === 0) throw new Error('Invalid XLSX: no worksheet data resolved')
 
   let truncatedSheets = false
   let truncatedRows = false
@@ -428,22 +371,35 @@ function convertXlsxToHtml(filePath: string, resolvedPath: string): OfficePrevie
   const textParts: string[] = []
   const htmlParts: string[] = []
 
-  sheets.slice(0, MAX_XLSX_SHEETS).forEach((sheet, sheetIndex) => {
-    const name = sheet.getAttribute('name') || `Sheet ${sheetIndex + 1}`
-    const relationshipId = sheet.getAttribute('r:id') ?? sheet.getAttribute('id')
-    const sheetPath = relationshipId ? relationships.get(relationshipId) : undefined
-    if (!sheetPath) return
+  for (const [sheetIndex, sheet] of sheets.slice(0, MAX_XLSX_SHEETS).entries()) {
+    const name = sheet.name || `Sheet ${sheetIndex + 1}`
+    if (sheet.rowCount > MAX_XLSX_ROWS) truncatedRows = true
+    if (sheet.columnCount > MAX_XLSX_COLUMNS) truncatedColumns = true
 
-    const parsed = parseXlsxSheetRows(zip, sheetPath, sharedStrings, dateStyleIndexes)
-    truncatedRows ||= parsed.truncatedRows
-    truncatedColumns ||= parsed.truncatedColumns
+    // 稀疏遍历实际存在的单元格，避免为空区域物化 cell 对象
+    const cellText = new Map<string, string>()
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        if (rowNumber > MAX_XLSX_ROWS || colNumber > MAX_XLSX_COLUMNS) return
+        const text = xlsxCellText(cell.value)
+        if (text) cellText.set(`${rowNumber}:${colNumber}`, text)
+      })
+    })
+
+    const merges = parseXlsxMerges(sheet.model?.merges)
+    const maxRow = Math.min(Math.max(sheet.rowCount, 1), MAX_XLSX_ROWS)
+    const maxCol = Math.min(Math.max(sheet.columnCount, 1), MAX_XLSX_COLUMNS)
+    htmlParts.push(`<section class="office-sheet"><h3>${escapeHtml(name)}</h3>${renderXlsxTable(cellText, merges, maxRow, maxCol)}</section>`)
+
     textParts.push(`[${name}]`)
-    textParts.push(...parsed.rows.map((row) => row.join('\t')))
-    htmlParts.push(`<section class="office-sheet"><h3>${escapeHtml(name)}</h3>${renderXlsxTable(parsed.rows)}</section>`)
-  })
-
-  if (htmlParts.length === 0) {
-    throw new Error('Invalid XLSX: no worksheet data resolved')
+    for (let row = 1; row <= maxRow; row++) {
+      const parts: string[] = []
+      for (let col = 1; col <= maxCol; col++) {
+        parts.push(cellText.get(`${row}:${col}`) ?? '')
+      }
+      while (parts.length > 0 && !parts[parts.length - 1]) parts.pop()
+      if (parts.some((value) => value.length > 0)) textParts.push(parts.join('\t'))
+    }
   }
 
   truncatedSheets = sheets.length > MAX_XLSX_SHEETS
@@ -598,30 +554,81 @@ export async function preparePdfPreview(filePath: string, basePaths?: string[]):
     const STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
     let stepIdx = 2;
     let pdfDoc = null;
+    let pdfjsLib = null;
+    let observer = null;
+    const renderedPages = new Set();
 
     function notifyZoom() {
       window.parent.postMessage({ type: 'pdf-zoom-changed', zoom: Math.round(STEPS[stepIdx] * 100) }, '*');
     }
 
-    async function renderAll() {
-      if (!pdfDoc) return;
-      container.innerHTML = '';
+    async function renderPage(pageNo) {
+      if (!pdfDoc || !pdfjsLib || renderedPages.has(pageNo)) return;
+      renderedPages.add(pageNo);
+      const wrap = container.querySelector('.page-wrap[data-page="' + pageNo + '"]');
+      if (!wrap) return;
+      const page = await pdfDoc.getPage(pageNo);
       const userScale = STEPS[stepIdx];
       const dpr = window.devicePixelRatio || 1;
+      const vpCss = page.getViewport({ scale: userScale });
+      const vp = page.getViewport({ scale: userScale * dpr });
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      canvas.style.width = vpCss.width + 'px';
+      canvas.style.height = vpCss.height + 'px';
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      const textDiv = document.createElement('div');
+      textDiv.className = 'textLayer';
+      try {
+        await pdfjsLib.renderTextLayer({
+          textContentSource: await page.getTextContent(),
+          container: textDiv,
+          viewport: vpCss,
+        });
+      } catch { /* 文本层失败不影响画布展示 */ }
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = pageNo + ' / ' + pdfDoc.numPages;
+      const ph = wrap.querySelector('.page-ph');
+      if (ph) ph.remove();
+      wrap.appendChild(canvas);
+      wrap.appendChild(textDiv);
+      wrap.appendChild(label);
+    }
+
+    async function renderAll() {
+      if (!pdfDoc) return;
+      if (observer) observer.disconnect();
+      renderedPages.clear();
+      container.innerHTML = '';
+      // 用第一页尺寸做占位，避免大文档懒渲染时滚动条剧烈跳动（混合尺寸页在渲染后修正）
+      const firstPage = await pdfDoc.getPage(1);
+      const phVp = firstPage.getViewport({ scale: STEPS[stepIdx] });
       for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-        const vp = page.getViewport({ scale: userScale * dpr });
-        const canvas = document.createElement('canvas');
-        canvas.width = vp.width; canvas.height = vp.height;
-        canvas.style.width = (vp.width / dpr) + 'px';
-        canvas.style.height = (vp.height / dpr) + 'px';
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-        container.appendChild(canvas);
+        const wrap = document.createElement('div');
+        wrap.className = 'page-wrap';
+        wrap.dataset.page = String(i);
+        const ph = document.createElement('div');
+        ph.className = 'page-ph';
+        ph.style.width = phVp.width + 'px';
+        ph.style.height = phVp.height + 'px';
+        ph.textContent = '第 ' + i + ' 页';
+        wrap.appendChild(ph);
+        container.appendChild(wrap);
       }
       const info = document.createElement('div');
       info.className = 'page-info';
       info.textContent = '共 ' + pdfDoc.numPages + ' 页';
       container.appendChild(info);
+      observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const pageNo = Number(entry.target.dataset.page);
+          observer.unobserve(entry.target);
+          renderPage(pageNo).catch(() => {});
+        }
+      }, { root: null, rootMargin: '600px 0px' });
+      Array.from(container.querySelectorAll('.page-wrap')).forEach((el) => observer.observe(el));
       notifyZoom();
     }
 
@@ -633,7 +640,7 @@ export async function preparePdfPreview(filePath: string, basePaths?: string[]):
     });
 
     try {
-      const pdfjsLib = await import(pdfScriptUrl);
+      pdfjsLib = await import(pdfScriptUrl);
       pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
       pdfDoc = await pdfjsLib.getDocument({
         url: fileUrl,
@@ -666,6 +673,23 @@ export async function convertDocxToHtml(filePath: string, basePaths?: string[]):
   }
 }
 
+/** 旧版 .doc 文档：word-extractor 提取正文做文本级降级预览（渲染质量受限，但可读可复制） */
+async function convertDocToHtml(filePath: string, resolvedPath: string): Promise<OfficePreviewResult> {
+  const WordExtractor = (await import('word-extractor')).default
+  const extractor = new WordExtractor()
+  const doc = await extractor.extract(resolvedPath)
+  const text = [doc.getBody(), doc.getFootnotes(), doc.getEndnotes(), doc.getHeaders(), doc.getFooters()]
+    .map((part) => part?.trim() ?? '')
+    .filter((part) => part.length > 0)
+    .join('\n\n')
+  return {
+    resolvedPath,
+    kind: 'document',
+    html: renderOfficeTextFallback(filePath, text, 'document'),
+    text,
+  }
+}
+
 function renderOfficeTextFallback(filePath: string, text: string, kind: OfficePreviewResult['kind']): string {
   const title = escapeHtml(basename(filePath))
   const paragraphs = text
@@ -688,7 +712,8 @@ export async function convertOfficeToHtml(filePath: string, basePaths?: string[]
     if (st.size > MAX_FILE_SIZE) return null
 
     const ext = extname(safePath).toLowerCase()
-    if (ext === '.xlsx') return convertXlsxToHtml(filePath, safePath)
+    if (ext === '.xlsx') return await convertXlsxToHtml(filePath, safePath)
+    if (ext === '.doc') return await convertDocToHtml(filePath, safePath)
     if (ext === '.pptx') return convertPptxToHtml(filePath, safePath)
     return null
   } catch (err) {
@@ -697,7 +722,11 @@ export async function convertOfficeToHtml(filePath: string, basePaths?: string[]
       const officeParser = await import('officeparser')
       const text = await officeParser.parseOfficeAsync(safePath)
       const ext = extname(safePath).toLowerCase()
-      const kind: OfficePreviewResult['kind'] = ext === '.pptx' ? 'presentation' : 'spreadsheet'
+      const kind: OfficePreviewResult['kind'] = ext === '.pptx'
+        ? 'presentation'
+        : ext === '.doc'
+          ? 'document'
+          : 'spreadsheet'
       return {
         resolvedPath: safePath,
         kind,

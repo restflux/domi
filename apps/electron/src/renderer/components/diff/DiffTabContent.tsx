@@ -51,8 +51,8 @@ const HTML_EXTS = new Set(['.html', '.htm'])
 const PLAIN_TEXT_EDIT_EXTS = new Set(['.txt', '.text', '.log'])
 const PDF_EXTS = new Set(['.pdf'])
 const DOCX_EXTS = new Set(['.docx'])
-const OFFICE_PREVIEW_EXTS = new Set(['.xlsx', '.pptx'])
-const LEGACY_OFFICE_EXTS = new Set(['.doc', '.xls', '.ppt'])
+const OFFICE_PREVIEW_EXTS = new Set(['.xlsx', '.pptx', '.doc'])
+const LEGACY_OFFICE_EXTS = new Set(['.xls', '.ppt'])
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'])
 const FILE_FIND_SHORTCUT_OPTIONS = { exclusive: true }
 
@@ -895,7 +895,8 @@ export function DiffTabContent({ filePath, dirPath, sessionId, gitRoot, sessionT
     } else if (isDocx && !docxHtml) {
       message = '无法加载 DOCX 预览'
     } else if (isOfficePreview && !officeHtml) {
-      message = `无法加载 ${ext === '.pptx' ? 'PPTX' : 'Excel'} 预览`
+      const officeKindLabel = ext === '.pptx' ? 'PPTX' : ext === '.doc' ? 'DOC' : 'Excel'
+      message = `无法加载 ${officeKindLabel} 预览`
     } else if (isImage && !imageDataUrl) {
       message = '图片文件过大，无法在此预览'
     } else if (isHtml && !htmlPreviewUrl && snapshotContent === undefined) {

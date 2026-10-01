@@ -237,7 +237,7 @@ export interface ResolvedFileUrl {
 }
 
 /** Office 文件内联预览类型 */
-export type OfficePreviewKind = 'spreadsheet' | 'presentation'
+export type OfficePreviewKind = 'spreadsheet' | 'presentation' | 'document'
 
 /** Office 文件内联预览结果 */
 export interface OfficePreviewResult {
