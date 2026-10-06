@@ -88,6 +88,8 @@ export interface ApplyConflictPlanResult {
   /** 冲突计算时的真实 Local HEAD，供 Isolated Agent 在当前 Worktree 内同步并解决冲突。 */
   localHeadOid: string
   isolatedHeadOid: string
+  /** 冲突计算时 Local 工作区相对 HEAD 是否包含未提交改动。 */
+  localModified: boolean
   conflictingFiles: string[]
 }
 
@@ -1443,6 +1445,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
           baseStrategy: effectiveBase.strategy,
           localHeadOid: local.headOid,
           isolatedHeadOid: isolated.headOid,
+          localModified: local.headTreeOid !== local.treeOid,
           conflictingFiles: merge.conflictingFiles,
         }
       }

@@ -18,6 +18,7 @@ describe('WorktreeReviewCard sync explainability', () => {
     expect(worktreePreflightSummary({ ...facts, status: 'ready' })).toContain('可以安全预览')
     expect(worktreePreflightSummary({ ...facts, status: 'local_advanced' })).toContain('可以安全合并后预览')
     expect(worktreePreflightSummary({ ...facts, status: 'conflict', conflictingFiles: ['src/a.ts'] })).toContain('1 个文件')
+    expect(worktreePreflightSummary({ ...facts, localModified: true, status: 'conflict', conflictingFiles: ['src/a.ts'] })).toContain('Local 含未提交改动')
     expect(worktreePreflightSummary({
       status: 'blocked', localModified: false, checkoutId: 'checkout-1', reviewId: 'review-1', revision: 2,
       reason: 'project_acceptance_busy', message: '验收槽位被占用',

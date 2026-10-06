@@ -218,7 +218,10 @@ export function worktreePreflightSummary(preflight: WorktreeApplyPreflightView):
   if (preflight.status === 'ready') return `可以安全预览 · ${preflight.changedFiles.length} 个文件`
   if (preflight.status === 'local_advanced') return 'Local 有新变化，Domi 已确认可以安全合并后预览'
   if (preflight.status === 'already_in_local') return '本轮修改已在 Local，无需重复预览'
-  if (preflight.status === 'conflict') return `暂时无法预览：${preflight.conflictingFiles.length} 个文件存在冲突`
+  if (preflight.status === 'conflict') {
+    const localHint = preflight.localModified ? '；Local 含未提交改动' : ''
+    return `暂时无法预览：${preflight.conflictingFiles.length} 个文件存在冲突${localHint}`
+  }
   if (preflight.status === 'blocked' && preflight.reason === 'project_acceptance_busy') return '另一个任务正在预览此项目的修改'
   if (preflight.status === 'blocked') return `暂时无法预览：${preflight.message}`
   return '安全检查状态未知，请刷新后重试'

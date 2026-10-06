@@ -2157,7 +2157,12 @@ export function createSessionCheckoutModule(
       changedFiles: result.status === 'ready' ? [...result.plan.changedFiles] : [...review.changedFiles],
     }
     if (result.status === 'conflict') {
-      return { ...common, status: 'conflict', conflictingFiles: [...result.conflictingFiles] }
+      return {
+        ...common,
+        status: 'conflict',
+        localModified: result.localModified,
+        conflictingFiles: [...result.conflictingFiles],
+      }
     }
     const status = result.plan.changedFiles.length === 0
       ? 'already_in_local' as const

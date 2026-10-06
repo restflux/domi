@@ -135,7 +135,7 @@ export interface WorktreeApplyPreflightFacts {
 
 export type WorktreeApplyPreflightView =
   | ({ status: 'ready' | 'local_advanced' | 'already_in_local'; localModified: false } & WorktreeApplyPreflightFacts)
-  | ({ status: 'conflict'; localModified: false; conflictingFiles: string[] } & WorktreeApplyPreflightFacts)
+  | ({ status: 'conflict'; localModified: boolean; conflictingFiles: string[] } & WorktreeApplyPreflightFacts)
   | {
       status: 'blocked'
       localModified: false

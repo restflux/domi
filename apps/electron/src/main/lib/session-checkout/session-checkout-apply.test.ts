@@ -914,6 +914,7 @@ describe('SessionCheckoutApplyEngine', () => {
     if (result.status !== 'conflict') throw new Error('预期真实内容冲突')
     expect(result.baseStrategy).toBe('isolated_contains_local_head')
     expect(result.effectiveBaseOid).toBe(localHead)
+    expect(result.localModified).toBe(true)
     expect(result.conflictingFiles).toEqual(['tracked.txt'])
     expect(await readFile(join(fixture.localPath, 'tracked.txt'))).toEqual(localBefore)
   })
