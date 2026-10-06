@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileExtensionTrustStore } from './pi-extension-trust.ts'
@@ -38,8 +38,9 @@ describe('Pi Extension Trust', () => {
     })
 
     expect(approved.digest).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(approved.path).toBe(realpathSync(fixture.extensionPath))
     expect(store.resolveTrustedPaths(fixture.projectRoot)).toEqual([
-      { extensionId: approved.extensionId, path: fixture.extensionPath },
+      { extensionId: approved.extensionId, path: realpathSync(fixture.extensionPath) },
     ])
   })
 
@@ -60,7 +61,7 @@ describe('Pi Extension Trust', () => {
 
     expect(store.list(fixture.projectRoot)).toEqual([expect.objectContaining({
       extensionId: approved.extensionId,
-      path: fixture.extensionPath,
+      path: realpathSync(fixture.extensionPath),
       digest: approved.digest,
       status: 'valid',
     })])
@@ -106,9 +107,15 @@ describe('Pi Extension Trust', () => {
       path: join(aliasRoot, 'extension.ts'),
     })
 
-    expect(store.resolveTrustedPaths(fixture.projectRoot)).toEqual([
-      { extensionId: approved.extensionId, path: fixture.extensionPath },
-    ])
+    const expectedPaths = [
+      { extensionId: approved.extensionId, path: realpathSync(fixture.extensionPath) },
+    ]
+    expect(approved.path).toBe(realpathSync(fixture.extensionPath))
+    expect(store.resolveTrustedPaths(fixture.projectRoot)).toEqual(expectedPaths)
+    expect(store.resolveTrustedPaths(join(aliasRoot, 'project'))).toEqual(expectedPaths)
+    const reapproved = store.approve({ projectRoot: fixture.projectRoot, path: fixture.extensionPath })
+    expect(reapproved.extensionId).toBe(approved.extensionId)
+    expect(store.list(fixture.projectRoot)).toHaveLength(1)
   })
 
   test('Given trust store 损坏 When 解析可信路径 Then fail closed', () => {
@@ -134,7 +141,7 @@ describe('Pi Extension Trust', () => {
     const approved = store.approve({ projectRoot: fixture.projectRoot, path: directoryPath })
 
     expect(store.resolveTrustedPaths(fixture.projectRoot)).toEqual([
-      { extensionId: approved.extensionId, path: directoryPath },
+      { extensionId: approved.extensionId, path: realpathSync(directoryPath) },
     ])
     writeFileSync(join(directoryPath, 'helper.js'), 'export const value = 2\n')
     expect(store.resolveTrustedPaths(fixture.projectRoot)).toEqual([])

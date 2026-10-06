@@ -98,9 +98,12 @@ describe('Pi 模型图片输入能力', () => {
     })).resolves.toBe('supported')
   })
 
-  test('Given catalog text-only model When resolving image capability Then reports unsupported', async () => {
+  test('Given Pi catalog text-only model When resolving image capability Then reports unsupported', async () => {
     await expect(resolvePiImageInputCapability('deepseek', 'deepseek-v4-pro')).resolves.toBe('unsupported')
-    await expect(resolvePiImageInputCapability('deepseek', 'deepseek-v4-flash')).resolves.toBe('unsupported')
+  })
+
+  test('Given Pi 1.0 catalog no longer contains a legacy preset When resolving image capability Then fails closed as unknown', async () => {
+    await expect(resolvePiImageInputCapability('deepseek', 'deepseek-v4-flash')).resolves.toBe('unknown')
   })
 
   test('Given catalog or temporary adaptation vision model When resolving image capability Then reports supported', async () => {
@@ -423,10 +426,10 @@ describe('Pi 模型上下文窗口目录优先级', () => {
     expect(contextWindowSource).toBe('name_fallback')
   })
 
-  test('Given Codex 模型目录 When 合并兼容 patch Then 不再把 GPT-5.6 抬高到旧 372K', async () => {
+  test('Given Pi 1.0 Codex 模型目录 When 合并兼容 patch Then 保持当前 GPT-5.x 的 272K 上下文窗口', async () => {
     const models = await getCodexCatalogModels()
     expect(models.find((model) => model.id === 'gpt-5.6-sol')?.contextWindow).toBe(272_000)
-    expect(models.find((model) => model.id === 'gpt-5.4-mini')?.contextWindow).toBe(272_000)
+    expect(models.find((model) => model.id === 'gpt-5.5')?.contextWindow).toBe(272_000)
   })
 
   test('Given Pi 远端目录出现新 Codex 模型 When 强制刷新 Then 返回新模型且限定刷新范围', async () => {

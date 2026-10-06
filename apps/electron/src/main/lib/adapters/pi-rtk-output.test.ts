@@ -58,14 +58,24 @@ describe('Pi RTK 最终结果', () => {
       expect(fixture.saved).toEqual([])
     }
   })
-  test('Given 失败或 null 退出码 When SDK 返回 Then 不将其优化为成功', async () => {
+  test('Given 非零退出码 When SDK 返回错误结果 Then 保留 isError 和结构化退出码且不优化', async () => {
     const failed = setup(2)
-    await expect(failed.execute()).rejects.toThrow('Command exited with code 2')
+    const result = await failed.execute()
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: { output: raw, exit_code: 2, truncated: false },
+      content: [{ type: 'text', text: `${raw}\n\nCommand exited with code 2` }],
+    })
+    expect(failed.commands).toEqual(['git status'])
     expect(failed.filters()).toBe(0)
+    expect(failed.saved).toEqual([])
+  })
+  test('Given null 退出码 When SDK 抛出终止错误 Then 保留原错误且不优化', async () => {
     const killed = setup(null)
-    const result = await killed.execute()
-    expect(result.content[0]).toMatchObject({ text: raw })
+    await expect(killed.execute()).rejects.toThrow('Command terminated without an exit code')
+    expect(killed.commands).toEqual(['git status'])
     expect(killed.filters()).toBe(0)
+    expect(killed.saved).toEqual([])
   })
   test('Given filter 失败 When 完成 Then 返回原始输出且不重跑命令', async () => {
     const fixture = setup()
@@ -108,8 +118,11 @@ describe('Pi RTK 最终结果', () => {
       const fixture = setup(code)
       const reasons: string[] = []
       fixture.options.dependencies.skip = reason => { reasons.push(reason) }
-      if (code) await expect(fixture.execute(command)).rejects.toThrow('Command exited with code 1')
-      else await fixture.execute(command)
+      const result = await fixture.execute(command)
+      if (code) {
+        expect(result).toMatchObject({ isError: true, structuredContent: { exit_code: code } })
+        expect(result.content[0]).toMatchObject({ text: `${raw}\n\nCommand exited with code ${code}` })
+      }
       expect(reasons).toEqual([reason])
       expect(fixture.commands).toHaveLength(1)
       fixture.options.isEnabled = () => false
@@ -118,11 +131,22 @@ describe('Pi RTK 最终结果', () => {
     }
   })
 
-  test('Given 统计回调异常 When 原命令失败 Then 不替换原错误', async () => {
+  test('Given 统计回调异常 When 原命令返回错误结果 Then 不替换 isError 或结构化退出码', async () => {
     const fixture = setup(2)
     fixture.options.dependencies.skip = () => { throw new Error('metrics failed') }
-    await expect(fixture.execute('bun test')).rejects.toThrow('Command exited with code 2')
+    const result = await fixture.execute('bun test')
+    expect(result).toMatchObject({ isError: true, structuredContent: { output: raw, exit_code: 2 } })
+    expect(result.content[0]).toMatchObject({ text: `${raw}\n\nCommand exited with code 2` })
     expect(fixture.commands).toHaveLength(1)
+    expect(fixture.filters()).toBe(0)
+  })
+
+  test('Given 统计回调异常 When SDK 抛出 null 退出码错误 Then 不替换原错误', async () => {
+    const fixture = setup(null)
+    fixture.options.dependencies.skip = () => { throw new Error('metrics failed') }
+    await expect(fixture.execute()).rejects.toThrow('Command terminated without an exit code')
+    expect(fixture.commands).toHaveLength(1)
+    expect(fixture.filters()).toBe(0)
   })
 
 })
