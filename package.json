@@ -34,13 +34,13 @@
     "jotai": "^2.17.1"
   },
   "overrides": {
-    "@earendil-works/pi-agent-core": "1.0.0",
-    "@earendil-works/pi-ai": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0",
-    "@earendil-works/pi-tui": "1.0.0"
+    "@earendil-works/pi-agent-core": "1.0.4",
+    "@earendil-works/pi-ai": "1.0.4",
+    "@earendil-works/pi-coding-agent": "1.0.4",
+    "@earendil-works/pi-tui": "1.0.4"
   },
   "patchedDependencies": {
-    "@earendil-works/pi-ai@1.0.0": "patches/@earendil-works%2Fpi-ai@1.0.0.patch",
+    "@earendil-works/pi-ai@1.0.4": "patches/@earendil-works%2Fpi-ai@1.0.4.patch",
     "node-pty@1.1.0": "patches/node-pty@1.1.0.patch"
   }
 }

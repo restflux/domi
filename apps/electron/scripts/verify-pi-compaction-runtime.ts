@@ -8,7 +8,7 @@ import { extractFile } from '@electron/asar'
 const PI_CODING_AGENT_PACKAGE = '@earendil-works/pi-coding-agent'
 const PI_AGENT_CORE_PACKAGE = '@earendil-works/pi-agent-core'
 const PI_AI_PACKAGE = '@earendil-works/pi-ai'
-const PI_AI_RETRY_PATCH_NAME = '@earendil-works%2Fpi-ai@1.0.0.patch'
+const PI_AI_RETRY_PATCH_NAME = '@earendil-works%2Fpi-ai@1.0.4.patch'
 
 export const PI_COMPACTION_RUNTIME_FILES = [
   'dist/core/agent-session.js',

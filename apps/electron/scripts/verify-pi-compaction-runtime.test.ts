@@ -73,7 +73,7 @@ function writePiAiRuntime(nodeModulesDir: string): void {
 }
 
 function writePatch(repoRoot: string): void {
-  const patchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-ai@1.0.0.patch')
+  const patchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-ai@1.0.4.patch')
   mkdirSync(join(patchPath, '..'), { recursive: true })
   writeFileSync(patchPath, [...PI_RETRY_REQUIRED_MARKERS, ...PI_RESPONSE_REQUIRED_MARKERS].map(marker => `+${marker}`).join('\n'))
 }

@@ -55,13 +55,13 @@ Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 ### Pi Agent Runtime
 
 - Source: https://github.com/earendil-works/pi
-- Packages (0.85.1): `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `@earendil-works/pi-telemetry`, `@earendil-works/chord`
+- Packages (1.0.4): `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `@earendil-works/pi-mcp`, `@earendil-works/pi-codemode`, `@earendil-works/pi-telemetry`, `@earendil-works/chord`. MCP and Codemode packages are transitive SDK dependencies; Domi does not enable their CLI execution paths.
 - License: MIT
 - Copyright: © 2025 Mario Zechner and contributors
-- Local modifications: `patches/@earendil-works%2Fpi-*.patch`
-- Responses compatibility patch: preserves streamed text when item completion omits its body, reconciles final response text by message ID without synthesizing tool calls, and exposes content-free numeric stream diagnostics. Existing retry and runtime patches are retained.
+- Active local modifications: `patches/@earendil-works%2Fpi-ai@1.0.4.patch`, rebuilt against the 1.0.4 npm sources. Earlier version patches are retained only as source history and are not applied.
+- Responses compatibility patch: preserves streamed text when item completion omits its body, reconciles final response text by message ID without synthesizing tool calls, and exposes content-free numeric stream diagnostics. Retry additions cover OpenAI-compatible gateway terminal-event errors, corrupted/concatenated JSON, incomplete chunked responses and failed fetches; upstream WebSocket/Bedrock retry rules remain unchanged.
 - License copy: `third-party-licenses/MIT-Pi.txt`
-- Runtime dependency changes in 0.85.1: Chord retains `esbuild@0.28.1` (MIT, https://github.com/evanw/esbuild); `@anthropic-ai/sdk@0.123.0` (MIT, https://github.com/anthropics/anthropic-sdk-typescript) adds `standardwebhooks@1.1.1` (MIT, https://github.com/standard-webhooks/standard-webhooks), with `@stablelib/base64@1.0.1` (MIT, https://github.com/StableLib/stablelib) and `fast-sha256@1.3.0` (Unlicense, https://github.com/dchest/fast-sha256-js). Upstream package license files are retained in the runtime dependency tree.
+- Runtime dependencies in 1.0.4: Chord uses `esbuild@0.28.2` (MIT, https://github.com/evanw/esbuild); `@anthropic-ai/sdk` is upgraded from 0.124.0 to 0.129.0 (MIT, https://github.com/anthropics/anthropic-sdk-typescript). Its webhook dependencies retain `standardwebhooks@1.1.1` (MIT, https://github.com/standard-webhooks/standard-webhooks), with `@stablelib/base64@1.0.1` (MIT, https://github.com/StableLib/stablelib) and `fast-sha256@1.3.0` (Unlicense, https://github.com/dchest/fast-sha256-js). Upstream package license files are retained in the runtime dependency tree.
 - Runtime sync includes Chord's esbuild dependency; the installer continues to exclude esbuild and its platform binaries as build-time tools. Domi's supported Pi SDK path does not use `chord/bundler`.
 - The removed experimental Pi client/protocol packages are not Domi runtime roots; source-only `client` and `experimental/plugin` entry points are not used by Domi.
 
