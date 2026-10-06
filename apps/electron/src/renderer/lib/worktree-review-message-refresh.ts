@@ -34,9 +34,24 @@ export async function refreshWorktreeReviewAfterToolResult(
   return true
 }
 
-/** 终止型工具不保证工具结果一定进入实时流，完成时再以 Main 快照收敛工作中目标。 */
+/**
+ * 终止型工具不保证工具结果一定进入实时流。
+ *
+ * 这里必须先等待 Main 返回权威快照，再递增消息刷新版本：ReadyForReview 的验收正文
+ * 是工具执行时另写入 JSONL 的，不属于 SDK 实时流。如果先触发消息读取，Renderer
+ * 可能在正文落盘前读到旧历史，随后只剩输入区的“修改已完成”状态而没有完成说明。
+ */
 export async function refreshWorkingWorktreeAfterStreamComplete(store: ReturnType<typeof createStore>, sessionId: string): Promise<void> {
   const snapshot = store.get(sessionTargetStateAtomFamily(sessionId)).snapshot
-  if (snapshot?.checkout.kind !== 'isolated' || snapshot.ownership !== 'owner' || snapshot.delivery?.state !== 'working') return
+  if (snapshot?.checkout.kind !== 'isolated' || snapshot.ownership !== 'owner') return
+  const deliveryState = snapshot.delivery?.state
+  if (deliveryState !== 'working' && deliveryState !== 'ready_for_review' && deliveryState !== 'preview_active') return
+  // 即使本地快照已经显示 ready_for_review，也重新经过 Main 的 IPC 边界，
+  // 确保工具在 Main 写入验收正文后再开始读取消息历史。
   await store.set(inspectSessionTargetAtomFamily(sessionId), { silent: true })
+  store.set(agentMessageRefreshAtom, (prev) {
+    const map = new Map(prev)
+    map.set(sessionId, (prev.get(sessionId) ?? 0) + 1)
+    return map
+  })
 }

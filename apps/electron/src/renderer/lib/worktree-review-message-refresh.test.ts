@@ -96,12 +96,16 @@ describe('shouldRefreshMessagesAfterToolResult', () => {
       expect(store.get(agentMessageRefreshAtom).get('session-1')).toBe(1)
 
       await refreshWorkingWorktreeAfterStreamComplete(store, 'session-1')
-      expect(inspections).toBe(1)
+      // 即使 ReadyForReview 的实时 tool_result 已经刷新过，终止回合收尾仍要重新
+      // 穿过 Main IPC 后再触发消息读取，避免完成说明停留在 JSONL 而未进入消息区。
+      expect(inspections).toBe(2)
+      expect(store.get(agentMessageRefreshAtom).get('session-1')).toBe(2)
       store.set(sessionTargetStateAtomFamily('session-1'), {
         snapshot: working, selectionRequired: false, loading: false, pendingAction: null, error: null,
       })
       await refreshWorkingWorktreeAfterStreamComplete(store, 'session-1')
-      expect(inspections).toBe(2)
+      expect(inspections).toBe(3)
+      expect(store.get(agentMessageRefreshAtom).get('session-1')).toBe(3)
       expect(store.get(sessionTargetStateAtomFamily('session-1')).snapshot?.delivery?.state).toBe('ready_for_review')
     } finally {
       if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
