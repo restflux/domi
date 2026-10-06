@@ -70,8 +70,6 @@ import type {
   Skill,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
-import { contentText } from '@earendil-works/pi-ai'
-import { getCurrentSystemMessage, getCurrentTools } from '@earendil-works/pi-ai/utils/transcript'
 import type { Transport as PiAgentTransport } from '@earendil-works/pi-ai'
 import type { AgentMessage, AgentToolResult } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ToolResultMessage } from '@earendil-works/pi-ai/compat'
@@ -2201,8 +2199,11 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         noProxy: getCaseInsensitiveRuntimeEnvValue(input.runtimeEnv?.env, 'NO_PROXY'),
         httpIdleTimeoutMs: input.httpIdleTimeoutMs,
       })
+      // Pi 1.0 是 ESM-only；主进程产物是 CommonJS，必须保留原生 dynamic import。
       const sdk = await import('@earendil-works/pi-coding-agent')
-      const piAi = input.codexFastMode && input.provider === 'openai-codex'
+      const piAiRuntime = await import('@earendil-works/pi-ai')
+      const piAiTranscript = await import('@earendil-works/pi-ai/utils/transcript')
+      const piAiCompat = input.codexFastMode && input.provider === 'openai-codex'
         ? await import('@earendil-works/pi-ai/compat')
         : undefined
       if (active.abortRequested) throw createAbortError()
@@ -2474,7 +2475,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
           onTelemetry: recordContextCompactorTelemetry,
         })
       }
-      if (piAi && input.codexFastMode && input.provider === 'openai-codex' && isCodexFastModeSupportedModel(input.model)) {
+      if (piAiCompat && input.codexFastMode && input.provider === 'openai-codex' && isCodexFastModeSupportedModel(input.model)) {
         // Pi 的通用 streamSimple 会丢弃 provider 专属 serviceTier；这里直接走
         // provider stream，确保 request body 与 usage.cost 都使用 priority tier。
         session.agent.streamFunction = async (requestModel, context, options) => {
@@ -2488,7 +2489,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
           const timeoutMs = options?.timeoutMs ?? retrySettings.timeoutMs ?? (configuredTimeoutMs === 0 ? 2_147_483_647 : configuredTimeoutMs)
           const websocketConnectTimeoutMs = options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs()
 
-          return piAi.stream(requestModel, context, withCodexFastModeServiceTier({
+          return piAiCompat.stream(requestModel, context, withCodexFastModeServiceTier({
             ...options,
             apiKey: auth.apiKey,
             env,
@@ -2506,9 +2507,9 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       const providerStreamFn = session.agent.streamFunction
       session.agent.streamFunction = (requestModel, context, options) => {
         runtimePhase.requestStarted()
-        const systemMessage = getCurrentSystemMessage(context.messages)
-        const systemPrompt = systemMessage ? contentText(systemMessage.content, '') : ''
-        const tools = getCurrentTools(context.messages)
+        const systemMessage = piAiTranscript.getCurrentSystemMessage(context.messages)
+        const systemPrompt = systemMessage ? piAiRuntime.contentText(systemMessage.content, '') : ''
+        const tools = piAiTranscript.getCurrentTools(context.messages)
         if (activeCompactionLifecycle && contextCompactorSettings.enabled && contextCompactorMode) {
           activeCompactionLifecycle.providerRequestOrdinal += 1
           const providerRequestId = `${activeCompactionLifecycle.attemptId}:provider:${activeCompactionLifecycle.providerRequestOrdinal}`

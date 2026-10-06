@@ -49,7 +49,7 @@ export async function refreshWorkingWorktreeAfterStreamComplete(store: ReturnTyp
   // 即使本地快照已经显示 ready_for_review，也重新经过 Main 的 IPC 边界，
   // 确保工具在 Main 写入验收正文后再开始读取消息历史。
   await store.set(inspectSessionTargetAtomFamily(sessionId), { silent: true })
-  store.set(agentMessageRefreshAtom, (prev) {
+  store.set(agentMessageRefreshAtom, (prev) => {
     const map = new Map(prev)
     map.set(sessionId, (prev.get(sessionId) ?? 0) + 1)
     return map
