@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { runAgentLoop, type AgentEvent } from '@earendil-works/pi-agent-core'
-import { createAssistantMessageEventStream, type AssistantMessageEventStream } from '@earendil-works/pi-ai'
-import { AgentSession } from '@earendil-works/pi-coding-agent'
-import type { AssistantMessage } from '@earendil-works/pi-ai/compat'
+import {
+  createAssistantMessageEventStream,
+  isContextOverflow,
+  isRecoverableLength,
+  type AssistantMessageEventStream,
+} from '@earendil-works/pi-ai'
+import { convertToLlm } from '@earendil-works/pi-coding-agent'
+import type { AssistantMessage, Model } from '@earendil-works/pi-ai/compat'
 import { Type } from 'typebox'
 import { createPiAssistantUuidTracker } from './pi-agent-adapter'
 import {
@@ -12,7 +17,9 @@ import {
 } from './pi-overflow-recovery'
 import { createPiRetryTerminalGate } from './pi-retry-control'
 
-const MODEL = {
+const CLASSIFIERS = { isContextOverflow, isRecoverableLength }
+
+const MODEL: Model<'openai-completions'> = {
   id: 'length-test-model',
   name: 'Length Test Model',
   api: 'openai-completions',
@@ -23,7 +30,7 @@ const MODEL = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   contextWindow: 200_000,
   maxTokens: 8_192,
-} as const
+}
 
 function usage(output: number) {
   return {
@@ -50,7 +57,7 @@ function assistant(
     stopReason,
     usage: usage(output),
     timestamp: Date.now(),
-  } as AssistantMessage
+  }
 }
 
 function completedStream(message: AssistantMessage): AssistantMessageEventStream {
@@ -60,70 +67,6 @@ function completedStream(message: AssistantMessage): AssistantMessageEventStream
 }
 
 describe('Pi 1.0 native length recovery', () => {
-  test('uses the real AgentSession recovery classifier and allows only one compact-and-retry attempt', async () => {
-    const message = assistant('length', 4_096)
-    const events: Array<Record<string, unknown>> = []
-    const compactions: Array<{ reason: string; willRetry: boolean }> = []
-    const session = Object.create(AgentSession.prototype) as {
-      agent: { state: { model: typeof MODEL; messages: AssistantMessage[] } }
-      settingsManager: { getCompactionSettings: () => { enabled: boolean } }
-      sessionManager: {
-        getBranch: () => []
-        buildSessionProjection: () => {
-          entries: Array<{ sourceEntry: { id: string; type: string }; messages: AssistantMessage[] }>
-          messages: AssistantMessage[]
-          thinkingLevel: string
-          model: null
-        }
-        appendContextEdit: (targetId: string, replacement: null) => string,
-        getEntry: (_id: string) => undefined,
-      }
-      _overflowRecoveryAttempted: boolean
-      _entryIdsByMessage: Map<AssistantMessage, string>
-      _refreshFinalizedContext: () => void
-      _emit: (event: Record<string, unknown>) => void
-      _runAutoCompaction: (reason: string, willRetry: boolean) => Promise<boolean>
-      _emitSessionCompactFailed: (event: unknown) => Promise<void>
-      _checkCompaction: (message: AssistantMessage) => Promise<boolean>
-    }
-    session.agent = { state: { model: MODEL, messages: [message] } }
-    session.settingsManager = { getCompactionSettings: () => ({ enabled: true }) }
-    session.sessionManager = {
-      getBranch: () => [],
-      buildSessionProjection: () => ({
-        entries: [{ sourceEntry: { id: 'assistant-entry', type: 'message' }, messages: [message] }],
-        messages: session.agent.state.messages,
-        thinkingLevel: 'off',
-        model: null,
-      }),
-      appendContextEdit: (targetId: string, replacement: null) => `${targetId}-edit`,
-      getEntry: (_id: string) => undefined,
-    }
-    session._overflowRecoveryAttempted = false
-    session._entryIdsByMessage = new Map([[message, 'assistant-entry']])
-    session._refreshFinalizedContext = () => { session.agent.state.messages = [] }
-    session._emit = (event) => { events.push(event) }
-    session._runAutoCompaction = async (reason, willRetry) => {
-      compactions.push({ reason, willRetry })
-      return true
-    }
-    session._emitSessionCompactFailed = async () => {}
-
-    expect(await session._checkCompaction(message)).toBe(true)
-    expect(compactions).toEqual([{ reason: 'overflow', willRetry: true }])
-    expect(session.agent.state.messages).toEqual([])
-
-    // Pi 只允许同一恢复段 compact-and-retry 一次；第二次 length 释放稳定终态。
-    session.agent.state.messages = [message]
-    expect(await session._checkCompaction(message)).toBe(false)
-    expect(compactions).toHaveLength(1)
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'compaction_end',
-      reason: 'overflow',
-      willRetry: false,
-    }))
-  })
-
   test('does not execute tool calls from a length-truncated assistant message', async () => {
     let streamCalls = 0
     let executeCalls = 0
@@ -152,8 +95,8 @@ describe('Pi 1.0 native length recovery', () => {
         }],
       },
       {
-        model: MODEL as never,
-        convertToLlm: (messages) => messages as never,
+        model: MODEL,
+        convertToLlm,
       },
       (event) => { events.push(event) },
       undefined,
@@ -191,13 +134,14 @@ describe('Domi length recovery terminal lifecycle', () => {
     const truncated = assistant('length', 4_096, [{ type: 'text', text: 'unfinished:' }])
     const truncatedUuid = tracker.get()
 
-    expect(shouldDeferPiOverflowTerminalMessage(truncated, MODEL)).toBe(true)
+    expect(shouldDeferPiOverflowTerminalMessage(truncated, MODEL, CLASSIFIERS)).toBe(true)
     gate.defer({ message: truncated, uuid: truncatedUuid })
     expect(shouldDeferPiOverflowTerminalError(
       gate.peek()?.message,
       MODEL,
       false,
       false,
+      CLASSIFIERS,
     )).toBe(true)
     recovery.defer()
 

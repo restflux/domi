@@ -2758,7 +2758,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                 }
               }
               const shouldDeferNativeOverflow = isAssistant
-                && shouldDeferPiOverflowTerminalMessage(event.message as AssistantMessage, session.model)
+                && shouldDeferPiOverflowTerminalMessage(event.message as AssistantMessage, session.model, piAiRuntime)
               const shouldDeferAssistantTerminal = isAssistant && (
                 (event.message as AssistantMessage).stopReason === 'error' || shouldDeferNativeOverflow
               )
@@ -2809,6 +2809,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                 session.model,
                 event.willRetry,
                 active.abortRequested,
+                piAiRuntime,
               )
               // Pi 在 agent_end 后才检测 overflow 并压缩。此时若先将错误交给
               // orchestrator，会触发外层恢复或清理，打断同 transcript 的 continue。

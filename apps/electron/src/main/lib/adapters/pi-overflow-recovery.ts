@@ -1,3 +1,4 @@
+import type { isContextOverflow, isRecoverableLength } from '@earendil-works/pi-ai'
 import type { AssistantMessage } from '@earendil-works/pi-ai/compat'
 
 const PROMPT_TOO_LONG_PATTERNS = [
@@ -15,6 +16,7 @@ const PROMPT_TOO_LONG_PATTERNS = [
   'exceed the model',
 ] as const
 
+/** 编排层还会收到纯字符串／stderr 错误；缺少完整 Pi 消息时保留独立兜底，不伪造消息。 */
 export function isPiPromptTooLongError(...messages: Array<string | undefined>): boolean {
   const text = messages
     .filter((message): message is string => typeof message === 'string')
@@ -34,40 +36,31 @@ export interface PiOverflowRecoveryModel {
   maxTokens?: number
 }
 
-/**
- * 与 Pi 0.84 的 isRecoverableLength 保持一致。
- * 此处不能静态导入 ESM-only 的 pi-ai/compat，否则 CJS 主进程会在启动时崩溃。
- */
-function isPiRecoverableLength(message: AssistantMessage, desiredMaxOutput: number): boolean {
-  return message.stopReason === 'length'
-    && desiredMaxOutput > 0
-    && message.usage.output < desiredMaxOutput
+/** 从异步初始化的 pi-ai dynamic import 注入，避免 CJS 主进程静态加载 ESM。 */
+export interface PiOverflowClassifiers {
+  isContextOverflow: typeof isContextOverflow
+  isRecoverableLength: typeof isRecoverableLength
 }
 
 export function shouldDeferPiOverflowTerminalMessage(
   message: AssistantMessage,
   model: PiOverflowRecoveryModel | undefined,
+  classifiers: PiOverflowClassifiers,
 ): boolean {
-  // Pi AgentSession._checkCompaction 只恢复当前 session.model 产生的消息。Extension
-  // 可以在同一 Session 内切换模型，因此不能使用创建 query 时捕获的初始 model。
+  // Extension 可切换模型，因此使用实时 session.model 而非创建 query 时的模型。
+  // 这里只识别暂缓交付候选；投影、最新压缩边界及物理模型的恢复决策仍归 Pi，
+  // SDK 未启动恢复时由 agent_settled 释放，不自行发起额外压缩。
   if (!model || message.provider !== model.provider || message.model !== model.id) return false
 
-  if (message.stopReason === 'error' && isPiPromptTooLongError(message.errorMessage)) return true
+  if (message.stopReason === 'error') return classifiers.isContextOverflow(message)
+  if (message.stopReason !== 'length') return false
 
-  // 与 Pi 0.84 AgentSession._checkCompaction 使用同一个上游判定。部分 Provider
-  // 会在低于模型原始输出上限时返回 length；Pi 会 compact-and-retry 一次，因此
-  // Domi 必须保留当前 assistant UUID，不能把截断帧先作为独立最终回答落到 UI。
-  // 含 tool call 的 length 例外：Pi core 会拒绝执行截断参数、生成 error toolResult，
-  // 并在同一个 agent loop 继续下一回合；此时不会由 AgentSession 进入 compaction。
-  const hasToolCall = message.content.some((block) => block.type === 'toolCall')
-  if (!hasToolCall && isPiRecoverableLength(message, model.maxTokens ?? 0)) return true
+  // 截断的工具参数由 Pi core 拒绝并在同一 loop 续跑，不进入 Session 压缩恢复。
+  if (message.content.some((block) => block.type === 'toolCall')) return false
 
-  if (!hasToolCall && model.contextWindow && message.stopReason === 'length' && message.usage?.output === 0) {
-    const inputTokens = (message.usage.input ?? 0) + (message.usage.cacheRead ?? 0)
-    return inputTokens >= model.contextWindow * 0.99
-  }
-
-  return false
+  // 使用模型原始输出上限，不使用 Provider 按剩余上下文钳制后的请求上限。
+  return classifiers.isRecoverableLength(message, model.maxTokens ?? 0)
+    || classifiers.isContextOverflow(message, model.contextWindow)
 }
 
 export function shouldDeferPiOverflowTerminalError(
@@ -75,11 +68,12 @@ export function shouldDeferPiOverflowTerminalError(
   model: PiOverflowRecoveryModel | undefined,
   willRetry: boolean,
   abortRequested: boolean,
+  classifiers: PiOverflowClassifiers,
 ): boolean {
   return !willRetry
     && !abortRequested
     && !!message
-    && shouldDeferPiOverflowTerminalMessage(message, model)
+    && shouldDeferPiOverflowTerminalMessage(message, model, classifiers)
 }
 
 export type PiOverflowRecoveryAction = 'none' | 'discard' | 'release'
