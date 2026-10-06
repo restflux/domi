@@ -8,6 +8,10 @@ import {
   PI_COMPACTION_FORBIDDEN_MARKERS,
   PI_COMPACTION_REQUIRED_MARKERS,
   PI_COMPACTION_RUNTIME_FILES,
+  PI_RESPONSE_REQUIRED_MARKERS,
+  PI_RESPONSE_RUNTIME_FILES,
+  PI_RETRY_REQUIRED_MARKERS,
+  PI_RETRY_RUNTIME_FILES,
   PI_TERMINATION_REQUIRED_MARKERS,
   PI_TERMINATION_RUNTIME_FILES,
   verifyPiCompactionRuntime,
@@ -19,53 +23,59 @@ afterEach(() => {
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function runtimeText(relativePath: string): string {
-  if (relativePath.endsWith('agent-session.js')) {
-    return [
-      'estimatePreparedRequestTokens',
-      'compactionAttempts < 2',
-      'projectProviderContextMessages',
-      '_lastAgentEndedByTool',
-      'endedByTerminatingTool',
-    ].join('\n')
+function writeFiles(
+  nodeModulesDir: string,
+  packageName: string,
+  relativePaths: readonly string[],
+  content: string,
+): void {
+  for (const relativePath of relativePaths) {
+    const filePath = join(nodeModulesDir, packageName, ...relativePath.split('/'))
+    mkdirSync(join(filePath, '..'), { recursive: true })
+    writeFileSync(filePath, content)
   }
-  if (relativePath.endsWith('compaction.js')) {
-    return [
-      'Use one physical summarization request',
-      'COMPACTION_SUMMARY_HARD_MAX_TOKENS = 6144',
-      'PROVIDER_RETAINED_HISTORY_MAX_TOKENS = 20000',
-      'CHECKPOINT_TARGET_MIN_TOKENS = 2500',
-      'projectProviderContextMessages',
-    ].join('\n')
-  }
-  if (relativePath.endsWith('utils.js')) {
-    return 'complete list stored in compaction details'
-  }
-  return 'projectProviderContextMessages'
 }
 
-function writeRuntime(nodeModulesDir: string, overrides: Partial<Record<string, string>> = {}): void {
+function writeCodingAgentRuntime(nodeModulesDir: string, overrides: Partial<Record<string, string>> = {}): void {
+  const common = [...PI_COMPACTION_REQUIRED_MARKERS].join('\n')
   for (const relativePath of PI_COMPACTION_RUNTIME_FILES) {
-    const filePath = join(nodeModulesDir, '@earendil-works', 'pi-coding-agent', ...relativePath.split('/'))
-    mkdirSync(join(filePath, '..'), { recursive: true })
-    writeFileSync(filePath, overrides[relativePath] ?? runtimeText(relativePath))
+    writeFiles(
+      nodeModulesDir,
+      '@earendil-works/pi-coding-agent',
+      [relativePath],
+      overrides[relativePath] ?? common,
+    )
   }
+}
+
+function writeAgentCoreRuntime(nodeModulesDir: string): void {
+  writeFiles(
+    nodeModulesDir,
+    '@earendil-works/pi-agent-core',
+    PI_TERMINATION_RUNTIME_FILES,
+    PI_TERMINATION_REQUIRED_MARKERS.join('\n'),
+  )
+}
+
+function writePiAiRuntime(nodeModulesDir: string): void {
+  writeFiles(
+    nodeModulesDir,
+    '@earendil-works/pi-ai',
+    PI_RETRY_RUNTIME_FILES,
+    PI_RETRY_REQUIRED_MARKERS.join('\n'),
+  )
+  writeFiles(
+    nodeModulesDir,
+    '@earendil-works/pi-ai',
+    PI_RESPONSE_RUNTIME_FILES,
+    PI_RESPONSE_REQUIRED_MARKERS.join('\n'),
+  )
 }
 
 function writePatch(repoRoot: string): void {
-  const patchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-coding-agent@0.85.1.patch')
-  const corePatchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-agent-core@0.85.1.patch')
+  const patchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-ai@1.0.0.patch')
   mkdirSync(join(patchPath, '..'), { recursive: true })
-  writeFileSync(patchPath, PI_COMPACTION_REQUIRED_MARKERS.map(marker => `+${marker}`).join('\n'))
-  writeFileSync(corePatchPath, PI_TERMINATION_REQUIRED_MARKERS.map(marker => `+${marker}`).join('\n'))
-}
-
-function writeTerminationRuntime(nodeModulesDir: string): void {
-  for (const relativePath of PI_TERMINATION_RUNTIME_FILES) {
-    const filePath = join(nodeModulesDir, '@earendil-works', 'pi-agent-core', ...relativePath.split('/'))
-    mkdirSync(join(filePath, '..'), { recursive: true })
-    writeFileSync(filePath, relativePath.endsWith('agent-loop.js') ? 'terminatedByTool: true' : 'terminatedByTool?: true')
-  }
+  writeFileSync(patchPath, [...PI_RETRY_REQUIRED_MARKERS, ...PI_RESPONSE_REQUIRED_MARKERS].map(marker => `+${marker}`).join('\n'))
 }
 
 function createFixture(): { root: string; repoRoot: string; appDir: string } {
@@ -74,81 +84,64 @@ function createFixture(): { root: string; repoRoot: string; appDir: string } {
   const repoRoot = join(root, 'repo')
   const appDir = join(repoRoot, 'apps', 'electron')
   writePatch(repoRoot)
-  writeRuntime(join(repoRoot, 'node_modules'))
-  writeTerminationRuntime(join(repoRoot, 'node_modules'))
-  writeRuntime(join(appDir, 'node_modules'))
-  writeTerminationRuntime(join(appDir, 'node_modules'))
+  for (const nodeModulesDir of [join(repoRoot, 'node_modules'), join(appDir, 'node_modules')]) {
+    writeCodingAgentRuntime(nodeModulesDir)
+    writeAgentCoreRuntime(nodeModulesDir)
+    writePiAiRuntime(nodeModulesDir)
+  }
   return { root, repoRoot, appDir }
 }
 
 async function createAsar(appDir: string, resourcesDir: string): Promise<void> {
   mkdirSync(resourcesDir, { recursive: true })
   const stream = await createPackageWithOptions(appDir, join(resourcesDir, 'app.asar'), {})
-  if (!('writableFinished' in stream) || !stream.writableFinished) {
-    await once(stream, 'close')
-  }
+  if (!('writableFinished' in stream) || !stream.writableFinished) await once(stream, 'close')
 }
 
 describe('verifyPiCompactionRuntime', () => {
-  test('accepts matching root, synced and ASAR runtime with only the new single-request markers', async () => {
+  test('accepts matching root, synced and ASAR Pi 1.0 runtime contracts', async () => {
     const { root, repoRoot, appDir } = createFixture()
-    const packagedAppDir = join(root, 'packaged-app')
     const resourcesDir = join(root, 'resources')
-    writeRuntime(join(packagedAppDir, 'node_modules'))
-    writeTerminationRuntime(join(packagedAppDir, 'node_modules'))
-    await createAsar(packagedAppDir, resourcesDir)
+    await createAsar(appDir, resourcesDir)
 
-    expect(verifyPiCompactionRuntime({ repoRoot, appDir, packagedResourcesDir: resourcesDir })).toEqual({
-      sourceFiles: PI_COMPACTION_RUNTIME_FILES.length + PI_TERMINATION_RUNTIME_FILES.length,
-      syncedFiles: PI_COMPACTION_RUNTIME_FILES.length + PI_TERMINATION_RUNTIME_FILES.length,
-      packagedFiles: PI_COMPACTION_RUNTIME_FILES.length + PI_TERMINATION_RUNTIME_FILES.length,
-      packagedLayout: 'asar',
-    })
+    const result = verifyPiCompactionRuntime({ repoRoot, appDir, packagedResourcesDir: resourcesDir })
+    expect(result.sourceFiles).toBe(
+      PI_COMPACTION_RUNTIME_FILES.length + PI_TERMINATION_RUNTIME_FILES.length + PI_RETRY_RUNTIME_FILES.length + PI_RESPONSE_RUNTIME_FILES.length,
+    )
+    expect(result.syncedFiles).toBe(result.sourceFiles)
+    expect(result.packagedFiles).toBe(result.sourceFiles)
+    expect(result.packagedLayout).toBe('asar')
   })
 
   test('supports unpacked Electron layouts', () => {
     const { root, repoRoot, appDir } = createFixture()
     const resourcesDir = join(root, 'resources')
-    writeRuntime(join(resourcesDir, 'app', 'node_modules'))
-    writeTerminationRuntime(join(resourcesDir, 'app', 'node_modules'))
+    const packagedNodeModules = join(resourcesDir, 'app', 'node_modules')
+    writeCodingAgentRuntime(packagedNodeModules)
+    writeAgentCoreRuntime(packagedNodeModules)
+    writePiAiRuntime(packagedNodeModules)
 
     expect(verifyPiCompactionRuntime({ repoRoot, appDir, packagedResourcesDir: resourcesDir }).packagedLayout)
       .toBe('unpacked')
   })
 
-  test('rejects stale synced dependencies and old split-turn packaged artifacts', async () => {
-    const stale = createFixture()
-    writeRuntime(join(stale.appDir, 'node_modules'), {
-      'dist/core/agent-session.js': 'estimatePreparedRequestTokens but stale',
-    })
-    expect(() => verifyPiCompactionRuntime({ repoRoot: stale.repoRoot, appDir: stale.appDir }))
-      .toThrow('缺少压缩补丁标识')
+  test('rejects a runtime that lost a native lifecycle marker', () => {
+    const { repoRoot, appDir } = createFixture()
+    for (const nodeModulesDir of [join(repoRoot, 'node_modules'), join(appDir, 'node_modules')]) {
+      for (const relativePath of PI_COMPACTION_RUNTIME_FILES) {
+        const stalePath = join(nodeModulesDir, '@earendil-works', 'pi-coding-agent', ...relativePath.split('/'))
+        writeFileSync(stalePath, 'old runtime without native projection')
+      }
+    }
 
-    const staleTermination = createFixture()
-    const staleCorePath = join(
-      staleTermination.appDir,
-      'node_modules',
-      '@earendil-works',
-      'pi-agent-core',
-      'dist',
-      'agent-loop.js',
-    )
-    writeFileSync(staleCorePath, 'old terminating loop')
-    expect(() => verifyPiCompactionRuntime({ repoRoot: staleTermination.repoRoot, appDir: staleTermination.appDir }))
-      .toThrow('缺少压缩补丁标识')
+    expect(() => verifyPiCompactionRuntime({ repoRoot, appDir })).toThrow('缺少运行时契约标识')
+  })
 
-    const packaged = createFixture()
-    const packagedAppDir = join(packaged.root, 'packaged-app')
-    const resourcesDir = join(packaged.root, 'resources')
-    writeRuntime(join(packagedAppDir, 'node_modules'), {
-      'dist/core/compaction/compaction.js': `${runtimeText('dist/core/compaction/compaction.js')}\n${PI_COMPACTION_FORBIDDEN_MARKERS[0]}`,
-    })
-    writeTerminationRuntime(join(packagedAppDir, 'node_modules'))
-    await createAsar(packagedAppDir, resourcesDir)
-    expect(() => verifyPiCompactionRuntime({
-      repoRoot: packaged.repoRoot,
-      appDir: packaged.appDir,
-      packagedResourcesDir: resourcesDir,
-    })).toThrow('旧 split-turn 双请求标识')
+  test('rejects old split-turn compatibility markers in the synced runtime', () => {
+    const { repoRoot, appDir } = createFixture()
+    const stalePath = join(appDir, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'core', 'compaction', 'compaction.js')
+    writeFileSync(stalePath, `${PI_COMPACTION_REQUIRED_MARKERS.join('\n')}\n${PI_COMPACTION_FORBIDDEN_MARKERS[0]}`)
+
+    expect(() => verifyPiCompactionRuntime({ repoRoot, appDir })).toThrow('旧 provider-context projection 标识')
   })
 })

@@ -199,8 +199,8 @@ function validateFinalOutput(messages: AgentMessage[], outputFormat: JsonSchemaO
 function extractLastAssistantText(messages: AgentMessage[]): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (!isRecord(message) || message.role !== 'assistant' || !Array.isArray(message.content)) continue
-    const text = message.content.map((block) => {
+    if (!isAssistantLikeMessage(message) || !Array.isArray(message.content)) continue
+    const text = message.content.map((block: unknown) => {
       if (!isRecord(block) || block.type !== 'text') return ''
       return typeof block.text === 'string' ? block.text : ''
     }).join('')

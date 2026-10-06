@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { normalizeContext } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import type { Context, Model } from '@earendil-works/pi-ai/compat'
 
@@ -54,7 +55,7 @@ async function runStream(
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
   })
-  const stream = streamSimple(createModel(supportsFinishReason), CONTEXT, {
+  const stream = streamSimple(createModel(supportsFinishReason), normalizeContext(CONTEXT), {
     apiKey: 'test-key',
     fetch: fetchFn as unknown as typeof globalThis.fetch,
     maxRetries: 0,

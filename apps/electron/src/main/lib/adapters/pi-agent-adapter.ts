@@ -70,6 +70,8 @@ import type {
   Skill,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
+import { contentText } from '@earendil-works/pi-ai'
+import { getCurrentSystemMessage, getCurrentTools } from '@earendil-works/pi-ai/utils/transcript'
 import type { Transport as PiAgentTransport } from '@earendil-works/pi-ai'
 import type { AgentMessage, AgentToolResult } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ToolResultMessage } from '@earendil-works/pi-ai/compat'
@@ -1045,13 +1047,6 @@ export const PI_COMPACTION_CONTINUATION_CUSTOM_TYPE = 'domi_auto_compaction_cont
 export const PI_INCOMPLETE_TURN_CONTINUATION_CUSTOM_TYPE = 'domi_incomplete_turn_continuation'
 export const PI_COMPACTION_ANCHOR_CUSTOM_TYPE = 'domi_auto_compaction_anchor'
 
-export interface PiAutoCompactionTurnStopControl {
-  needsCompaction: () => boolean
-  takeCompacted: () => boolean
-  takeFailure: () => 'failed' | 'aborted' | undefined
-  settle: (outcome: 'success' | 'failed' | 'aborted') => void
-}
-
 export async function continuePiAfterCompaction(
   session: Pick<AgentSession, 'sendCustomMessage'>,
   prompt: string,
@@ -1076,105 +1071,7 @@ export async function continuePiAfterIncompleteTurn(
   }, { triggerTurn: true })
 }
 
-/** 使用最近一次真实 provider usage，加上其后的工具结果估算下一次请求上下文。 */
-export function estimatePiTurnContextTokens(
-  messages: AgentMessage[],
-  calculateContextTokens: (usage: NonNullable<AssistantMessage['usage']>) => number,
-  estimateTokens: (message: AgentMessage) => number,
-): number | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index]
-    if (!message || message.role !== 'assistant') continue
-    if (message.stopReason === 'aborted' || message.stopReason === 'error' || !message.usage) continue
-
-    const usageTokens = calculateContextTokens(message.usage)
-    if (!Number.isFinite(usageTokens) || usageTokens <= 0) continue
-    let trailingTokens = 0
-    for (let trailingIndex = index + 1; trailingIndex < messages.length; trailingIndex++) {
-      const trailing = messages[trailingIndex]
-      if (trailing) trailingTokens += Math.max(0, estimateTokens(trailing))
-    }
-    return usageTokens + trailingTokens
-  }
-  return undefined
-}
-
-/**
- * Pi 原生阈值压缩只在整个 agent loop 的 agent_end 后检查。长工具任务会在同一个
- * loop 内连续发起 provider request，因此需要在安全 turn 边界提前结束 loop。这里只
- * 标记强制压缩，不能预排 user/steering 消息：最近 provider usage 可能仍低于原生阈值，
- * 那样 Pi 会跳过压缩并直接消费续跑消息。Adapter 必须在 loop 落稳后强制 compact，且
- * 只在确认 compaction_end 成功后用不可见 custom message 恢复原任务。
- */
-export function installPiAutoCompactionTurnStop(
-  session: AgentSession,
-  options: {
-    compactThresholdTokens: number
-    calculateContextTokens: (usage: NonNullable<AssistantMessage['usage']>) => number
-    estimateTokens: (message: AgentMessage) => number
-    enabled?: boolean
-  },
-): PiAutoCompactionTurnStopControl {
-  const previousShouldStop = session.agent.shouldStopAfterTurn
-  let pending = false
-  let compacted = false
-  let failure: 'failed' | 'aborted' | undefined
-  let disabledAfterFailure = false
-
-  session.agent.shouldStopAfterTurn = async (context, signal) => {
-    if (await previousShouldStop?.(context, signal)) return true
-    if (options.enabled === false || pending || disabledAfterFailure || context.toolResults.length === 0) return false
-    if (context.message.content.some((block) => (
-      block.type === 'toolCall' && SESSION_TERMINATING_TOOL_NAMES.has(block.name)
-    ))) return false
-
-    let contextTokens: number
-    try {
-      // turn context 已包含本轮 assistant 与刚完成的 tool results。使用 Pi 自己的估算器，
-      // 才能在大段读取/命令输出把下一次请求直接推过窗口前及时停止。
-      contextTokens = estimatePiTurnContextTokens(
-        context.context.messages,
-        options.calculateContextTokens,
-        options.estimateTokens,
-      ) ?? 0
-    } catch {
-      return false
-    }
-    if (!Number.isFinite(contextTokens) || contextTokens <= options.compactThresholdTokens) return false
-
-    pending = true
-    return true
-  }
-
-  return {
-    needsCompaction: () => pending,
-    takeCompacted() {
-      const result = compacted
-      compacted = false
-      return result
-    },
-    takeFailure() {
-      const result = failure
-      failure = undefined
-      return result
-    },
-    settle(outcome) {
-      const wasPending = pending
-      if (!wasPending) return
-      pending = false
-      if (outcome === 'success') {
-        failure = undefined
-        disabledAfterFailure = false
-        compacted = true
-        return
-      }
-      compacted = false
-      failure = outcome
-      disabledAfterFailure = true
-    },
-  }
-}
-
+// Pi 1.0 由 AgentSession 原生估算并管理自动压缩阈值。
 export function planPiCompactionContinuation(options: {
   continuationCount: number
   abortRequested: boolean
@@ -1224,24 +1121,24 @@ function installSessionTerminatingToolHooks(session: AgentSession): void {
 }
 
 /**
- * Pi core 在 prepareNextTurn（含 Extension hooks）之后、读取 steering/follow-up 之前
- * 调用公开的 shouldStopAfterTurn hook。组合已有 hook，确保 Extension 无法在
- * terminating tool 后把父 Local 重新入队。
+ * Pi 1.0 在 finishTurn 中统一处理回合边界。组合已有 decision，确保 Extension
+ * 或 Domi 的其他 finishTurn hook 无法在 terminating tool 后把父 Local 重新入队。
  */
 export function installWorktreeHandoffLoopStop(
   session: AgentSession,
   shouldStop: () => boolean,
 ): void {
-  const previousShouldStop = session.agent.shouldStopAfterTurn
+  const previousFinishTurn = session.agent.finishTurn
   let queueCleared = false
-  session.agent.shouldStopAfterTurn = async (context, signal) => {
-    if (await previousShouldStop?.(context, signal)) return true
-    if (!shouldStop()) return false
+  session.agent.finishTurn = async (context, signal) => {
+    const previousDecision = await previousFinishTurn?.(context, signal)
+    if (previousDecision?.action === 'end') return previousDecision
+    if (!shouldStop()) return previousDecision?.action === 'continue' ? previousDecision : undefined
     if (!queueCleared) {
       session.clearQueue()
       queueCleared = true
     }
-    return true
+    return { action: 'end' }
   }
 }
 
@@ -2328,8 +2225,6 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       const autoCompactionReserveTokens = calculatePiAutoCompactionReserveTokens(
         model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
       )
-      const autoCompactionThresholdTokens = (model.contextWindow ?? DEFAULT_CONTEXT_WINDOW)
-        - autoCompactionReserveTokens
       let compactContextRequested = false
       let pendingWorktreeHandoff: ScheduledWorktreeHandoff | undefined
       let worktreeHandoffFinalized = false
@@ -2339,7 +2234,6 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       let automaticIncompleteTurnContinuations = 0
       let activePromptOutputEvidence: PiPromptOutputEvidence | undefined
       let pendingTerminalResult: SDKMessage | undefined
-      let pendingInlineCompactionFailure: string | undefined
       let successfulCompactionBoundaryVersion = 0
       let activeCompactionLifecycle: {
         attemptId: string
@@ -2451,10 +2345,8 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         retry: {
           enabled: true,
           maxRetries: PI_NATIVE_MAX_RETRIES,
-          maxTotalRetries: PI_NATIVE_MAX_TOTAL_RETRIES,
           baseDelayMs: PI_NATIVE_RETRY_BASE_DELAY_MS,
-          maxTotalDelayMs: PI_NATIVE_MAX_TOTAL_DELAY_MS,
-          jitterRatio: PI_NATIVE_RETRY_JITTER_RATIO,
+          maxAgentDelayMs: PI_NATIVE_MAX_TOTAL_DELAY_MS,
         },
         ...buildPiRemoteConnectionSettings(input),
       })
@@ -2614,6 +2506,9 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       const providerStreamFn = session.agent.streamFunction
       session.agent.streamFunction = (requestModel, context, options) => {
         runtimePhase.requestStarted()
+        const systemMessage = getCurrentSystemMessage(context.messages)
+        const systemPrompt = systemMessage ? contentText(systemMessage.content, '') : ''
+        const tools = getCurrentTools(context.messages)
         if (activeCompactionLifecycle && contextCompactorSettings.enabled && contextCompactorMode) {
           activeCompactionLifecycle.providerRequestOrdinal += 1
           const providerRequestId = `${activeCompactionLifecycle.attemptId}:provider:${activeCompactionLifecycle.providerRequestOrdinal}`
@@ -2633,9 +2528,9 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         }
         try {
           input.onContextBreakdown?.(buildPiContextBreakdown({
-            systemPrompt: context.systemPrompt ?? '',
+            systemPrompt,
             messages: context.messages,
-            tools: context.tools ?? [],
+            tools,
             toolSources: input.customToolSources,
             estimateMessageTokens: (message) => sdk.estimateTokens(message as Parameters<typeof sdk.estimateTokens>[0]),
           }))
@@ -2649,9 +2544,9 @@ export class PiAgentAdapter implements AgentProviderAdapter {
             modelId: requestModel.id,
             reasoningLevel: session.agent.state.thinkingLevel,
             contextWindow: requestModel.contextWindow,
-            systemPrompt: context.systemPrompt ?? '',
+            systemPrompt,
             messageCount: context.messages.length,
-            tools: context.tools ?? [],
+            tools,
             piActiveLeafId: sessionManager.getLeafId(),
             runtimeContext: input.getRequestEnvelopeContext?.(),
           })
@@ -2669,17 +2564,9 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       // → 已授权调用的批次调度登记。调度层不会绕过或替换授权结果。
       installSessionTerminatingToolHooks(session)
       installWorktreeHandoffLoopStop(session, () => active.worktreeHandoffTerminating)
-      const supportsInlineTurnCompaction = (session as AgentSession & {
-        supportsInlineTurnCompaction?: boolean
-      }).supportsInlineTurnCompaction === true
-      // 新 Pi 在 prepareNextTurn 中完成压缩并直接继续同一个 Agent loop；旧 Pi 才需要
-      // turn-stop → compact → hidden continuation 的兼容路径。Worktree 等终止态仍先短路。
-      const autoCompactionTurnStop = installPiAutoCompactionTurnStop(session, {
-        compactThresholdTokens: autoCompactionThresholdTokens,
-        calculateContextTokens: sdk.calculateContextTokens,
-        estimateTokens: sdk.estimateTokens,
-        enabled: !supportsInlineTurnCompaction,
-      })
+      // Pi 1.0 的 AgentSession 已在 prepareNextTurnWithContext / _checkCompaction 中
+      // 原生完成阈值压缩、overflow recovery 与同一 loop 续跑。Domi 只保留手动
+      // CompactContext 的显式 compaction continuation，不再在 finishTurn 后重复 compact。
       const resourceToolNames = new Set(
         session.getAllTools()
           .filter((tool) => tool.sourceInfo.source !== 'sdk' && tool.sourceInfo.source !== 'builtin')
@@ -2769,7 +2656,6 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         if (!active.abortRequested && !active.interrupting) return false
         retryTerminalGate.settle(true)
         overflowRecovery.clear()
-        autoCompactionTurnStop.settle('aborted')
         compactContextRequested = false
         pendingCompactionContinuation = undefined
         pendingTerminalResult = undefined
@@ -2946,7 +2832,6 @@ export class PiAgentAdapter implements AgentProviderAdapter {
               break
             }
             case 'auto_retry_start':
-            case 'auto_retry_attempt_start':
             case 'auto_retry_end':
               for (const retry of mapPiNativeRetryEvent(event, { runStartedAt: retryRunStartedAt })) input.onRetry?.(retry)
               break
@@ -2969,7 +2854,6 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                   attemptId: `pi-compaction-lifecycle:${Date.now()}:${successfulCompactionBoundaryVersion + 1}`,
                   startedAt: Date.now(),
                   reason: event.reason,
-                  ...(event.inline !== undefined && { inline: event.inline }),
                   providerRequestOrdinal: 0,
                 }
               }
@@ -2994,7 +2878,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                   durationMs: lifecycle ? Math.max(0, Date.now() - lifecycle.startedAt) : 0,
                   reason: event.reason,
                   willRetry: event.willRetry,
-                  ...(event.inline !== undefined ? { inline: event.inline } : lifecycle?.inline !== undefined ? { inline: lifecycle.inline } : {}),
+                  ...(lifecycle?.inline !== undefined ? { inline: lifecycle.inline } : {}),
                   ...(event.result?.usage ? {
                     summaryInputTokens: event.result.usage.input,
                     summaryOutputTokens: event.result.usage.output,
@@ -3006,26 +2890,6 @@ export class PiAgentAdapter implements AgentProviderAdapter {
               }
               if (!event.aborted && event.result) {
                 successfulCompactionBoundaryVersion += 1
-                if (event.inline) pendingInlineCompactionFailure = undefined
-              } else if (event.inline) {
-                pendingInlineCompactionFailure = event.aborted
-                  ? 'Pi inline 自动压缩已取消，原任务未继续。'
-                  : event.errorMessage ?? 'Pi inline 自动压缩失败，原任务未继续。'
-              }
-              const noopKind = event.errorMessage
-                ? classifyCompactionNoopError(event.errorMessage)
-                : undefined
-              // session.compact() may first report Nothing to compact, after which Domi appends a
-              // non-triggering anchor and retries. Keep the pending stop alive until that retry
-              // reaches a real success/final failure; otherwise the first noop erases its permit.
-              if (noopKind !== 'nothing_to_compact') {
-                autoCompactionTurnStop.settle(
-                  !event.aborted && event.result
-                    ? 'success'
-                    : event.aborted
-                      ? 'aborted'
-                      : 'failed',
-                )
               }
               const recoveryAction = overflowRecovery.settleCompaction({
                 reason: event.reason,
@@ -3194,8 +3058,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                 worktreeHandoffFinalized = true
               }
               const manualCompactionRequested = compactContextRequested
-              const autoCompactionRequested = autoCompactionTurnStop.needsCompaction()
-              if (manualCompactionRequested || autoCompactionRequested) {
+              if (manualCompactionRequested) {
                 let compactionResult: PiCompactionAfterTurnResult
                 try {
                   compactionResult = await compactCurrentSessionAfterTurn(session, {
@@ -3216,23 +3079,16 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                 }
                 compactContextRequested = false
                 if (compactionResult === 'already_compacted_without_fresh_boundary') {
-                  if (autoCompactionRequested) autoCompactionTurnStop.settle('failed')
-                  throw new Error('Pi 报告上下文已压缩，但本轮没有可验证的成功压缩边界；已停止续跑以避免使用陈旧状态。')
+                  throw new Error('Pi 报告上下文已经压缩，但本轮没有可验证的成功压缩边界；已停止续跑以避免使用陈旧状态。')
                 }
                 if (compactionResult === 'nothing_to_compact') {
-                  if (autoCompactionRequested) autoCompactionTurnStop.settle('failed')
                   throw new Error('当前大型工具 turn 即使加入安全压缩边界后仍无法由 Pi 压缩；已停止续跑以避免上下文溢出。')
                 }
                 // Cancellation can arrive while Pi is compacting, after its first agent_end.
                 // Do not plan a continuation or render that stale terminal result.
                 if (!discardCancelledTerminalState()) {
-                  const autoCompactionSucceeded = autoCompactionTurnStop.takeCompacted()
                   const compactedAtFreshBoundary = compactionResult === 'compacted' || compactionResult === 'already_compacted'
-                  if (autoCompactionRequested && (!autoCompactionSucceeded || !compactedAtFreshBoundary)) {
-                    throw new Error('自动压缩完成后未收到成功边界；已停止续跑以避免内部指令提前进入模型上下文。')
-                  }
-                  const shouldContinueAfterCompaction = manualCompactionRequested || autoCompactionSucceeded
-                  if (shouldContinueAfterCompaction) {
+                  if (compactedAtFreshBoundary) {
                     const continuation = planPiCompactionContinuation({
                       continuationCount: automaticCompactionContinuations,
                       abortRequested: active.abortRequested,
@@ -3246,44 +3102,6 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                     } else if (continuation.reason === 'continuation_limit') {
                       pendingTerminalResult = createCompactionContinuationLimitResult(session.sessionId)
                     }
-                  }
-                }
-              } else {
-                const inlineCompactionFailure = pendingInlineCompactionFailure
-                pendingInlineCompactionFailure = undefined
-                const nativeCompactionFailure = autoCompactionTurnStop.takeFailure()
-                if (inlineCompactionFailure && !active.abortRequested && !active.interrupting) {
-                  pendingTerminalResult = {
-                    type: 'result',
-                    subtype: 'error_during_execution',
-                    terminal_reason: 'compaction_failed',
-                    errors: [inlineCompactionFailure],
-                    session_id: session.sessionId,
-                  } as unknown as SDKMessage
-                } else if (nativeCompactionFailure && !active.abortRequested && !active.interrupting) {
-                  pendingTerminalResult = {
-                    type: 'result',
-                    subtype: 'error_during_execution',
-                    terminal_reason: 'compaction_failed',
-                    errors: [nativeCompactionFailure === 'aborted'
-                      ? '自动压缩已取消，原任务未继续。'
-                      : '自动压缩失败，原任务未继续。请重试或手动压缩上下文。'],
-                    session_id: session.sessionId,
-                  } as unknown as SDKMessage
-                } else if (autoCompactionTurnStop.takeCompacted() && !discardCancelledTerminalState()) {
-                  // 最近 provider usage 本身已超过阈值时，Pi 原生 post-agent check 会先完成压缩；
-                  // 无需再次 compact，只需在成功边界之后安排隐藏续跑。
-                  const continuation = planPiCompactionContinuation({
-                    continuationCount: automaticCompactionContinuations,
-                    abortRequested: active.abortRequested,
-                    runtimeLimitReached: runtimeGuard.shouldStopBeforeNextTurn(),
-                  })
-                  if (continuation.shouldContinue) {
-                    automaticCompactionContinuations += 1
-                    pendingCompactionContinuation = appendOutputFormatInstruction(continuation.prompt, input.outputFormat)
-                    pendingTerminalResult = undefined
-                  } else if (continuation.reason === 'continuation_limit') {
-                    pendingTerminalResult = createCompactionContinuationLimitResult(session.sessionId)
                   }
                 }
               }
@@ -3392,7 +3210,10 @@ export class PiAgentAdapter implements AgentProviderAdapter {
     const active = this.activeSessions.get(sessionId)
     if (!active || active.abortRequested || active.interrupting) return false
     const session = await waitForActiveSession(active)
-    return session.retryNow()
+    const retryNow = (session as AgentSession & {
+      retryNow?: () => Promise<boolean>
+    }).retryNow
+    return retryNow ? retryNow.call(session) : false
   }
 
   async navigateSessionTree(

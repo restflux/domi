@@ -67,13 +67,6 @@ describe('Pi native retry terminal gate', () => {
       reason: '529 overloaded',
     })])
     expect(mapPiNativeRetryEvent({
-      type: 'auto_retry_attempt_start',
-      ...firstRetryDetails,
-    }, retryContext, 127)).toEqual([expect.objectContaining({
-      status: 'attempt',
-      totalAttempt: 1,
-    })])
-    expect(mapPiNativeRetryEvent({
       type: 'auto_retry_end', success: true, outcome: 'succeeded',
       ...firstRetryDetails,
     }, retryContext, 130)).toEqual([expect.objectContaining({
@@ -106,7 +99,7 @@ describe('Pi native retry terminal gate', () => {
     })])
   })
 
-  test('maps scheduled and actual Pi retry lifecycle separately', () => {
+  test('maps Pi 1.0 retry lifecycle start and terminal outcome separately', () => {
     expect(mapPiNativeRetryEvent({ type: 'auto_retry_start', ...retryDetails }, retryContext, 123)).toEqual([
       {
         status: 'starting',
@@ -121,24 +114,23 @@ describe('Pi native retry terminal gate', () => {
       },
     ])
 
-    expect(mapPiNativeRetryEvent({ type: 'auto_retry_attempt_start', ...retryDetails }, retryContext, 127)).toEqual([
-      {
-        status: 'attempt',
+    expect(mapPiNativeRetryEvent({
+      type: 'auto_retry_end',
+      success: false,
+      outcome: 'exhausted',
+      finalError: '529 overloaded',
+      ...retryDetails,
+    }, retryContext, 127)).toEqual([
+      expect.objectContaining({
+        status: 'failed',
         attempt: 2,
-        maxAttempts: 8,
         totalAttempt: 6,
-        maxTotalAttempts: 8,
-        runStartedAt: 456,
-        attemptData: {
-          attempt: 2,
-          totalAttempt: 6,
-          maxTotalAttempts: 8,
+        attemptData: expect.objectContaining({
           timestamp: 127,
-          reason: '529 overloaded',
           errorMessage: '529 overloaded',
           delaySeconds: 4,
-        },
-      },
+        }),
+      }),
     ])
   })
 

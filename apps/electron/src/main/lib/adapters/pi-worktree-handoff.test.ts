@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { AgentTurnContext, FinishTurn } from '@earendil-works/pi-agent-core'
 import {
   buildCurrentSessionCompactionTool,
   buildWorktreeHandoffTool,
@@ -95,17 +96,21 @@ describe('ForkToWorktree terminating tool', () => {
     }, control)).toThrow('完整')
   })
 
-  test('Given Extension 在 prepareNextTurn 后重新入队 When public turn hook checks terminating handoff Then 强制停止并只清队列一次', async () => {
+  test('Given Extension 在 finishTurn 后重新入队 When public turn hook checks terminating handoff Then 强制停止并只清队列一次', async () => {
     let terminating = false
     let queuedByExtension = false
     let clearCount = 0
-    const context = { messages: [] }
+    const context = {
+      message: { role: 'assistant', content: [] },
+      toolResults: [],
+      context: { messages: [], tools: [] },
+    } as unknown as AgentTurnContext
     const signal = new AbortController().signal
-    const previousCalls: Array<{ context: unknown; signal?: AbortSignal }> = []
-    const agent = {
-      shouldStopAfterTurn: async (receivedContext: unknown, receivedSignal?: AbortSignal) => {
+    const previousCalls: Array<{ context: AgentTurnContext; signal?: AbortSignal }> = []
+    const agent: { finishTurn: FinishTurn } = {
+      finishTurn: async (receivedContext, receivedSignal) => {
         previousCalls.push({ context: receivedContext, signal: receivedSignal })
-        return false
+        return { action: 'continue' }
       },
     }
     const session = {
@@ -118,12 +123,12 @@ describe('ForkToWorktree terminating tool', () => {
 
     installWorktreeHandoffLoopStop(session, () => terminating)
 
-    expect(await agent.shouldStopAfterTurn?.(context, signal)).toBe(false)
+    expect((await agent.finishTurn(context, signal))?.action).toBe('continue')
     queuedByExtension = true
     terminating = true
-    expect(await agent.shouldStopAfterTurn?.(context, signal)).toBe(true)
+    expect((await agent.finishTurn(context, signal))?.action).toBe('end')
     expect(queuedByExtension).toBe(false)
-    expect(await agent.shouldStopAfterTurn?.(context, signal)).toBe(true)
+    expect((await agent.finishTurn(context, signal))?.action).toBe('end')
     expect(clearCount).toBe(1)
     expect(previousCalls).toEqual([
       { context, signal },
@@ -132,16 +137,20 @@ describe('ForkToWorktree terminating tool', () => {
     ])
   })
 
-  test('Given existing public turn hook already stops When Domi installs handoff hook Then preserves short-circuit without clearing queue', async () => {
+  test('Given existing public finishTurn hook already stops When Domi installs handoff hook Then preserves short-circuit without clearing queue', async () => {
     let domiPredicateCalls = 0
     let clearCount = 0
-    const context = { messages: [] }
+    const context = {
+      message: { role: 'assistant', content: [] },
+      toolResults: [],
+      context: { messages: [], tools: [] },
+    } as unknown as AgentTurnContext
     const signal = new AbortController().signal
-    const agent = {
-      shouldStopAfterTurn: async (receivedContext: unknown, receivedSignal?: AbortSignal) => {
+    const agent: { finishTurn: FinishTurn } = {
+      finishTurn: async (receivedContext, receivedSignal) => {
         expect(receivedContext).toBe(context)
         expect(receivedSignal).toBe(signal)
-        return true
+        return { action: 'end' }
       },
     }
     const session = { agent, clearQueue: () => { clearCount += 1 } } as never
@@ -151,7 +160,7 @@ describe('ForkToWorktree terminating tool', () => {
       return true
     })
 
-    expect(await agent.shouldStopAfterTurn?.(context, signal)).toBe(true)
+    expect((await agent.finishTurn(context, signal))?.action).toBe('end')
     expect(domiPredicateCalls).toBe(0)
     expect(clearCount).toBe(0)
   })

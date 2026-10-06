@@ -48,7 +48,7 @@ describe('Pi context overflow recognition', () => {
     expect(shouldDeferPiOverflowTerminalMessage(message, RECOVERY_MODEL)).toBe(true)
   })
 
-  test('defers Pi 0.84 recoverable length stops below the model output limit', () => {
+  test('defers Pi native recoverable length stops below the model output limit', () => {
     const message = assistant({
       stopReason: 'length',
       usage: {

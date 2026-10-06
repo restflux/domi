@@ -62,13 +62,11 @@ export function recordPiAgentAuditEvent(
         delayMs: event.delayMs,
         errorMessage: event.errorMessage,
       })
-    case 'auto_retry_attempt_start':
-      return recorder.record({ type: 'retry_attempt_start', attempt: event.attempt })
     case 'auto_retry_end':
       return recorder.record({
         type: 'retry_end',
         attempt: event.attempt,
-        outcome: event.outcome,
+        outcome: event.success ? 'succeeded' : 'exhausted',
         errorMessage: event.finalError,
       })
     case 'agent_end':

@@ -61,6 +61,7 @@ function decodedDimensions(image: ImageContent): { width: number; height: number
 function createAgentSessionImageHook(extensionResult?: ExtensionToolResult) {
   const session = Object.create(AgentSession.prototype) as unknown as {
     agent: {
+      state: { model?: undefined }
       beforeToolCall?: (...args: unknown[]) => Promise<unknown>
       afterToolCall?: (context: {
         toolCall: { id: string; name: string; arguments: Record<string, unknown> }
@@ -78,7 +79,7 @@ function createAgentSessionImageHook(extensionResult?: ExtensionToolResult) {
     _installAgentToolHooks: () => void
   }
 
-  session.agent = {}
+  session.agent = { state: { model: undefined } }
   session.settingsManager = { getImageAutoResize: () => true }
   session._extensionRunner = {
     hasHandlers: (event) => event === 'tool_result' && extensionResult !== undefined,

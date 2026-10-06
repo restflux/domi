@@ -5,34 +5,30 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { extractFile } from '@electron/asar'
 
-const PI_PACKAGE = '@earendil-works/pi-coding-agent'
-const PI_PATCH_NAME = '@earendil-works%2Fpi-coding-agent@0.85.1.patch'
+const PI_CODING_AGENT_PACKAGE = '@earendil-works/pi-coding-agent'
 const PI_AGENT_CORE_PACKAGE = '@earendil-works/pi-agent-core'
-const PI_AGENT_CORE_PATCH_NAME = '@earendil-works%2Fpi-agent-core@0.85.1.patch'
+const PI_AI_PACKAGE = '@earendil-works/pi-ai'
+const PI_AI_RETRY_PATCH_NAME = '@earendil-works%2Fpi-ai@1.0.0.patch'
 
 export const PI_COMPACTION_RUNTIME_FILES = [
   'dist/core/agent-session.js',
+  'dist/core/session-manager.js',
   'dist/core/compaction/compaction.js',
   'dist/core/compaction/utils.js',
-  'dist/core/messages.js',
 ] as const
 
 export const PI_COMPACTION_REQUIRED_MARKERS = [
-  'estimatePreparedRequestTokens',
-  'compactionAttempts < 2',
-  'Use one physical summarization request',
-  'COMPACTION_SUMMARY_HARD_MAX_TOKENS = 6144',
-  'PROVIDER_RETAINED_HISTORY_MAX_TOKENS = 20000',
-  'CHECKPOINT_TARGET_MIN_TOKENS = 2500',
-  'projectProviderContextMessages',
-  'complete list stored in compaction details',
-  '_lastAgentEndedByTool',
-  'endedByTerminatingTool',
+  '_compactBeforeNextAssistantResponse',
+  'prepareNextTurnWithContext',
+  'session_before_compact',
+  'agent_before_settle',
+  'auto_retry_start',
 ] as const
 
+// Pi 1.0 仍可在自身 compaction 算法中使用 turn-prefix summary；这里只拦截
+// Domi 0.85.1 patch 曾注入的 provider-context projection helper。
 export const PI_COMPACTION_FORBIDDEN_MARKERS = [
-  'generateTurnPrefixSummary(',
-  '**Turn Context (split turn):**',
+  'projectProviderContextMessages',
 ] as const
 
 export const PI_TERMINATION_RUNTIME_FILES = [
@@ -41,8 +37,33 @@ export const PI_TERMINATION_RUNTIME_FILES = [
 ] as const
 
 export const PI_TERMINATION_REQUIRED_MARKERS = [
-  'terminatedByTool: true',
-  'terminatedByTool?: true',
+  'shouldTerminateToolBatch',
+  'terminate: true',
+  'finishTurn',
+] as const
+
+export const PI_RETRY_RUNTIME_FILES = [
+  'dist/utils/retry.js',
+] as const
+
+export const PI_RETRY_REQUIRED_MARKERS = [
+  'unexpected non-whitespace character after JSON',
+  'failed to fetch',
+] as const
+
+export const PI_RESPONSE_RUNTIME_FILES = [
+  'dist/api/openai-responses-shared.js',
+] as const
+
+export const PI_RESPONSE_REQUIRED_MARKERS = [
+  'textSlotsById',
+  'recoveredTextBlocks',
+  'domiResponsesDiagnostics',
+] as const
+
+const PI_AI_PATCH_REQUIRED_MARKERS = [
+  ...PI_RETRY_REQUIRED_MARKERS,
+  ...PI_RESPONSE_REQUIRED_MARKERS,
 ] as const
 
 export interface VerifyPiCompactionRuntimeOptions {
@@ -59,8 +80,7 @@ export interface VerifyPiCompactionRuntimeResult {
 }
 
 function packagePath(nodeModulesDir: string, packageName: string, relativePath: string): string {
-  const [scope, name] = packageName.split('/')
-  return join(nodeModulesDir, scope ?? '', name ?? '', ...relativePath.split('/'))
+  return join(nodeModulesDir, packageName, ...relativePath.split('/'))
 }
 
 function sha256(content: Buffer): string {
@@ -88,10 +108,7 @@ function readPackagedFiles(
   resourcesDir: string,
   packageName: string,
   relativePaths: readonly string[],
-): {
-  files: Map<string, Buffer>
-  layout: 'asar' | 'unpacked'
-} {
+): { files: Map<string, Buffer>; layout: 'asar' | 'unpacked' } {
   const asarPath = join(resourcesDir, 'app.asar')
   if (existsSync(asarPath)) {
     const files = new Map<string, Buffer>()
@@ -116,20 +133,24 @@ function readPackagedFiles(
   }
 }
 
+function runtimeText(files: Map<string, Buffer>): string {
+  return [...files.values()].map(content => content.toString('utf8')).join('\n')
+}
+
 function assertRuntimeMarkers(
   files: Map<string, Buffer>,
   label: string,
   requiredMarkers: readonly string[],
   forbiddenMarkers: readonly string[] = [],
 ): void {
-  const source = [...files.values()].map(content => content.toString('utf8')).join('\n')
+  const source = runtimeText(files)
   const missing = requiredMarkers.filter(marker => !source.includes(marker))
   if (missing.length > 0) {
-    throw new Error(`[pi-runtime] ${label} 缺少压缩补丁标识: ${missing.join(', ')}`)
+    throw new Error(`[pi-runtime] ${label} 缺少运行时契约标识: ${missing.join(', ')}`)
   }
   const forbidden = forbiddenMarkers.filter(marker => source.includes(marker))
   if (forbidden.length > 0) {
-    throw new Error(`[pi-runtime] ${label} 仍包含旧 split-turn 双请求标识: ${forbidden.join(', ')}`)
+    throw new Error(`[pi-runtime] ${label} 仍包含旧 provider-context projection 标识: ${forbidden.join(', ')}`)
   }
 }
 
@@ -140,7 +161,7 @@ function assertSameFiles(expected: Map<string, Buffer>, actual: Map<string, Buff
     return !expectedContent || !actualContent || sha256(expectedContent) !== sha256(actualContent)
   })
   if (mismatched.length > 0) {
-    throw new Error(`[pi-runtime] ${label} 与根 patched dependency 不一致: ${mismatched.join(', ')}`)
+    throw new Error(`[pi-runtime] ${label} 与根 Pi runtime 不一致: ${mismatched.join(', ')}`)
   }
 }
 
@@ -152,24 +173,13 @@ function addedPatchText(patch: string): string {
     .join('\n')
 }
 
-function assertPatchMarkers(
-  repoRoot: string,
-  patchName: string,
-  requiredMarkers: readonly string[],
-  forbiddenMarkers: readonly string[] = [],
-): void {
-  const patchPath = join(repoRoot, 'patches', patchName)
-  if (!existsSync(patchPath)) {
-    throw new Error(`[pi-runtime] 缺少 Pi patch: ${patchPath}`)
-  }
+function assertPatchMarkers(repoRoot: string): void {
+  const patchPath = join(repoRoot, 'patches', PI_AI_RETRY_PATCH_NAME)
+  if (!existsSync(patchPath)) throw new Error(`[pi-runtime] 缺少 Pi 1.0 retry patch: ${patchPath}`)
   const additions = addedPatchText(readFileSync(patchPath, 'utf8'))
-  const missing = requiredMarkers.filter(marker => !additions.includes(marker))
+  const missing = PI_AI_PATCH_REQUIRED_MARKERS.filter(marker => !additions.includes(marker))
   if (missing.length > 0) {
-    throw new Error(`[pi-runtime] Pi patch additions 缺少标识: ${missing.join(', ')}`)
-  }
-  const forbidden = forbiddenMarkers.filter(marker => additions.includes(marker))
-  if (forbidden.length > 0) {
-    throw new Error(`[pi-runtime] Pi patch additions 重新引入旧 split-turn 标识: ${forbidden.join(', ')}`)
+    throw new Error(`[pi-runtime] Pi 1.0 AI patch 缺少标识: ${missing.join(', ')}`)
   }
 }
 
@@ -177,59 +187,76 @@ export function verifyPiCompactionRuntime(
   options: VerifyPiCompactionRuntimeOptions,
 ): VerifyPiCompactionRuntimeResult {
   const repoRoot = resolve(options.repoRoot)
-  assertPatchMarkers(repoRoot, PI_PATCH_NAME, PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS)
-  assertPatchMarkers(repoRoot, PI_AGENT_CORE_PATCH_NAME, PI_TERMINATION_REQUIRED_MARKERS)
+  assertPatchMarkers(repoRoot)
 
   const rootCompactionFiles = readPackageFiles(
-    join(repoRoot, 'node_modules'), 'root patched dependency', PI_PACKAGE, PI_COMPACTION_RUNTIME_FILES,
+    join(repoRoot, 'node_modules'), 'root Pi coding-agent runtime', PI_CODING_AGENT_PACKAGE, PI_COMPACTION_RUNTIME_FILES,
   )
   const rootTerminationFiles = readPackageFiles(
-    join(repoRoot, 'node_modules'), 'root patched dependency', PI_AGENT_CORE_PACKAGE, PI_TERMINATION_RUNTIME_FILES,
+    join(repoRoot, 'node_modules'), 'root Pi agent-core runtime', PI_AGENT_CORE_PACKAGE, PI_TERMINATION_RUNTIME_FILES,
   )
-  assertRuntimeMarkers(
-    rootCompactionFiles, 'root patched dependency', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS,
+  const rootRetryFiles = readPackageFiles(
+    join(repoRoot, 'node_modules'), 'root Pi AI retry runtime', PI_AI_PACKAGE, PI_RETRY_RUNTIME_FILES,
   )
-  assertRuntimeMarkers(rootTerminationFiles, 'root termination dependency', PI_TERMINATION_REQUIRED_MARKERS)
+  const rootResponseFiles = readPackageFiles(
+    join(repoRoot, 'node_modules'), 'root Pi AI Responses runtime', PI_AI_PACKAGE, PI_RESPONSE_RUNTIME_FILES,
+  )
+  assertRuntimeMarkers(rootCompactionFiles, 'root Pi coding-agent runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS)
+  assertRuntimeMarkers(rootTerminationFiles, 'root Pi agent-core runtime', PI_TERMINATION_REQUIRED_MARKERS)
+  assertRuntimeMarkers(rootRetryFiles, 'root Pi AI retry runtime', PI_RETRY_REQUIRED_MARKERS)
+  assertRuntimeMarkers(rootResponseFiles, 'root Pi AI Responses runtime', PI_RESPONSE_REQUIRED_MARKERS)
 
   let syncedFiles = 0
   if (options.appDir) {
     const appNodeModules = join(resolve(options.appDir), 'node_modules')
     const appCompactionFiles = readPackageFiles(
-      appNodeModules, 'Electron synced runtime', PI_PACKAGE, PI_COMPACTION_RUNTIME_FILES,
+      appNodeModules, 'Electron synced Pi coding-agent runtime', PI_CODING_AGENT_PACKAGE, PI_COMPACTION_RUNTIME_FILES,
     )
     const appTerminationFiles = readPackageFiles(
-      appNodeModules, 'Electron synced runtime', PI_AGENT_CORE_PACKAGE, PI_TERMINATION_RUNTIME_FILES,
+      appNodeModules, 'Electron synced Pi agent-core runtime', PI_AGENT_CORE_PACKAGE, PI_TERMINATION_RUNTIME_FILES,
     )
-    assertRuntimeMarkers(
-      appCompactionFiles, 'Electron synced runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS,
+    const appRetryFiles = readPackageFiles(
+      appNodeModules, 'Electron synced Pi AI retry runtime', PI_AI_PACKAGE, PI_RETRY_RUNTIME_FILES,
     )
-    assertRuntimeMarkers(appTerminationFiles, 'Electron synced termination runtime', PI_TERMINATION_REQUIRED_MARKERS)
-    assertSameFiles(rootCompactionFiles, appCompactionFiles, 'Electron synced runtime')
-    assertSameFiles(rootTerminationFiles, appTerminationFiles, 'Electron synced termination runtime')
-    syncedFiles = appCompactionFiles.size + appTerminationFiles.size
+    const appResponseFiles = readPackageFiles(
+      appNodeModules, 'Electron synced Pi AI Responses runtime', PI_AI_PACKAGE, PI_RESPONSE_RUNTIME_FILES,
+    )
+    assertRuntimeMarkers(appCompactionFiles, 'Electron synced Pi coding-agent runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS)
+    assertRuntimeMarkers(appTerminationFiles, 'Electron synced Pi agent-core runtime', PI_TERMINATION_REQUIRED_MARKERS)
+    assertRuntimeMarkers(appRetryFiles, 'Electron synced Pi AI retry runtime', PI_RETRY_REQUIRED_MARKERS)
+    assertRuntimeMarkers(appResponseFiles, 'Electron synced Pi AI Responses runtime', PI_RESPONSE_REQUIRED_MARKERS)
+    assertSameFiles(rootCompactionFiles, appCompactionFiles, 'Electron synced Pi coding-agent runtime')
+    assertSameFiles(rootTerminationFiles, appTerminationFiles, 'Electron synced Pi agent-core runtime')
+    assertSameFiles(rootRetryFiles, appRetryFiles, 'Electron synced Pi AI retry runtime')
+    assertSameFiles(rootResponseFiles, appResponseFiles, 'Electron synced Pi AI Responses runtime')
+    syncedFiles = appCompactionFiles.size + appTerminationFiles.size + appRetryFiles.size + appResponseFiles.size
   }
 
   let packagedFiles = 0
   let packagedLayout: 'asar' | 'unpacked' | undefined
   if (options.packagedResourcesDir) {
     const resourcesDir = resolve(options.packagedResourcesDir)
-    const packagedCompaction = readPackagedFiles(resourcesDir, PI_PACKAGE, PI_COMPACTION_RUNTIME_FILES)
+    const packagedCompaction = readPackagedFiles(resourcesDir, PI_CODING_AGENT_PACKAGE, PI_COMPACTION_RUNTIME_FILES)
     const packagedTermination = readPackagedFiles(resourcesDir, PI_AGENT_CORE_PACKAGE, PI_TERMINATION_RUNTIME_FILES)
-    assertRuntimeMarkers(
-      packagedCompaction.files, 'packaged Electron runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS,
-    )
-    assertRuntimeMarkers(packagedTermination.files, 'packaged Electron termination runtime', PI_TERMINATION_REQUIRED_MARKERS)
-    assertSameFiles(rootCompactionFiles, packagedCompaction.files, 'packaged Electron runtime')
-    assertSameFiles(rootTerminationFiles, packagedTermination.files, 'packaged Electron termination runtime')
-    if (packagedCompaction.layout !== packagedTermination.layout) {
+    const packagedRetry = readPackagedFiles(resourcesDir, PI_AI_PACKAGE, PI_RETRY_RUNTIME_FILES)
+    const packagedResponse = readPackagedFiles(resourcesDir, PI_AI_PACKAGE, PI_RESPONSE_RUNTIME_FILES)
+    assertRuntimeMarkers(packagedCompaction.files, 'packaged Pi coding-agent runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS)
+    assertRuntimeMarkers(packagedTermination.files, 'packaged Pi agent-core runtime', PI_TERMINATION_REQUIRED_MARKERS)
+    assertRuntimeMarkers(packagedRetry.files, 'packaged Pi AI retry runtime', PI_RETRY_REQUIRED_MARKERS)
+    assertRuntimeMarkers(packagedResponse.files, 'packaged Pi AI Responses runtime', PI_RESPONSE_REQUIRED_MARKERS)
+    assertSameFiles(rootCompactionFiles, packagedCompaction.files, 'packaged Pi coding-agent runtime')
+    assertSameFiles(rootTerminationFiles, packagedTermination.files, 'packaged Pi agent-core runtime')
+    assertSameFiles(rootRetryFiles, packagedRetry.files, 'packaged Pi AI retry runtime')
+    assertSameFiles(rootResponseFiles, packagedResponse.files, 'packaged Pi AI Responses runtime')
+    if (new Set([packagedCompaction.layout, packagedTermination.layout, packagedRetry.layout, packagedResponse.layout]).size !== 1) {
       throw new Error('[pi-runtime] packaged Pi runtime layout 不一致')
     }
-    packagedFiles = packagedCompaction.files.size + packagedTermination.files.size
+    packagedFiles = packagedCompaction.files.size + packagedTermination.files.size + packagedRetry.files.size + packagedResponse.files.size
     packagedLayout = packagedCompaction.layout
   }
 
   return {
-    sourceFiles: rootCompactionFiles.size + rootTerminationFiles.size,
+    sourceFiles: rootCompactionFiles.size + rootTerminationFiles.size + rootRetryFiles.size + rootResponseFiles.size,
     syncedFiles,
     packagedFiles,
     packagedLayout,
@@ -249,7 +276,7 @@ function main(): void {
   const packaged = result.packagedLayout
     ? `，packaged ${result.packagedFiles} files (${result.packagedLayout})`
     : ''
-  console.log(`[pi-runtime] ✓ patch/root/synced ${result.sourceFiles}/${result.syncedFiles} files 一致${packaged}`)
+  console.log(`[pi-runtime] ✓ Pi 1.0 native contracts/root/synced ${result.sourceFiles}/${result.syncedFiles} files 一致${packaged}`)
 }
 
 if (import.meta.main) {

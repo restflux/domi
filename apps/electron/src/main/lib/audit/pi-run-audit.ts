@@ -392,7 +392,30 @@ export function createPiRunAuditRecorder(options: PiRunAuditRecorderOptions): Pi
       if (event.type === 'retry_end') {
         const attempt = retryAttempts.get(event.attempt)
         retryAttempts.delete(event.attempt)
-        if (!attempt) return Promise.resolve()
+        if (attempt) {
+          return emit({
+            phase: 'retry',
+            stage: 'attempt',
+            sessionId: options.sessionId,
+            ...(options.workspaceId && { workspaceId: options.workspaceId }),
+            runStartedAt: options.runStartedAt,
+            timestamp: new Date(timestamp).toISOString(),
+            durationMs: Math.max(0, timestamp - attempt.startedAt),
+            attempt: event.attempt,
+            turn: attempt.targetTurn,
+            errorCategory: attempt.errorCategory === 'unknown'
+              ? classifyPiRetryError(event.errorMessage)
+              : attempt.errorCategory,
+            outcome: event.outcome,
+          })
+        }
+
+        // Pi 1.0 合并了旧版的 retry_attempt_start：auto_retry_start 发生在退避
+        // 前，auto_retry_end 发生在后续请求结算后。没有中间事件时，用完整原生
+        // retry 生命周期生成一条 attempt 事件，避免审计丢失重试耗时。
+        const scheduled = retrySchedules.get(event.attempt)
+        retrySchedules.delete(event.attempt)
+        if (!scheduled) return Promise.resolve()
         return emit({
           phase: 'retry',
           stage: 'attempt',
@@ -400,12 +423,13 @@ export function createPiRunAuditRecorder(options: PiRunAuditRecorderOptions): Pi
           ...(options.workspaceId && { workspaceId: options.workspaceId }),
           runStartedAt: options.runStartedAt,
           timestamp: new Date(timestamp).toISOString(),
-          durationMs: Math.max(0, timestamp - attempt.startedAt),
+          durationMs: Math.max(0, timestamp - scheduled.startedAt),
           attempt: event.attempt,
-          turn: attempt.targetTurn,
-          errorCategory: attempt.errorCategory === 'unknown'
+          turn: scheduled.targetTurn,
+          delayMs: scheduled.delayMs,
+          errorCategory: scheduled.errorCategory === 'unknown'
             ? classifyPiRetryError(event.errorMessage)
-            : attempt.errorCategory,
+            : scheduled.errorCategory,
           outcome: event.outcome,
         })
       }

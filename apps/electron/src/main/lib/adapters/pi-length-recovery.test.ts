@@ -59,7 +59,7 @@ function completedStream(message: AssistantMessage): AssistantMessageEventStream
   return stream
 }
 
-describe('Pi 0.84 native length recovery', () => {
+describe('Pi 1.0 native length recovery', () => {
   test('uses the real AgentSession recovery classifier and allows only one compact-and-retry attempt', async () => {
     const message = assistant('length', 4_096)
     const events: Array<Record<string, unknown>> = []
@@ -67,8 +67,20 @@ describe('Pi 0.84 native length recovery', () => {
     const session = Object.create(AgentSession.prototype) as {
       agent: { state: { model: typeof MODEL; messages: AssistantMessage[] } }
       settingsManager: { getCompactionSettings: () => { enabled: boolean } }
-      sessionManager: { getBranch: () => [] }
+      sessionManager: {
+        getBranch: () => []
+        buildSessionProjection: () => {
+          entries: Array<{ sourceEntry: { id: string; type: string }; messages: AssistantMessage[] }>
+          messages: AssistantMessage[]
+          thinkingLevel: string
+          model: null
+        }
+        appendContextEdit: (targetId: string, replacement: null) => string,
+        getEntry: (_id: string) => undefined,
+      }
       _overflowRecoveryAttempted: boolean
+      _entryIdsByMessage: Map<AssistantMessage, string>
+      _refreshFinalizedContext: () => void
       _emit: (event: Record<string, unknown>) => void
       _runAutoCompaction: (reason: string, willRetry: boolean) => Promise<boolean>
       _emitSessionCompactFailed: (event: unknown) => Promise<void>
@@ -76,8 +88,20 @@ describe('Pi 0.84 native length recovery', () => {
     }
     session.agent = { state: { model: MODEL, messages: [message] } }
     session.settingsManager = { getCompactionSettings: () => ({ enabled: true }) }
-    session.sessionManager = { getBranch: () => [] }
+    session.sessionManager = {
+      getBranch: () => [],
+      buildSessionProjection: () => ({
+        entries: [{ sourceEntry: { id: 'assistant-entry', type: 'message' }, messages: [message] }],
+        messages: session.agent.state.messages,
+        thinkingLevel: 'off',
+        model: null,
+      }),
+      appendContextEdit: (targetId: string, replacement: null) => `${targetId}-edit`,
+      getEntry: (_id: string) => undefined,
+    }
     session._overflowRecoveryAttempted = false
+    session._entryIdsByMessage = new Map([[message, 'assistant-entry']])
+    session._refreshFinalizedContext = () => { session.agent.state.messages = [] }
     session._emit = (event) => { events.push(event) }
     session._runAutoCompaction = async (reason, willRetry) => {
       compactions.push({ reason, willRetry })
@@ -115,7 +139,6 @@ describe('Pi 0.84 native length recovery', () => {
     const result = await runAgentLoop(
       [{ role: 'user', content: [{ type: 'text', text: 'write the file' }], timestamp: Date.now() }],
       {
-        systemPrompt: 'test',
         messages: [],
         tools: [{
           name: 'dangerous_write',

@@ -63,8 +63,6 @@ describe('Pi Agent timing adapter seam', () => {
       delayMs: 10,
       errorMessage: 'timeout at https://example.test/?key=secret',
     }))
-    now = 10_110
-    await recordPiAgentAuditEvent(recorder, piEvent({ type: 'auto_retry_attempt_start', attempt: 1 }))
     now = 10_140
     await recordPiAgentAuditEvent(recorder, piEvent({
       type: 'auto_retry_end',
@@ -80,15 +78,13 @@ describe('Pi Agent timing adapter seam', () => {
       'model_generation',
       'tool_execution',
       'retry',
-      'retry',
       'total',
     ])
     expect(events).toMatchObject([
       { phase: 'first_token', durationMs: 20 },
       { phase: 'model_generation', durationMs: 50 },
       { phase: 'tool_execution', toolCorrelationId: expect.stringMatching(/^tool:[a-f0-9]{12}$/), outcome: 'success', durationMs: 30 },
-      { phase: 'retry', stage: 'backoff', errorCategory: 'timeout', durationMs: 10 },
-      { phase: 'retry', stage: 'attempt', outcome: 'succeeded', durationMs: 30 },
+      { phase: 'retry', stage: 'attempt', errorCategory: 'timeout', durationMs: 40, delayMs: 10 },
       { phase: 'total', durationMs: 160 },
     ])
     const persisted = JSON.stringify(events)
