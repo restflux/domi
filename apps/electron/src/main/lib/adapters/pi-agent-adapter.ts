@@ -3232,10 +3232,13 @@ export class PiAgentAdapter implements AgentProviderAdapter {
     const active = this.activeSessions.get(sessionId)
     if (!active || active.abortRequested || active.interrupting) return false
     const session = await waitForActiveSession(active)
-    const retryNow = (session as AgentSession & {
-      retryNow?: () => Promise<boolean>
-    }).retryNow
-    return retryNow ? retryNow.call(session) : false
+    // retryNow() 由 patches/@earendil-works%2Fpi-coding-agent@1.0.4.patch 提供（跳过退避而非取消）；
+    // 缺失说明 SDK 升级后 patch 未同步移植，必须显式暴露而不是静默吞掉。
+    if (typeof session.retryNow !== 'function') {
+      console.error('[pi-agent-adapter] Pi AgentSession 缺少 retryNow()，立即重试不可用；请检查 pi-coding-agent patch 是否随 SDK 升级同步移植')
+      return false
+    }
+    return session.retryNow()
   }
 
   async navigateSessionTree(

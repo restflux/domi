@@ -1,0 +1,76 @@
+diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
+index 03f811e3c72562fa52d51eef2f92e6026661d63c..5e06dc5b909ea3ae348b12b5c62764ef7fecbaee 100644
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -235,6 +235,8 @@ export declare class AgentSession {
+     private _branchSummaryAbortController;
+     private _retryAbortController;
+     private _retryAttempt;
++    /** Set by retryNow(): turns the abortable backoff sleep into a skip-wait instead of a cancel. */
++    private _retryNowRequested;
+     /**
+      * Failed response that the next request repeats, set by auto-retry and overflow recovery. The
+      * retry is routed with it as `failed`, since the context no longer contains it.
+@@ -779,6 +781,10 @@ export declare class AgentSession {
+      * @returns true if the caller should continue the agent, false otherwise
+      */
+     private _prepareRetry;
++    /**
++     * Skip the current retry backoff and immediately start the already scheduled retry.
++     */
++    retryNow(): boolean;
+     /**
+      * Cancel in-progress retry.
+      */
+diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
+index ec5f44ee70d8fd75496cd2dc490563b8fa2c703e..a9ed552d8b1cf79ebe14b74e599363f5c94d10f8 100644
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -108,6 +108,8 @@ export class AgentSession {
+     // Retry state
+     _retryAbortController = undefined;
+     _retryAttempt = 0;
++    // Set by retryNow(): turns the abortable backoff sleep into a skip-wait instead of a cancel
++    _retryNowRequested = false;
+     /**
+      * Failed response that the next request repeats, set by auto-retry and overflow recovery. The
+      * retry is routed with it as `failed`, since the context no longer contains it.
+@@ -3047,19 +3049,35 @@ export class AgentSession {
+             await sleep(delayMs, this._retryAbortController.signal);
+         }
+         catch {
+-            // Aborted during sleep - emit end event so UI can clean up
+-            this._finishCancelledRetry();
+-            return false;
++            // Aborted during sleep - only a real cancel ends the retry; a retryNow()
++            // request falls through so the already-scheduled attempt starts immediately.
++            if (!this._retryNowRequested) {
++                this._finishCancelledRetry();
++                return false;
++            }
+         }
+         finally {
+             this._retryAbortController = undefined;
++            this._retryNowRequested = false;
++        }
++        return true;
++    }
++    /**
++     * Skip the current retry backoff and immediately start the already scheduled retry.
++     */
++    retryNow() {
++        if (!this._retryAbortController || this._retryAbortController.signal.aborted) {
++            return false;
+         }
++        this._retryNowRequested = true;
++        this._retryAbortController.abort();
+         return true;
+     }
+     /**
+      * Cancel in-progress retry.
+      */
+     abortRetry() {
++        this._retryNowRequested = false;
+         this._retryAbortController?.abort();
+     }
+     /** Whether auto-retry is currently in progress */

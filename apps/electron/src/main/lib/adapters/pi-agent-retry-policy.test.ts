@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { AgentSession } from '@earendil-works/pi-coding-agent'
+import type { AssistantMessage } from '@earendil-works/pi-ai/compat'
 import {
   createPiAssistantUuidTracker,
   mapSDKErrorToTypedError,
@@ -68,5 +70,86 @@ describe('Pi 1.0 native retry adapter', () => {
     gate.defer(error)
     expect(gate.settle(false)).toBe(error)
     expect(gate.peek()).toBeUndefined()
+  })
+})
+
+describe('Pi 1.0.4 patched AgentSession retryNow (pi-coding-agent patch)', () => {
+  interface RetrySettings {
+    enabled: boolean
+    maxRetries: number
+    baseDelayMs: number
+    maxAgentDelayMs: number
+  }
+
+  interface RetryStubSession {
+    settingsManager: { getRetrySettings: () => RetrySettings }
+    _retryAttempt: number
+    _retryNowRequested: boolean
+    _retryAbortController?: AbortController
+    _emit: (event: { type: string; [key: string]: unknown }) => void
+    _omitRecoveryAttempt: (message: AssistantMessage) => void
+    _prepareRetry: (message: AssistantMessage) => Promise<boolean>
+    retryNow: () => boolean
+    abortRetry: () => void
+    _finishCancelledRetry: () => void
+  }
+
+  const retrySettings: RetrySettings = {
+    enabled: true,
+    maxRetries: 8,
+    baseDelayMs: 60_000,
+    maxAgentDelayMs: 300_000,
+  }
+
+  /** 基于真实 AgentSession 原型构造最小桩，验证 patch 后的 retryNow/abortRetry 语义。 */
+  function createRetryStubSession(): { session: RetryStubSession; events: Array<{ type: string; [key: string]: unknown }> } {
+    const events: Array<{ type: string; [key: string]: unknown }> = []
+    const session = Object.create(AgentSession.prototype) as RetryStubSession
+    session.settingsManager = { getRetrySettings: () => retrySettings }
+    session._retryAttempt = 0
+    session._retryNowRequested = false
+    session._emit = (event) => { events.push(event) }
+    session._omitRecoveryAttempt = () => {}
+    return { session, events }
+  }
+
+  function failedAssistant(): AssistantMessage {
+    return {
+      role: 'assistant',
+      content: [],
+      stopReason: 'error',
+      errorMessage: 'TypeError: Failed to fetch',
+    } as unknown as AssistantMessage
+  }
+
+  test('Given retry backoff in progress When retryNow Then skip remaining wait without cancelling', async () => {
+    const { session, events } = createRetryStubSession()
+
+    const pending = session._prepareRetry(failedAssistant())
+    expect(session.retryNow()).toBe(true)
+
+    // 跳过等待：sleep 被中断但重试继续，不产生 cancelled 终态
+    await expect(pending).resolves.toBe(true)
+    expect(events.map((event) => event.type)).toEqual(['auto_retry_start'])
+    expect(session._retryAttempt).toBe(1)
+    expect(session._retryNowRequested).toBe(false)
+    expect(session._retryAbortController).toBeUndefined()
+  })
+
+  test('Given retry backoff in progress When abortRetry Then cancel remains cancel', async () => {
+    const { session, events } = createRetryStubSession()
+
+    const pending = session._prepareRetry(failedAssistant())
+    session.abortRetry()
+
+    await expect(pending).resolves.toBe(false)
+    expect(events.map((event) => event.type)).toEqual(['auto_retry_start', 'auto_retry_end'])
+    expect(events[1]).toMatchObject({ success: false, finalError: 'Retry cancelled' })
+    expect(session._retryAttempt).toBe(0)
+  })
+
+  test('Given no backoff in progress When retryNow Then report not applicable', () => {
+    const { session } = createRetryStubSession()
+    expect(session.retryNow()).toBe(false)
   })
 })
