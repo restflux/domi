@@ -13,6 +13,8 @@ import {
   DEFAULT_THEME_MODE,
   DEFAULT_THEME_STYLE,
   DEFAULT_WORK_SIDEBAR_PREFERENCES,
+  DEFAULT_WORK_STEP_DISPLAY,
+  normalizeWorkStepDisplay,
 } from '../../types'
 import type {
   AppSettings,
@@ -163,6 +165,7 @@ function defaultSettings(): AppSettings {
     themeMode: DEFAULT_THEME_MODE,
     interfaceVariant: DEFAULT_INTERFACE_VARIANT,
     workSidebarPreferences: DEFAULT_WORK_SIDEBAR_PREFERENCES,
+    workStepDisplay: DEFAULT_WORK_STEP_DISPLAY,
     onboardingCompleted: false,
     environmentCheckSkipped: false,
     notificationsEnabled: true,
@@ -207,6 +210,7 @@ function normalizeSettings(data: PersistedSettings): {
       themeStyle: legacySpecialTheme ? DEFAULT_THEME_STYLE : settings.themeStyle,
       interfaceVariant: DEFAULT_INTERFACE_VARIANT,
       workSidebarPreferences: normalizeWorkSidebarPreferences(data.workSidebarPreferences),
+      workStepDisplay: normalizeWorkStepDisplay(data.workStepDisplay),
       agentRtkEnabled: data.agentRtkEnabled === true,
       onboardingCompleted: data.onboardingCompleted ?? false,
       environmentCheckSkipped: data.environmentCheckSkipped ?? false,
@@ -277,6 +281,7 @@ export function createSettingsService(dependencies: SettingsServiceDependencies)
     const updated: AppSettings = {
       ...current,
       ...supportedUpdates,
+      workStepDisplay: normalizeWorkStepDisplay(updates.workStepDisplay ?? current.workStepDisplay),
       language: updates.language === 'en-US' ? 'en-US' : (updates.language === 'zh-CN' ? 'zh-CN' : current.language),
       agentRtkEnabled: (updates.agentRtkEnabled ?? current.agentRtkEnabled) === true,
       ...(updates.visionRelay ? { visionRelay: resolveVisionRelayUpdate(current.visionRelay, updates.visionRelay) } : {}),

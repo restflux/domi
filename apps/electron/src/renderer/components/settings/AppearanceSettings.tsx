@@ -1,7 +1,7 @@
 /**
  * AppearanceSettings - 外观设置页
  *
- * 主题模式切换（浅色/深色/跟随系统）+ 界面缩放 + Markdown 字号。
+ * 主题模式切换（浅色/深色/跟随系统）+ 界面缩放 + Markdown 字号 + 工作步骤展示。
  * 界面风格已统一为 V2，特殊风格入口已隐藏；
  * 通过 Jotai atom 管理状态，持久化到 ~/.domi/settings.json。
  */
@@ -25,6 +25,8 @@ import {
   markdownFontSizeAtom,
   updateMarkdownFontSize,
 } from '@/atoms/markdown-font-size'
+import { workStepDisplayAtom, updateWorkStepDisplay } from '@/atoms/work-step-display'
+import { normalizeWorkStepDisplay } from '../../../types'
 import type { ThemeMode, MarkdownFontSize } from '../../../types'
 
 /** 根据语言生成主题选项 */
@@ -53,6 +55,7 @@ const ZOOM_HINT_KEY: 'zoomHintMac' | 'zoomHintWindows' = isMac ? 'zoomHintMac' :
 
 export function AppearanceSettings(): React.ReactElement {
   const { t } = useTranslation('settings')
+  const [workStepDisplay, setWorkStepDisplay] = useAtom(workStepDisplayAtom)
   const [themeMode, setThemeMode] = useAtom(themeModeAtom)
   const themeOptions = getThemeOptions(t)
   const markdownFontSizeOptions = getMarkdownFontSizeOptions(t)
@@ -100,7 +103,20 @@ export function AppearanceSettings(): React.ReactElement {
             onValueChange={handleMarkdownFontSizeChange}
             options={markdownFontSizeOptions}
           />
-
+          <SettingsSegmentedControl
+            label={t('workStepDisplay')}
+            description={t('workStepDisplayDescription')}
+            value={workStepDisplay}
+            onValueChange={(value) => {
+              const display = normalizeWorkStepDisplay(value)
+              void updateWorkStepDisplay(display, setWorkStepDisplay)
+            }}
+            options={[
+              { value: 'compact', label: t('workStepCompact') },
+              { value: 'standard', label: t('workStepStandard') },
+              { value: 'detailed', label: t('workStepDetailed') },
+            ]}
+          />
         </SettingsCard>
       </SettingsSection>
 

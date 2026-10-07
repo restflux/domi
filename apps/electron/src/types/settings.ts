@@ -222,6 +222,15 @@ export type MarkdownFontSize = 'small' | 'medium' | 'large'
 /** 默认 Markdown 字号档位 */
 export const DEFAULT_MARKDOWN_FONT_SIZE: MarkdownFontSize = 'medium'
 
+/** Work 消息区的默认展示密度；不影响执行与会话记录。 */
+export type WorkStepDisplay = 'compact' | 'standard' | 'detailed'
+
+export const DEFAULT_WORK_STEP_DISPLAY: WorkStepDisplay = 'standard'
+
+export function normalizeWorkStepDisplay(value: unknown): WorkStepDisplay {
+  return value === 'compact' || value === 'detailed' ? value : DEFAULT_WORK_STEP_DISPLAY
+}
+
 /** Agent 灵动岛偏好。外接/无刘海屏默认不绘制顶部覆盖层。 */
 export interface AgentIslandSettings {
   /** 是否启用 Agent / 近期 Todo 日程的灵动岛提醒，默认 true。 */
@@ -365,6 +374,8 @@ export interface AppSettings {
   richTextRenderingEnabled?: boolean
   /** Markdown 预览字号档位（默认 'medium'，对应 15px） */
   markdownFontSize?: MarkdownFontSize
+  /** 工作步骤展示密度，默认 standard。 */
+  workStepDisplay?: WorkStepDisplay
   /** @deprecated 旧版 Scratch Tab 激活状态；启动迁移到 Right Workspace 后清除。 */
   scratchPadActive?: boolean
   /** 语音输入设置（Access Token 以加密态存储，由专用服务解密后返回渲染进程） */

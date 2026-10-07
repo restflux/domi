@@ -64,6 +64,7 @@ import {
   markdownFontSizeAtom,
   initializeMarkdownFontSize,
 } from './atoms/markdown-font-size'
+import { workStepDisplayAtom, initializeWorkStepDisplay } from './atoms/work-step-display'
 import { useGlobalAgentListeners } from './hooks/useGlobalAgentListeners'
 import { useGlobalBrowserListeners } from './hooks/useGlobalBrowserListeners'
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners.ts'
@@ -532,6 +533,21 @@ function UiPreferencesInitializer(): null {
 
 /**
  * Markdown 字号初始化组件
+ *
+ * 从主进程加载字号档位，写入 :root CSS 变量驱动 Markdown 预览。
+ */
+function WorkStepDisplayInitializer(): null {
+  const setDisplay = useSetAtom(workStepDisplayAtom)
+  React.useEffect(() => {
+    let active = true
+    initializeWorkStepDisplay((display) => { if (active) setDisplay(display) })
+    return () => { active = false }
+  }, [setDisplay])
+  return null
+}
+
+/**
+ * Markdown 字号初始化
  *
  * 从主进程加载字号档位，写入 :root CSS 变量驱动 Markdown 预览。
  */
@@ -1093,6 +1109,7 @@ if (isQuickTaskWindow) {
       <DockBadgeInitializer />
       <UiPreferencesInitializer />
       <MarkdownFontSizeInitializer />
+      <WorkStepDisplayInitializer />
       <ChatListenersInitializer />
       <AgentListenersInitializer />
       <BrowserListenersInitializer />

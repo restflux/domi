@@ -406,11 +406,7 @@ interface ThinkingBlockProps {
 }
 
 function ThinkingBlock({ block, dimmed = false, isStreaming = false }: ThinkingBlockProps): React.ReactElement {
-  const [isExpanded, setIsExpanded] = React.useState(!!isStreaming)
-  const manuallyToggledRef = React.useRef(false)
-  React.useEffect(() => {
-    if (isStreaming && !manuallyToggledRef.current) setIsExpanded(true)
-  }, [isStreaming])
+  const [isExpanded, setIsExpanded] = React.useState(false)
   const { displayedContent } = useSmoothStream({
     content: block.thinking,
     isStreaming,
@@ -427,7 +423,6 @@ function ThinkingBlock({ block, dimmed = false, isStreaming = false }: ThinkingB
         isStreaming={isStreaming}
         isOpen={isExpanded}
         onToggle={() => {
-          manuallyToggledRef.current = true
           toggleExpand()
         }}
       />

@@ -1,82 +1,110 @@
 import type { SDKContentBlock, SDKToolUseBlock } from '@domi/shared'
+import type { WorkStepDisplay } from '../../../types'
+import type { ToolPresentationIndex } from './tool-presentation-index'
+import { getToolPhrase } from './tool-phrase'
 
-/** 流式过程详情中的渲染单元：探索工具按相邻阶段聚合，叙事块与特殊工具保持原位。 */
+/** 相邻工具按展示密度聚合；正文、思考、失败与交互始终阻断分组。 */
 export interface ProcessDetailUnit {
-  kind: 'single' | 'exploration'
+  kind: 'single' | 'exploration' | 'steps'
   blocks: SDKContentBlock[]
   startIndex: number
 }
 
-const EXPLORATION_TOOL_NAMES = new Set([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'WebFetch',
-  'WebSearch',
-])
+const EXPLORATION_TOOL_NAMES = new Set(['Read', 'Grep', 'Glob', 'LS', 'WebFetch', 'WebSearch'])
+const COMPACT_TOOL_NAMES = new Set([...EXPLORATION_TOOL_NAMES, 'Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
-function str(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined
+interface ProcessDetailOptions {
+  display?: WorkStepDisplay
+  toolPresentationIndex?: ToolPresentationIndex
 }
 
-function isReadOnlyShellSegment(segment: string): boolean {
-  const command = segment.trim().toLowerCase()
-  if (!command) return true
-
-  if (/^git\s+(status|diff|show|log|grep|ls-files|rev-parse)\b/.test(command)) return true
-  if (/^(ls|rg|grep|cat|head|tail|pwd|wc)\b/.test(command)) return true
-  if (/^find\b/.test(command)) return !/\s-(delete|exec|execdir|ok)\b/.test(command)
-  if (/^sed\s+-n\b/.test(command)) return !/\s-i(?:\s|$)/.test(command)
-  return false
-}
-
-/**
- * 只把能保守判定为只读的 Bash 调用归入探索阶段。
- * 重定向、命令替换或任一修改/测试/构建子命令都会让整条命令保持独立展示。
- */
-export function isExplorationCommand(input: Record<string, unknown>): boolean {
-  const command = str(input.command)?.trim()
-  if (!command || /[<>`]|\$\(/.test(command)) return false
-  return command
-    .split(/\s*(?:&&|\|\||;|\||\r?\n)\s*/)
-    .every(isReadOnlyShellSegment)
-}
-
-function isExplorationTool(block: SDKToolUseBlock): boolean {
-  if (EXPLORATION_TOOL_NAMES.has(block.name)) return true
-  return block.name === 'Bash'
-    && isExplorationCommand((block.input ?? {}) as Record<string, unknown>)
-}
-
-/**
- * 按 thinking / 中间正文 / 特殊工具切分过程详情。
- * 相邻的读取、搜索、网页访问和明显只读命令合并为一个探索阶段，叙事顺序保持不变。
- */
-export function buildProcessDetailUnits(blocks: SDKContentBlock[]): ProcessDetailUnit[] {
+export function buildProcessDetailUnits(
+  blocks: SDKContentBlock[],
+  { display = 'standard', toolPresentationIndex }: ProcessDetailOptions = {},
+): ProcessDetailUnit[] {
   const units: ProcessDetailUnit[] = []
-  let explorationBlocks: SDKToolUseBlock[] = []
-  let explorationStartIndex = 0
+  let grouped: SDKToolUseBlock[] = []
+  let startIndex = 0
+  const names = display === 'compact' ? COMPACT_TOOL_NAMES : EXPLORATION_TOOL_NAMES
 
-  const flushExploration = (): void => {
-    if (explorationBlocks.length === 0) return
-    units.push({ kind: 'exploration', blocks: explorationBlocks, startIndex: explorationStartIndex })
-    explorationBlocks = []
+  const flush = (): void => {
+    if (grouped.length === 0) return
+    units.push({ kind: display === 'compact' ? 'steps' : 'exploration', blocks: grouped, startIndex })
+    grouped = []
   }
 
-  for (let index = 0; index < blocks.length; index += 1) {
-    const block = blocks[index]
-    if (!block) continue
-    if (block.type === 'tool_use' && isExplorationTool(block as SDKToolUseBlock)) {
-      if (explorationBlocks.length === 0) explorationStartIndex = index
-      explorationBlocks.push(block as SDKToolUseBlock)
-      continue
+  blocks.forEach((block, index) => {
+    if (block.type === 'tool_use') {
+      const tool = block as SDKToolUseBlock
+      const result = toolPresentationIndex?.get(tool.id)
+      // 失败和图片结果不可藏入摘要；未知产品工具保守地保持独立。
+      if (names.has(tool.name) && !result?.isError && !result?.images.length) {
+        if (grouped.length === 0) startIndex = index
+        grouped.push(tool)
+        return
+      }
     }
-
-    flushExploration()
+    flush()
     units.push({ kind: 'single', blocks: [block], startIndex: index })
-  }
-
-  flushExploration()
+  })
+  flush()
   return units
+}
+
+/** 同一文件分段读取仅计一次；数量描述调用范围，不把待完成操作称为已完成。 */
+export function getToolRunSummary(blocks: SDKToolUseBlock[]): string {
+  const readFiles = new Set<string>()
+  const changedFiles = new Set<string>()
+  let searches = 0
+  let directories = 0
+  let pages = 0
+  let commands = 0
+  let other = 0
+  for (const block of blocks) {
+    const path = block.input.file_path ?? block.input.filePath ?? block.input.path
+    const fileKey = typeof path === 'string' && path ? path : block.id
+    switch (block.name) {
+      case 'Read':
+        readFiles.add(fileKey)
+        break
+      case 'Edit':
+      case 'Write':
+      case 'MultiEdit':
+      case 'NotebookEdit':
+        changedFiles.add(fileKey)
+        break
+      case 'Grep':
+      case 'Glob':
+      case 'WebSearch':
+        searches += 1
+        break
+      case 'LS': directories += 1; break
+      case 'WebFetch': pages += 1; break
+      case 'Bash': commands += 1; break
+      default: other += 1
+    }
+  }
+  return [
+    readFiles.size > 0 ? `读取 ${readFiles.size} 个文件` : '',
+    searches > 0 ? `搜索 ${searches} 次` : '',
+    directories > 0 ? `查看 ${directories} 个目录` : '',
+    pages > 0 ? `访问 ${pages} 个网页` : '',
+    changedFiles.size > 0 ? `修改 ${changedFiles.size} 个文件` : '',
+    commands > 0 ? `执行 ${commands} 条命令` : '',
+    other > 0 ? `${other} 项操作` : '',
+  ].filter(Boolean).join(' · ')
+}
+
+export function getToolRunActivity(
+  blocks: SDKToolUseBlock[],
+  index: ToolPresentationIndex,
+  isStreaming: boolean,
+  isActivityTail: boolean,
+): string | undefined {
+  if (!isStreaming) return undefined
+  const pending = blocks.findLast((block) => !index.get(block.id)?.completed && !index.get(block.id)?.isError)
+  if (pending) return getToolPhrase(pending.name, pending.input).loadingLabel
+  return isActivityTail && !blocks.some((block) => index.get(block.id)?.isError)
+    ? '正在整理结果'
+    : undefined
 }

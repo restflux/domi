@@ -70,6 +70,7 @@ import { formatMessageTime } from '@/components/chat/ChatMessageItem'
 import { resolveModelDisplayName } from '@/lib/model-logo'
 import { channelsAtom, modelSelectorOpenAtom } from '@/atoms/chat-atoms'
 import { agentSessionPendingFilesAtom, agentSessionsAtom, agentWorkspacesAtom } from '@/atoms/agent-atoms'
+import { workStepDisplayAtom } from '@/atoms/work-step-display'
 import { activeSessionIdAtom } from '@/atoms/tab-atoms'
 import { automationsAtom, automationFormAtom, automationToDraft } from '@/atoms/automation-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
@@ -433,6 +434,7 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
     () => toolPresentationIndex ?? buildToolPresentationIndex(allMessages),
     [allMessages, toolPresentationIndex],
   )
+  const workStepDisplay = useAtomValue(workStepDisplayAtom)
   const [expandedImageGroups, setExpandedImageGroups] = React.useState<Set<string>>(() => new Set())
   const handleProcessGroupExpandedChange = React.useCallback((groupId: string, expanded: boolean) => {
     setExpandedImageGroups((current) => {
@@ -627,7 +629,10 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
               && imageContainingToolUseIds.has((block as SDKToolUseBlock).id)
             ))
             // 流式分段降噪：thinking / 中间正文保持原位，相邻读取和搜索收拢为探索阶段。
-            const detailUnits = buildProcessDetailUnits(groupBlocks)
+            const detailUnits = buildProcessDetailUnits(groupBlocks, {
+              display: workStepDisplay,
+              toolPresentationIndex: effectiveToolPresentationIndex,
+            })
             const indexByBlock = new Map(item.items.map((groupItem) => [groupItem.block, groupItem.index]))
             return (
               <ProcessBlockGroup
@@ -644,12 +649,13 @@ export function AssistantTurnRenderer({ turn, allMessages, basePath, basePaths, 
                 processGroupId={hasGeneratedImages ? processGroupId : undefined}
                 onExpandedChange={hasGeneratedImages ? handleProcessGroupExpandedChange : undefined}
               >
-                {detailUnits.map((unit) => unit.kind === 'exploration'
+                {detailUnits.map((unit) => unit.kind !== 'single'
                   ? (
                       <ToolRunGroup
                         key={`exploration-stage-${unit.startIndex}`}
                         blocks={unit.blocks as SDKToolUseBlock[]}
                         toolPresentationIndex={effectiveToolPresentationIndex}
+                        display={workStepDisplay}
                         isStreaming={isStreaming}
                         isActivityTail={unit.blocks.at(-1) === activityTailBlock}
                         animate={!!isStreaming}

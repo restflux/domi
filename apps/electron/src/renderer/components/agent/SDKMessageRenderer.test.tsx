@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Provider, createStore } from 'jotai'
 import type { SDKAssistantMessage, SDKMessage, SDKSystemMessage, SDKUserMessage, SessionTargetView } from '@domi/shared'
+import { workStepDisplayAtom } from '@/atoms/work-step-display'
 import { sessionTargetStateAtomFamily } from '@/atoms/session-target-atoms.ts'
 import type { AssistantTurn, MessageGroup } from '@domi/session-core'
 import { AssistantTurnRenderer, MessageGroupRenderer, SDKMessageRenderer, groupIntoTurns } from './SDKMessageRenderer.tsx'
@@ -356,7 +357,7 @@ describe('Work 消息 V2 视图', () => {
     expect(v2).toContain('工作中')
     expect(v2).not.toContain('读取 1 个文件')
     expect(v2).not.toContain('条只读命令')
-    expect(v2).toContain('先检查目标文件')
+    expect(v2).not.toContain('先检查目标文件')
     expect(v2).not.toContain('stroke-dasharray')
   })
 
@@ -586,7 +587,8 @@ describe('独立工具执行状态流光', () => {
     )
 
     expect(html).toContain('COLLABORATION / continue_delegation completed-before-thinking')
-    expect(html).toContain('正在基于协作结果规划下一步')
+    expect(html).not.toContain('正在基于协作结果规划下一步')
+    expect(html).toContain('思考中')
     // 新 thinking 已成为可见活动尾部，旧工具不再持有流光；仅过程概览保留流光。
     expect(html.match(/data-process-summary="shimmer"/g)?.length ?? 0).toBe(1)
   })
@@ -776,18 +778,18 @@ describe('Segmented process presentation', () => {
     )
 
     expect(html).toContain('data-process-compact="false"')
-    // 过程按思考、探索、正文等阶段显示，但不再统计文件/搜索/命令次数。
+    // 外层按原顺序呈现；内部探索显示真实数量，修改与命令保持独立。
     expect(html.match(/data-process-summary="shimmer"/g)?.length ?? 0).toBe(2)
     expect(html.match(/data-zcode-tool-summary="true"/g)?.length ?? 0).toBe(3)
     expect(html).toContain('探索')
     expect(html).toContain('接下来检查恢复逻辑。')
     expect(html).toContain('data-zcode-reasoning-trigger="true"')
-    expect(html).not.toContain('个文件')
-    expect(html).not.toContain('次搜索')
+    expect(html).toContain('个文件')
+    expect(html).toContain('搜索 1 次')
     expect(html).not.toContain('条只读命令')
     expect(html).not.toContain('项探索进行中')
     expect(html).not.toContain('animate-spin')
-    expect(html).not.toContain('正在执行 git status')
+    expect(html).toContain('正在执行 git status')
     expect(html).not.toContain('并行 4 项')
     expect(html.indexOf('data-zcode-reasoning-trigger="true"')).toBeLessThan(html.indexOf('data-zcode-tool-summary="true"'))
     expect(html.indexOf('data-zcode-tool-summary="true"')).toBeLessThan(html.indexOf('接下来检查恢复逻辑。'))
@@ -820,7 +822,8 @@ describe('Segmented process presentation', () => {
 
     expect(html).toContain('data-zcode-tool-summary="true"')
     expect(html).toContain('探索进行中')
-    expect(html).toContain('同时规划另一个执行方向')
+    expect(html).not.toContain('同时规划另一个执行方向')
+    expect(html).toContain('思考中')
     // V2 的探索状态独立于整轮状态，仍可看到运行提示。
     expect(html).toContain('探索进行中')
   })
@@ -1335,5 +1338,99 @@ describe('Direct workflow feedback persistence', () => {
 
     expect(html).toContain('修复审批后内容消失')
     expect(html).toContain('实施反馈应随持久化工具调用保留，而不是跟 pending 弹窗一起消失。')
+  })
+})
+
+describe('工作步骤三档默认展示', () => {
+  const assistant: SDKAssistantMessage = {
+    type: 'assistant', uuid: 'density-turn', parent_tool_use_id: null,
+    message: { model: 'test-model', content: [
+      { type: 'thinking', thinking: '内部分析不应自动铺开' },
+      { type: 'tool_use', id: 'density-read', name: 'Read', input: { path: '/w/entry.ts' } },
+      { type: 'tool_use', id: 'density-grep', name: 'Grep', input: { pattern: 'target' } },
+      { type: 'tool_use', id: 'density-edit', name: 'Edit', input: { path: '/w/entry.ts' } },
+      { type: 'tool_use', id: 'density-bash', name: 'Bash', input: { command: 'bun test entry.test.ts' } },
+      { type: 'text', text: '阶段说明始终可见。' },
+      { type: 'tool_use', id: 'density-failed', name: 'Read', input: { path: '/w/failed.ts' } },
+      { type: 'tool_use', id: 'density-ask', name: 'AskUserQuestion', input: { questions: [{ question: '是否继续？' }] } },
+      { type: 'text', text: '交付结果始终可见。' },
+    ] },
+  }
+  const results: SDKUserMessage = {
+    type: 'user', parent_tool_use_id: null,
+    message: { content: ['density-read', 'density-grep', 'density-edit', 'density-bash', 'density-failed'].map((id) => ({
+      type: 'tool_result', tool_use_id: id, content: id === 'density-failed' ? '文件读取失败' : 'LONG_RAW_OUTPUT', is_error: id === 'density-failed',
+    })) },
+  }
+  const turn: AssistantTurn = { type: 'assistant-turn', assistantMessages: [assistant], turnMessages: [assistant, results] }
+
+  function render(display: 'compact' | 'standard' | 'detailed', isStreaming = true, stoppedByUser = false): string {
+    const store = createStore()
+    store.set(workStepDisplayAtom, display)
+    return renderToStaticMarkup(<Provider store={store}><AssistantTurnRenderer turn={turn} allMessages={[assistant, results]} isStreaming={isStreaming} stoppedByUser={stoppedByUser} /></Provider>)
+  }
+
+  test('Given 简洁 When 渲染 Then 常规工具合成摘要但阶段说明、失败、提问和交付仍可见', () => {
+    const html = render('compact')
+    expect(html).toContain('读取 1 个文件 · 搜索 1 次 · 修改 1 个文件 · 执行 1 条命令')
+    expect(html).not.toContain('bun test entry.test.ts')
+    expect(html).not.toContain('/target/')
+    expect(html).not.toContain('LONG_RAW_OUTPUT')
+  })
+
+  test('Given 标准 When 渲染 Then 探索折叠但修改与命令独立可见', () => {
+    const html = render('standard')
+    expect(html).toContain('读取 1 个文件 · 搜索 1 次')
+    expect(html).toContain('编辑')
+    expect(html).toContain('bun test entry.test.ts')
+    expect(html).not.toContain('/target/')
+    expect(html).not.toContain('LONG_RAW_OUTPUT')
+  })
+
+  test('Given 详细 When 渲染 Then 展开每条探索但思考与长工具输出仍折叠', () => {
+    const html = render('detailed')
+    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('/target/')
+    expect(html).toContain('bun test entry.test.ts')
+    expect(html).not.toContain('LONG_RAW_OUTPUT')
+  })
+
+  test('Given 任意内部密度 When 运行中展示 Then 保留叙事、失败与决策且不自动展开思考', () => {
+    for (const display of ['compact', 'standard', 'detailed'] as const) {
+      const html = render(display)
+      expect(html).toContain('阶段说明始终可见。')
+      expect(html).toContain('交付结果始终可见。')
+      expect(html).toContain('工具执行失败')
+      expect(html).toContain('failed.ts')
+      expect(html).toContain('是否继续？')
+      expect(html).not.toContain('内部分析不应自动铺开')
+      expect(html.indexOf('阶段说明始终可见。')).toBeLessThan(html.indexOf('failed.ts'))
+      expect(html.indexOf('failed.ts')).toBeLessThan(html.indexOf('交付结果始终可见。'))
+    }
+  })
+
+  test('Given 任意内部密度包括详细 When 正常完成 Then 外层默认收起且交付正文保留在外', () => {
+    for (const display of ['compact', 'standard', 'detailed'] as const) {
+      const html = render(display, false)
+      expect(html).toContain('data-process-compact="true"')
+      expect(html).toContain('data-work-process-trigger="true"')
+      expect(html).toContain('data-work-process-trigger-chevron="true"')
+      expect(html).toContain('aria-expanded="false"')
+      expect(html).not.toContain('data-work-process-timeline="true"')
+      expect(html).not.toContain('/target/')
+      expect(html).toContain('交付结果始终可见。')
+    }
+  })
+
+  test('Given 任意内部密度 When 用户中断且保留外层展开 Then 三档仅决定内部工具密度', () => {
+    for (const display of ['compact', 'standard', 'detailed'] as const) {
+      const html = render(display, false, true)
+      expect(html).toContain('data-process-compact="false"')
+      expect(html).toContain('data-work-process-timeline="true"')
+      expect(html).toContain('工具执行失败')
+      expect(html).toContain('交付结果始终可见。')
+      if (display === 'detailed') expect(html).toContain('/target/')
+      else expect(html).not.toContain('/target/')
+    }
   })
 })

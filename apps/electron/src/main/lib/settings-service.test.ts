@@ -340,3 +340,28 @@ describe('界面风格统一 V2 与特殊风格隐藏', () => {
     expect(settings.themeStyle).toBe('default')
   })
 })
+
+describe('工作步骤展示偏好', () => {
+  test('Given 新设置或旧配置缺少密度 When 读取 Then 默认标准且不额外写盘', () => {
+    const fresh = createSettingsService({ getSettingsPath: () => join(root, 'fresh.json'), writeJsonFileAtomic: () => { throw new Error('不应写盘') } })
+    expect(fresh.getSettings().workStepDisplay).toBe('standard')
+    for (const value of [undefined, 'unknown', 'expanded', false, null]) {
+      const raw = JSON.stringify({ themeMode: 'dark', workStepDisplay: value })
+      writeFileSync(settingsPath, raw)
+      expect(getSettings().workStepDisplay).toBe('standard')
+      expect(readFileSync(settingsPath, 'utf-8')).toBe(raw)
+    }
+  })
+
+  test('Given 三档偏好 When 保存重读及更新无关设置 Then 保留密度且不改变主题', () => {
+    atomicWrite = (path, data) => writeFileSync(path, JSON.stringify(data))
+    writeFileSync(settingsPath, JSON.stringify({ themeMode: 'dark' }))
+    for (const workStepDisplay of ['compact', 'standard', 'detailed'] as const) {
+      expect(updateSettings({ workStepDisplay }).workStepDisplay).toBe(workStepDisplay)
+      updateSettings({ notificationsEnabled: false })
+      expect(getSettings().workStepDisplay).toBe(workStepDisplay)
+      expect(getSettings().themeMode).toBe('dark')
+    }
+    expect(updateSettings({ workStepDisplay: 'invalid' } as unknown as Parameters<typeof updateSettings>[0]).workStepDisplay).toBe('standard')
+  })
+})
