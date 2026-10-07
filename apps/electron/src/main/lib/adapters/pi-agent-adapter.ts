@@ -142,6 +142,7 @@ import {
   type ExtensionTrustStore,
 } from './pi-extension-trust.ts'
 import { installPiFinalToolGuard } from './pi-final-tool-guard.ts'
+import { preparePiMcpToolDiscovery } from './pi-mcp-tool-discovery.ts'
 import {
   createPiRunAuditRecorder,
   type PiRunAuditTimingCallback,
@@ -310,6 +311,8 @@ export interface PiAgentQueryOptions extends AgentQueryInput {
   customTools?: ToolDefinition[]
   customToolSources?: Record<string, NonNullable<CanUseToolOptions['toolSource']>>
   customToolAnnotations?: Record<string, NonNullable<CanUseToolOptions['toolAnnotations']>>
+  /** 内部验证 opt-in；默认保持用户 MCP 全量曝光，不由模型或外部配置开启。 */
+  mcpToolDiscovery?: boolean
   onSessionId?: (sdkSessionId: string, sessionFile?: string) => void
   /** Pi final assistant UI UUID → 持久树状 session entry ID。 */
   onPiEntryBindings?: (bindings: Record<string, string>) => void
@@ -2307,7 +2310,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
           .filter((tool) => isParallelReadOnlyPiToolName(tool.name))
           .map((tool) => [tool.name, tool] as const),
       )
-      const customTools = filterToolsForModelPresentation([
+      const presentedTools = filterToolsForModelPresentation([
         buildCurrentSessionCompactionTool(
           sdk,
           () => { compactContextRequested = true },
@@ -2331,6 +2334,15 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         ...productTools,
         ...(input.customTools ?? []),
       ], input.modelPresentationPreset ?? 'standard')
+      const mcpToolDiscovery = preparePiMcpToolDiscovery({
+        createToolSearchExtension: sdk.createToolSearchExtension,
+        getCurrentTools: piAiTranscript.getCurrentTools,
+      }, {
+        enabled: input.mcpToolDiscovery,
+        tools: presentedTools,
+        toolSources: input.customToolSources,
+      })
+      const customTools = mcpToolDiscovery.tools
 
       const settingsManager = sdk.SettingsManager.inMemory({
         steeringMode: input.steeringMode ?? 'one-at-a-time',
@@ -2388,6 +2400,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
           : []),
       ]
       const extensionFactories = [
+        ...mcpToolDiscovery.extensionFactories,
         ...(model.reasoning ? modelExtensionFactories : []),
         ...(contextCompactorSettings.enabled && contextCompactorMode
           ? [{
@@ -2465,6 +2478,13 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         noTools: 'builtin',
         customTools,
       })
+      try {
+        mcpToolDiscovery.initialize(session)
+      } catch (error) {
+        // 归属冲突发生在 active.session 登记前，仅释放本次创建的 Session。
+        session.dispose()
+        throw error
+      }
       if (contextCompactorSettings.enabled && contextCompactorMode && !contextCompactorHandlerConflict) {
         session.agent.transformContext = wrapPiContextCompactorTransform({
           previousTransform: session.agent.transformContext,
@@ -2577,9 +2597,9 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         cwd,
         auditRecorder,
         authorize: ({ toolName, input: toolInput, options }) => input.authorizeToolCall(toolName, toolInput, options),
-        resolveToolSource: (toolName) => resourceToolNames.has(toolName)
-          ? 'resource'
-          : input.customToolSources?.[toolName] ?? 'host',
+        resolveToolSource: (toolName) => mcpToolDiscovery.isOwnedTool(session, toolName)
+          ? 'host'
+          : resourceToolNames.has(toolName) ? 'resource' : input.customToolSources?.[toolName] ?? 'host',
         resolveToolAnnotations: (toolName) => resourceToolNames.has(toolName)
           ? undefined
           : input.customToolAnnotations?.[toolName],
