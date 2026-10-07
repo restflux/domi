@@ -1,10 +1,27 @@
 import { describe, expect, test } from 'bun:test'
 import {
   createPiAssistantUuidTracker,
+  mapSDKErrorToTypedError,
 } from './pi-agent-adapter'
 import { createPiRetryTerminalGate, mapPiNativeRetryEvent } from './pi-retry-control'
 
 describe('Pi 1.0 native retry adapter', () => {
+  test.each([
+    'stream error: stream disconnected before completion: stream closed before response.completed',
+    'stream disconnected before completion',
+    'stream closed before response.completed',
+  ])('Given 断流错误 "%s" Then 提供网络异常与手动重试入口', (message) => {
+    const error = mapSDKErrorToTypedError('unknown_error', message)
+    expect(error).toMatchObject({ code: 'network_error', title: '网络异常', canRetry: true, message })
+    expect(error.actions).toContainEqual({ key: 'r', label: '重试', action: 'retry' })
+  })
+
+  test('Given 断流文本同时带账单错误 Then 不因网络措辞开启重试', () => {
+    const error = mapSDKErrorToTypedError('unknown_error', 'insufficient_quota: stream closed before response.completed')
+    expect(error).toMatchObject({ code: 'billing_error', canRetry: false })
+    expect(error.actions?.some(action => action.action === 'retry')).toBe(false)
+  })
+
   test('keeps a partial assistant UUID through native recovery and releases it after the final response', () => {
     let nextUuid = 0
     const tracker = createPiAssistantUuidTracker(() => `assistant-${++nextUuid}`)

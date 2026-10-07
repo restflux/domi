@@ -16,6 +16,9 @@ describe('isTransientNetworkError', () => {
     'TypeError: Failed to fetch',
     'network error',
     'stream closed prematurely',
+    'stream error: stream disconnected before completion: stream closed before response.completed',
+    'stream disconnected before completion',
+    'stream closed before response.completed',
     'premature close',
     'OpenAI Responses stream ended before a terminal response event',
     'Error Code undefined: Upstream Responses stream ended before a terminal event',
@@ -51,6 +54,8 @@ describe('isTransientNetworkError', () => {
     expect(isTransientNetworkError('invalid api key')).toBe(false)
     expect(isTransientNetworkError('400 Bad Request: model not found')).toBe(false)
     expect(isTransientNetworkError('stream ended before an unrelated local marker')).toBe(false)
+    expect(isTransientNetworkError('stream closed before responseXcompleted')).toBe(false)
+    expect(isTransientNetworkError('stream disconnected before a local marker')).toBe(false)
     expect(isTransientNetworkError()).toBe(false)
   })
 })

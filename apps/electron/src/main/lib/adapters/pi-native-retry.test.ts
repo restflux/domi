@@ -35,6 +35,9 @@ describe('Pi native retry classifier', () => {
     'peer closed connection without sending complete message body (incomplete chunked read)',
     'Connection error. Failed to fetch',
     'TypeError: Failed to fetch',
+    'stream error: stream disconnected before completion: stream closed before response.completed',
+    'stream disconnected before completion',
+    'stream closed before response.completed',
   ])('classifies transient transport interruption "%s" as retryable', (errorMessage) => {
     expect(isRetryableAssistantError(failedAssistant(errorMessage))).toBe(true)
   })
@@ -52,10 +55,12 @@ describe('Pi native retry classifier', () => {
     expect(result.stopReason).toBe('stop')
   })
 
-  test('does not broadly retry unrelated stream-ended errors', () => {
-    expect(isRetryableAssistantError(
-      failedAssistant('stream ended before the model emitted a local marker'),
-    )).toBe(false)
+  test.each([
+    'stream ended before the model emitted a local marker',
+    'stream disconnected before a local marker',
+    'stream closed before responseXcompleted',
+  ])('不把无关或近似流错误 "%s" 判定为可重试', (errorMessage) => {
+    expect(isRetryableAssistantError(failedAssistant(errorMessage))).toBe(false)
   })
 
   test('keeps non-transient quota failures non-retryable', () => {

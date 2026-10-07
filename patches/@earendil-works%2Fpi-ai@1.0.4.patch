@@ -1,11 +1,14 @@
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
-@@ -68,6 +68,16 @@
+@@ -68,6 +68,19 @@
      // (#4433); Bedrock/Smithy can throw an HTTP/2 no-response error (#3594).
      "ended without",
      "stream ended before message_stop",
 +    // Some OpenAI-compatible gateways omit "response" in this terminal-event error.
 +    "stream ended before (?:a )?terminal(?: response)? event",
++    // 网关在 Responses 终态前断流；与 Domi 的瞬时网络错误识别保持一致。
++    "stream disconnected before completion\\b",
++    "stream closed before response\\.completed\\b",
 +    // A completed JSON value followed by non-whitespace indicates a corrupted or
 +    // concatenated upstream response body, which is transient at the transport layer.
 +    "unexpected non-whitespace character after JSON",
