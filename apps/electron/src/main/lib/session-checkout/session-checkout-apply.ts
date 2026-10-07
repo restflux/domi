@@ -3,11 +3,11 @@ import { assertGitOperationActive, canCleanGitOperation, interruptGitOperation, 
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, open, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, open, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import type { ApplyBaseStrategy } from '@domi/shared'
-import { isLocalFileTemporaryPath, LOCAL_FILE_TEMPORARY_EXCLUDES } from '../worktree-local-files/temporary-path.ts'
+import { isLocalFileTemporaryPath } from '../worktree-local-files/temporary-path.ts'
 import { readSnapshot, safeLocation } from '../worktree-local-files/filesystem.ts'
 
 export interface ApplyPlanInput {
@@ -610,6 +610,30 @@ async function findCommitWithTree(
   return null
 }
 
+/** 只添加文件或 gitlink；旧 cached 路径不能递归展开目录或穿过已替换的父级。 */
+async function isSnapshotLeafPath(root: string, path: string, parents: Map<string, boolean>): Promise<boolean> {
+  const isDirectory = async (relativePath: string): Promise<boolean> => {
+    try { return (await lstat(join(root, relativePath))).isDirectory() }
+    catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return false
+      throw error
+    }
+  }
+  for (let slash = path.indexOf('/'); slash > 0; slash = path.indexOf('/', slash + 1)) {
+    const parent = path.slice(0, slash)
+    if (!parents.has(parent)) parents.set(parent, await isDirectory(parent))
+    if (!parents.get(parent)) return false
+  }
+  try {
+    const fullPath = join(root, path)
+    const stat = await lstat(fullPath)
+    return !stat.isDirectory() || existsSync(join(fullPath, '.git'))
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return false
+    throw error
+  }
+}
+
 /** 配置只参与 CAS 指纹，不进入 Git 对象；变更后仍能阻止旧验收或破坏性清理。 */
 async function fingerprintRuntimeFiles(root: string, paths: readonly string[]): Promise<string> {
   const digest = createHash('sha256')
@@ -643,10 +667,11 @@ async function captureSnapshot(
   const indexEntries = (await runGit(checkoutPath, ['ls-files', '--stage', '-z'])).stdout
   const portablePath = (path: string): string => path.normalize('NFD').toLowerCase()
   const runtimePaths = new Set(runtimeFilePaths.map(portablePath))
+  const isRuntimePath = (path: string): boolean => runtimePaths.has(portablePath(path)) || isLocalFileTemporaryPath(path)
   {
     const headPaths = parseNullSeparated((await runGit(checkoutPath, ['ls-tree', '-r', '--name-only', '-z', headOid])).stdout)
     const stagedPaths = parseNullSeparated(indexEntries).map((entry) => entry.slice(entry.indexOf('\t') + 1))
-    if ([...headPaths, ...stagedPaths].some((path) => runtimePaths.has(portablePath(path)) || isLocalFileTemporaryPath(path))) {
+    if ([...headPaths, ...stagedPaths].some(isRuntimePath)) {
       throw new Error('本地运行配置已进入 Git HEAD 或暂存区，请先移出版本控制再交付')
     }
   }
@@ -667,8 +692,8 @@ async function captureSnapshot(
   const env: NodeJS.ProcessEnv = {
     ...(objectDirectory && sourceObjects ? gitObjectEnvironment(objectDirectory, sourceObjects) : {}),
     GIT_INDEX_FILE: indexPath,
-    // 排除 pathspec 必须由 Git 解析，不能继承环境中的 literal/glob 开关。
-    GIT_LITERAL_PATHSPECS: '0', GIT_GLOB_PATHSPECS: '0', GIT_NOGLOB_PATHSPECS: '0', GIT_ICASE_PATHSPECS: '0',
+    // 候选路径按字面量添加，文件名不能被解释为 glob 或 pathspec 指令。
+    GIT_LITERAL_PATHSPECS: '1', GIT_GLOB_PATHSPECS: '0', GIT_NOGLOB_PATHSPECS: '0', GIT_ICASE_PATHSPECS: '0',
   }
 
   await runGit(checkoutPath, ['read-tree', headOid], { env })
@@ -679,9 +704,34 @@ async function captureSnapshot(
     })
   }
   const indexTreeOid = stdoutText(await runGit(checkoutPath, ['write-tree'], { env }))
-  // 先还原真实 index 的 staged 语义，再叠加 working tree，得到完整最终状态。
-  await runGit(checkoutPath, ['add', '-A', '--', '.', ...runtimeFilePaths.map((path) => `:(top,exclude,icase,literal)${path}`), ...LOCAL_FILE_TEMPORARY_EXCLUDES], { env })
-  const forceIncludedExistingPaths = forceIncludePaths.filter((path) => !runtimePaths.has(portablePath(path)) && !isLocalFileTemporaryPath(path) && existsSync(join(checkoutPath, path)))
+  // 在写入对象前过滤候选；显式排除 pathspec 也可能被 Git 当作 ignored 路径拒绝。
+  // 从临时 index 枚举保留 staged 语义；cached 路径也涵盖工作区删除和被 ignore 的受控文件。
+  const candidates = parseNullSeparated((await runGit(checkoutPath,
+    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { env })).stdout)
+  const parents = new Map<string, boolean>()
+  const snapshotPaths: string[] = []
+  const removedPaths: string[] = []
+  for (const path of candidates) {
+    if (isRuntimePath(path)) continue
+    if (await isSnapshotLeafPath(checkoutPath, path, parents)) snapshotPaths.push(path)
+    else removedPaths.push(path)
+  }
+  // 删除和文件/目录替换只修改临时 index，不把目录交给 add 递归展开。
+  if (removedPaths.length > 0) {
+    await runGit(checkoutPath, ['update-index', '--force-remove', '-z', '--stdin'], {
+      env, input: Buffer.from(`${removedPaths.join('\0')}\0`),
+    })
+  }
+  if (snapshotPaths.length > 0) {
+    await runGit(checkoutPath, ['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], {
+      env, input: Buffer.from(`${snapshotPaths.join('\0')}\0`),
+    })
+  }
+  const forceIncludedExistingPaths: string[] = []
+  for (const path of forceIncludePaths) {
+    if (isRuntimePath(path)) continue
+    if (await isSnapshotLeafPath(checkoutPath, path, parents)) forceIncludedExistingPaths.push(path)
+  }
   if (forceIncludedExistingPaths.length > 0) {
     // Local 与 Isolated 的 ignore 规则可能不同；任务明确写入且仍存在的路径必须进入验收快照。
     // 删除已经由上面的 add -A 记录，不能再次作为 pathspec 传入，否则 Git 会因路径不存在而拒绝。

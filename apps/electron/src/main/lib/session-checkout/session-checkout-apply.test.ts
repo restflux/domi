@@ -34,7 +34,13 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   return stdout.trim()
 }
 
-async function createFixture(options: { projectSubdirectory?: string } = {}): Promise<CheckoutFixture> {
+interface CheckoutFixtureOptions {
+  projectSubdirectory?: string
+  ignorePatterns?: readonly string[]
+  baseFiles?: Readonly<Record<string, string>>
+}
+
+async function createFixture(options: CheckoutFixtureOptions = {}): Promise<CheckoutFixture> {
   const root = await mkdtemp(join(tmpdir(), 'domi apply 空格-'))
   tempDirs.push(root)
   const localRepositoryPath = join(root, 'local checkout')
@@ -53,6 +59,11 @@ async function createFixture(options: { projectSubdirectory?: string } = {}): Pr
   await writeFile(join(localPath, 'tracked.txt'), 'base\n')
   await writeFile(join(localPath, 'merge.txt'), 'first\nsecond\nthird\n')
   await writeFile(join(localPath, 'binary.dat'), Buffer.from([0, 1, 2, 3]))
+  for (const [path, content] of Object.entries(options.baseFiles ?? {})) {
+    await mkdir(dirname(join(localPath, path)), { recursive: true })
+    await writeFile(join(localPath, path), content)
+  }
+  if (options.ignorePatterns) await writeFile(join(localRepositoryPath, '.gitignore'), `${options.ignorePatterns.join('\n')}\n`)
   await runGit(localRepositoryPath, ['add', '.'])
   await runGit(localRepositoryPath, ['commit', '-m', 'base'])
   const baseOid = await runGit(localRepositoryPath, ['rev-parse', 'HEAD'])
@@ -69,6 +80,55 @@ async function readyPlan(engine: SessionCheckoutApplyEngine, fixture: CheckoutFi
 }
 
 describe('SessionCheckoutApplyEngine', () => {
+  test('Given 子目录本地配置被 Git 忽略 When 验收快照生成 Then 不阻碍普通代码交付且不修改配置或真实 index', async () => {
+    const fixture = await createFixture({ ignorePatterns: ['**/.env*'] })
+    const configPath = 'service/.env.development.local'
+    for (const root of [fixture.localPath, fixture.isolatedPath]) {
+      await mkdir(join(root, 'service'), { recursive: true })
+      await writeFile(join(root, configPath), 'FIXTURE_CONFIG=not-a-real-secret\n')
+    }
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'work\n')
+    const indexPaths = await Promise.all([fixture.localPath, fixture.isolatedPath].map(root => runGit(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])))
+    const indexesBefore = await Promise.all(indexPaths.map(path => readFile(path)))
+    const engine = createSessionCheckoutApplyEngine({ runtimeFilePaths: () => [configPath] })
+    const review = await engine.inspectReview(fixture)
+    expect(review).toMatchObject({ status: 'ready', changedFiles: ['tracked.txt'] })
+    expect(await Promise.all(indexPaths.map(path => readFile(path)))).toEqual(indexesBefore)
+    expect(await readFile(join(fixture.isolatedPath, configPath), 'utf8')).toBe('FIXTURE_CONFIG=not-a-real-secret\n')
+  })
+
+  test('Given 受控文件改为目录且含宿主临时副本 When 捕获快照 Then 只交付目录内普通文件而不写入临时配置对象', async () => {
+    const fixture = await createFixture()
+    await unlink(join(fixture.isolatedPath, 'tracked.txt'))
+    await mkdir(join(fixture.isolatedPath, 'tracked.txt'))
+    const temporaryPath = 'tracked.txt/.domi-local-12345678-1234-1234-1234-123456789abc.tmp'
+    await writeFile(join(fixture.isolatedPath, temporaryPath), 'FIXTURE_RESIDUAL=not-a-real-secret\n')
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt/normal.txt'), 'normal task\n')
+    const temporaryOid = await runGit(fixture.isolatedPath, ['hash-object', temporaryPath])
+    const result = await createSessionCheckoutApplyEngine().captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })
+    expect(result).toMatchObject({ status: 'captured', changedFiles: ['tracked.txt', 'tracked.txt/normal.txt'] })
+    await expect(runGit(fixture.isolatedPath, ['cat-file', '-e', temporaryOid])).rejects.toThrow()
+  })
+
+  test('Given 受控目录被普通文件替换 When 捕获快照 Then 保留新文件并记录旧子文件删除', async () => {
+    const fixture = await createFixture({ baseFiles: { 'folder/old.txt': 'old\n' } })
+    await rm(join(fixture.isolatedPath, 'folder'), { recursive: true })
+    await writeFile(join(fixture.isolatedPath, 'folder'), 'replacement\n')
+    const result = await createSessionCheckoutApplyEngine().captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })
+    expect(result).toMatchObject({ status: 'captured', changedFiles: ['folder', 'folder/old.txt'] })
+  })
+
+  test.skipIf(process.platform === 'win32')('Given 受控目录被符号链接替换 When 捕获快照 Then 只记录链接而不遍历目标文件', async () => {
+    const fixture = await createFixture({ baseFiles: { 'folder/old.txt': 'old\n' } })
+    const target = join(dirname(fixture.isolatedPath), 'fixture-link-target')
+    await mkdir(target)
+    await writeFile(join(target, 'old.txt'), 'outside fixture metadata only\n')
+    await rm(join(fixture.isolatedPath, 'folder'), { recursive: true })
+    await symlink(target, join(fixture.isolatedPath, 'folder'), 'dir')
+    const result = await createSessionCheckoutApplyEngine().captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })
+    expect(result).toMatchObject({ status: 'captured', changedFiles: ['folder', 'folder/old.txt'] })
+  })
+
   test('Given 本地配置未被 ignore When 生成交付与 handoff 快照 Then 不写入配置对象且正常任务文件可交付', async () => {
     const fixture = await createFixture()
     await writeFile(join(fixture.localPath, '.env.local'), 'LOCAL_CONFIG=local-only\n')
@@ -94,6 +154,82 @@ describe('SessionCheckoutApplyEngine', () => {
     expect(await runGit(fixture.localPath, ['ls-tree', '-r', '--name-only', 'HEAD'])).not.toContain('.env.local')
   })
 
+  test.each(['', 'client'])('Given 被忽略配置且项目子目录为 %s When checkpoint、Preview、撤回与提交 Then 只交付代码并保留配置且不产生配置对象', async projectSubdirectory => {
+    const fixture = await createFixture({ projectSubdirectory, ignorePatterns: ['**/.env*'] })
+    const configPath = 'service/.env.development.local'
+    const repositoryConfigPath = projectSubdirectory ? `${projectSubdirectory}/${configPath}` : configPath
+    for (const [root, value] of [[fixture.localPath, 'local-only'], [fixture.isolatedPath, 'worktree-only']] as const) {
+      await mkdir(join(root, 'service'), { recursive: true })
+      await writeFile(join(root, configPath), `FIXTURE_CONFIG=${value}\n`)
+    }
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'ignored config task\n')
+    const configOid = await runGit(fixture.isolatedRepositoryPath, ['hash-object', repositoryConfigPath])
+    const engine = createSessionCheckoutApplyEngine({ runtimeFilePaths: () => [repositoryConfigPath] })
+    const handoff = await engine.captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })
+    expect(handoff).toMatchObject({ status: 'captured', changedFiles: ['tracked.txt'] })
+    await expect(runGit(fixture.isolatedRepositoryPath, ['cat-file', '-e', configOid])).rejects.toThrow()
+    const review = await engine.inspectReview(fixture)
+    if (review.status !== 'ready') throw new Error(`预期 ready，实际为 ${JSON.stringify(review)}`)
+    const checkpoint = await engine.checkpoint({ isolatedPath: fixture.isolatedPath,
+      expectedFingerprint: review.isolatedFingerprint, expectedHeadOid: review.isolatedHeadOid,
+      commitMessage: 'fix: fixture checkpoint',
+    })
+    expect(checkpoint).toMatchObject({ status: 'checkpointed', changedFiles: ['tracked.txt'] })
+    expect(await runGit(fixture.isolatedRepositoryPath, ['ls-tree', '-r', '--name-only', 'HEAD'])).not.toContain(configPath)
+    const localIndexPath = await runGit(fixture.localRepositoryPath, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])
+    const localIndexBefore = await readFile(localIndexPath)
+    const preview = await engine.preview(await readyPlan(engine, fixture), {
+      previewId: `ignored-preview-${projectSubdirectory || 'root'}`, reviewId: 'ignored-review', iteration: 1,
+    })
+    expect(preview.status).toBe('previewed')
+    if (preview.status !== 'previewed') throw new Error(`预期 previewed，实际为 ${JSON.stringify(preview)}`)
+    expect(preview.changedFiles).toEqual(['tracked.txt'])
+    expect(await readFile(join(fixture.localPath, configPath), 'utf8')).toBe('FIXTURE_CONFIG=local-only\n')
+    expect(await readFile(localIndexPath)).toEqual(localIndexBefore)
+    expect(await engine.rollback({ localPath: fixture.localPath, receipt: preview.receipt })).toMatchObject({ status: 'preview_rolled_back' })
+    expect(await readFile(join(fixture.localPath, 'tracked.txt'), 'utf8')).toBe('base\n')
+    const finished = await engine.finish(await readyPlan(engine, fixture), { commitMessage: 'fix: fixture delivery' })
+    expect(finished).toMatchObject({ status: 'finished', changedFiles: ['tracked.txt'] })
+    expect(await runGit(fixture.localRepositoryPath, ['ls-tree', '-r', '--name-only', 'HEAD'])).not.toContain(configPath)
+    expect(await readFile(join(fixture.isolatedPath, configPath), 'utf8')).toBe('FIXTURE_CONFIG=worktree-only\n')
+    expect(await readFile(join(fixture.localPath, configPath), 'utf8')).toBe('FIXTURE_CONFIG=local-only\n')
+    await expect(runGit(fixture.isolatedRepositoryPath, ['cat-file', '-e', configOid])).rejects.toThrow()
+  })
+
+  test('Given Local 忽略规则与 Worktree 不同 When Preview 强制包含任务文件 Then 配置仍被排除而普通任务文件可预览及撤回', async () => {
+    const fixture = await createFixture({ ignorePatterns: ['**/.env*'] })
+    const configPath = 'service/.env.development.local'
+    for (const root of [fixture.localPath, fixture.isolatedPath]) {
+      await mkdir(join(root, 'service'), { recursive: true })
+      await writeFile(join(root, configPath), 'FIXTURE_CONFIG=ignore-difference\n')
+    }
+    await writeFile(join(fixture.localPath, '.gitignore'), '**/.env*\nnew-task.txt\n')
+    await writeFile(join(fixture.isolatedPath, 'new-task.txt'), 'normal task\n')
+    const engine = createSessionCheckoutApplyEngine({ runtimeFilePaths: () => [configPath] })
+    const plan = await readyPlan(engine, fixture)
+    expect(plan.changedFiles).toEqual(['new-task.txt'])
+    const preview = await engine.preview(plan, { previewId: 'different-ignore', reviewId: 'different-ignore-review', iteration: 1 })
+    expect(preview.status).toBe('previewed')
+    if (preview.status !== 'previewed') throw new Error(`预期 previewed，实际为 ${JSON.stringify(preview)}`)
+    expect(await readFile(join(fixture.localPath, 'new-task.txt'), 'utf8')).toBe('normal task\n')
+    expect(await engine.rollback({ localPath: fixture.localPath, receipt: preview.receipt })).toMatchObject({ status: 'preview_rolled_back' })
+    await expect(readFile(join(fixture.localPath, 'new-task.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(join(fixture.localPath, '.gitignore'), 'utf8')).toBe('**/.env*\nnew-task.txt\n')
+    expect(await readFile(join(fixture.localPath, configPath), 'utf8')).toBe('FIXTURE_CONFIG=ignore-difference\n')
+  })
+
+  test.skipIf(process.platform === 'win32')('Given 文件名含 glob 或 pathspec 前缀 When 捕获快照 Then 文件名按字面量处理且不读入宿主临时副本', async () => {
+    const fixture = await createFixture()
+    const names = [':(glob)*', 'notes[1].txt', 'notes?.txt']
+    for (const name of names) await writeFile(join(fixture.isolatedPath, name), `literal ${name}\n`)
+    const temporaryPath = '.domi-local-12345678-1234-1234-1234-123456789abc.previous'
+    await writeFile(join(fixture.isolatedPath, temporaryPath), 'FIXTURE_RESIDUAL=literal-filter-test\n')
+    const temporaryOid = await runGit(fixture.isolatedPath, ['hash-object', temporaryPath])
+    const result = await createSessionCheckoutApplyEngine().captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })
+    expect(result).toMatchObject({ status: 'captured', changedFiles: [...names].sort() })
+    await expect(runGit(fixture.isolatedPath, ['cat-file', '-e', temporaryOid])).rejects.toThrow()
+  })
+
   test('配置或宿主临时副本已被手工暂存时拒绝生成快照，不改真实 index', async () => {
     const fixture = await createFixture()
     const path = '.domi-local-12345678-1234-1234-1234-123456789abc.tmp'
@@ -103,6 +239,22 @@ describe('SessionCheckoutApplyEngine', () => {
     const engine = createSessionCheckoutApplyEngine()
     expect(await engine.captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })).toMatchObject({ status: 'error' })
     expect(await runGit(fixture.isolatedPath, ['ls-files', '--stage'])).toBe(before)
+  })
+
+  test.each(['index', 'HEAD'])('Given 被忽略配置已手工进入 %s When 验收 Then 拒绝且不修改真实 index', async location => {
+    const fixture = await createFixture({ ignorePatterns: ['**/.env*'] })
+    const configPath = 'service/.env.development.local'
+    for (const root of [fixture.localPath, fixture.isolatedPath]) {
+      await mkdir(join(root, 'service'), { recursive: true })
+      await writeFile(join(root, configPath), 'FIXTURE_CONFIG=explicitly-tracked-test-data\n')
+    }
+    await runGit(fixture.isolatedPath, ['add', '-f', '--', configPath])
+    if (location === 'HEAD') await runGit(fixture.isolatedPath, ['commit', '-m', 'fixture controlled config'])
+    const indexPath = await runGit(fixture.isolatedPath, ['rev-parse', '--path-format=absolute', '--git-path', 'index'])
+    const indexBefore = await readFile(indexPath)
+    const engine = createSessionCheckoutApplyEngine({ runtimeFilePaths: () => [configPath] })
+    expect(await engine.inspectReview(fixture)).toMatchObject({ status: 'error', error: { message: '本地运行配置已进入 Git HEAD 或暂存区，请先移出版本控制再交付' } })
+    expect(await readFile(indexPath)).toEqual(indexBefore)
   })
 
   test('Given 已排除配置在验收后变化 When 使用旧计划交付 Then 拒绝旧快照且保留副本', async () => {
