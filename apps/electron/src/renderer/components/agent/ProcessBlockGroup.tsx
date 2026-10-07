@@ -421,7 +421,7 @@ export function ProcessBlockGroup({
 
   return (
     <div
-      className="my-6"
+      className="my-4"
       data-process-compact={!expanded ? 'true' : 'false'}
       data-work-process-boundary="true"
       data-work-message-view="v2"
@@ -449,7 +449,7 @@ export function ProcessBlockGroup({
               : `opacity ${PROCESS_GROUP_COLLAPSE_DURATION_MS}ms ease-out`,
           }}
         >
-          <div className="flex flex-col gap-4 pt-5" data-work-process-timeline="true">
+          <div className="flex flex-col gap-2.5 pt-3" data-work-process-timeline="true">
             {renderContentChildren()}
             {!isStreaming && (
               <button

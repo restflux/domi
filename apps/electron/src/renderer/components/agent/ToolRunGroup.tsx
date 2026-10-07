@@ -47,7 +47,7 @@ export function ToolRunGroup({
         statusNode={activity ? <span className="sr-only" role="status">{compact ? '工作步骤进行中' : '探索进行中'}</span> : undefined}
       />
       {expanded && (
-        <div className="ml-2 space-y-2 border-l border-border pl-3.5 pt-2">
+        <div className="ml-2 space-y-2 border-l border-border pl-3.5 pt-1.5">
           {blocks.map((block, index) => <React.Fragment key={block.id}>{renderRow(block, index)}</React.Fragment>)}
         </div>
       )}

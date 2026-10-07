@@ -417,7 +417,7 @@ function ThinkingBlock({ block, dimmed = false, isStreaming = false }: ThinkingB
   }, [])
 
   return (
-    <div className="relative mb-1" data-work-thinking-view="v2">
+    <div className="relative" data-work-thinking-view="v2">
       <ZCodeReasoningHeading
         label={isStreaming ? '思考中' : '思考'}
         isStreaming={isStreaming}

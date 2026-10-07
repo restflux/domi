@@ -329,6 +329,21 @@ describe('Work 消息 V2 视图', () => {
     model: 'test-model',
   }
 
+  test('Given 流式过程渲染 When 检查垂直节奏 Then 时间线、工具组和思考块使用收紧后的间距', () => {
+    const html = renderToStaticMarkup(
+      <AssistantTurnRenderer turn={turn} allMessages={[assistant]} isStreaming />,
+    )
+
+    // 时间线与组根的留白收紧，防止多段探索叠加出大片空白。
+    expect(html).toContain('flex flex-col gap-2.5 pt-3" data-work-process-timeline="true"')
+    expect(html).toContain('my-4" data-process-compact="false" data-work-process-boundary="true"')
+
+    // 展开的探索组列表与思考标题行不额外增加上下边距（此场景无展开列表，验证思考块）。
+    expect(html).not.toContain('border-l border-border pl-3.5 pt-2"')
+    expect(html).toContain('"relative" data-work-thinking-view="v2"')
+    expect(html).not.toContain('relative mb-1" data-work-thinking-view')
+  })
+
   test('历史会话和执行中的会话统一显示工作过程分区与当前活动', () => {
     const runningAssistant: SDKAssistantMessage = {
       ...assistant,
@@ -1393,6 +1408,8 @@ describe('工作步骤三档默认展示', () => {
     expect(html).toContain('/target/')
     expect(html).toContain('bun test entry.test.ts')
     expect(html).not.toContain('LONG_RAW_OUTPUT')
+    // 展开的工具组列表使用收紧后的顶部间距。
+    expect(html).toContain('ml-2 space-y-2 border-l border-border pl-3.5 pt-1.5')
   })
 
   test('Given 任意内部密度 When 运行中展示 Then 保留叙事、失败与决策且不自动展开思考', () => {
