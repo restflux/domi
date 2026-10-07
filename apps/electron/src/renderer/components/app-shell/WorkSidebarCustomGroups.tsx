@@ -110,7 +110,7 @@ export function WorkSidebarCustomGroups<T extends WorkSidebarGroupTreeItem>({
   ), [renderItem])
 
   return (
-    <div className="px-2 pb-2">
+    <div className="pb-2">
       {grouped.groups.map(({ group, items: groupItems }) => {
         const color = getGroupColor(group.color)
         const isDropTarget = dragOverGroupId === group.id
@@ -128,7 +128,7 @@ export function WorkSidebarCustomGroups<T extends WorkSidebarGroupTreeItem>({
             }}
             onDrop={(event) => handleDrop(event, group.id)}
           >
-            <div className="flex h-8 items-center gap-1 px-1">
+            <div className="flex h-8 items-center gap-1 px-2">
               <div className="flex min-w-0 flex-1 items-center gap-1">
                 <Popover>
                   <PopoverTrigger asChild>
@@ -274,7 +274,7 @@ export function WorkSidebarCustomGroups<T extends WorkSidebarGroupTreeItem>({
       })}
 
       {grouped.ungrouped.length > 0 && (
-        <div className="mt-1 flex flex-col gap-0.5">
+        <div className="flex flex-col gap-0.5">
           {grouped.ungrouped.map(renderDraggableItem)}
         </div>
       )}

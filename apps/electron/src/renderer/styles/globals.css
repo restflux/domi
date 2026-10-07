@@ -1956,7 +1956,36 @@
   --shell-bg: #ffffff;
 }
 
-/* 会话列表保留操作槽，普通行不常驻时间和未激活标记；操作仍能通过菜单访问。 */
+/* Work 会话在行内预留状态列，时间线、分组和项目列表使用同一行高。 */
+:root.ui-modern .agent-session-row,
+:root.ui-modern .agent-project-session-list .agent-session-row {
+  min-height: 2rem;
+  padding-left: 1.5rem;
+  padding-right: 0.5rem;
+  column-gap: 0;
+}
+
+:root.ui-modern .agent-session-row [data-session-status-slot="true"] {
+  left: 0.25rem;
+}
+
+/* 隐藏操作不占标题宽度；确认归档或打开菜单后，离开行也保留操作槽。 */
+:root.ui-modern .agent-session-row [data-session-row-meta="true"] {
+  width: 0;
+  overflow: hidden;
+}
+
+:root.ui-modern .agent-session-row [data-session-right-slot="true"] {
+  width: 2.25rem;
+}
+
+:root.ui-modern .agent-session-row:hover [data-session-row-meta="true"],
+:root.ui-modern .agent-session-row:focus-within [data-session-row-meta="true"],
+:root.ui-modern .agent-session-row [data-session-row-meta="true"][data-actions-visible="true"] {
+  width: 2.25rem;
+  margin-left: 0.375rem;
+}
+
 :root.ui-modern .session-quick-switch-row [data-session-updated-at="true"] {
   opacity: 0;
 }

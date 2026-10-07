@@ -100,6 +100,30 @@ describe('AgentSessionItem layout', () => {
     expect(leafHtml).toMatch(/data-session-right-slot="true"[^>]*\bw-12\b/)
   })
 
+  test('Given 现代会话列表 When 行处于普通状态 Then 状态留在行内且隐藏操作不占标题宽度', () => {
+    const html = renderSessionItem()
+    const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
+
+    expect(html).toContain('agent-session-row')
+    expect(html).toContain('data-actions-visible="false"')
+    expect(styles).toMatch(/:root\.ui-modern \.agent-session-row,\s*:root\.ui-modern \.agent-project-session-list \.agent-session-row\s*\{[^}]*min-height: 2rem;[^}]*padding-left: 1\.5rem;/)
+    expect(styles).toMatch(/\.agent-session-row \[data-session-status-slot="true"\]\s*\{\s*left: 0\.25rem;/)
+    expect(styles).toMatch(/\.agent-session-row \[data-session-row-meta="true"\]\s*\{\s*width: 0;\s*overflow: hidden;/)
+  })
+
+  test('Given 隐藏操作槽 When 悬浮、键盘聚焦或正在确认 Then 操作槽可见且保留快捷操作', () => {
+    const html = renderSessionItem()
+    const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
+
+    expect(styles).toContain('.agent-session-row:hover [data-session-row-meta="true"]')
+    expect(styles).toContain('.agent-session-row:focus-within [data-session-row-meta="true"]')
+    expect(styles).toMatch(/\[data-actions-visible="true"\]\s*\{\s*width: 2\.25rem;/)
+    expect(html).toContain('group-focus-within:pointer-events-auto')
+    expect(html).toContain('group-focus-within:opacity-100')
+    expect(html).toContain('aria-label="归档"')
+    expect(html).toContain('aria-label="更多会话操作"')
+  })
+
   test('keeps archive inline while leaving low-frequency pin in the menus', () => {
     const html = renderSessionItem({ pinned: true })
 

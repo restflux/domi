@@ -483,7 +483,7 @@ interface AgentSessionDateGroupsProps {
   onToggleArchive: (id: string) => Promise<void>
 }
 
-const WORK_SIDEBAR_STICKY_CONTROLS_HEIGHT_CLASS = '[--work-sidebar-sticky-controls-height:2.5rem]'
+const WORK_SIDEBAR_STICKY_CONTROLS_HEIGHT_CLASS = '[--work-sidebar-sticky-controls-height:2.25rem]'
 const WORK_SIDEBAR_NESTED_STICKY_TOP_CLASS = 'top-[var(--work-sidebar-sticky-controls-height)]'
 
 function AgentSessionDateGroups({
@@ -507,9 +507,9 @@ function AgentSessionDateGroups({
   return (
     <>
       {groups.map((group) => (
-        <div key={group.label} className="mb-1">
+        <div key={group.label} className="mb-2 last:mb-0">
           <div className={cn('sticky z-10 -mx-2 bg-[hsl(var(--sidebar-surface))] px-2', WORK_SIDEBAR_NESTED_STICKY_TOP_CLASS)}>
-            <div className="px-2 pb-1 pt-2 text-[11px] font-medium text-foreground/40 select-none">
+            <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-foreground/40 select-none">
               {group.label}
             </div>
           </div>
@@ -3747,9 +3747,8 @@ export function LeftSidebar({ width, noTransition, previewExpanded = false }: Le
             </div>
           )}
 
-          {/* 下区标题：项目历史。分隔导航与内容，强化信息层级。
-              sticky 吸顶：滚动长列表时保持当前分区可见。 */}
-          <div className="sticky top-0 z-20 mx-2 mt-3 flex h-[var(--work-sidebar-sticky-controls-height)] flex-shrink-0 items-center justify-between rounded-md bg-[hsl(var(--sidebar-surface))] px-1.5">
+          {/* 视图工具栏与日期分组共用吸顶高度，避免滚动时互相遮挡。 */}
+          <div className="sticky top-0 z-20 mx-2 mt-1 flex h-[var(--work-sidebar-sticky-controls-height)] flex-shrink-0 items-center justify-between rounded-md bg-[hsl(var(--sidebar-surface))] px-2">
             <WorkSidebarControls
               preferences={workSidebarPreferences}
               allProjectsCollapsed={allProjectGroupsCollapsed}
@@ -4306,7 +4305,7 @@ interface AgentSessionRowMetaProps {
 
 /**
  * Agent 会话最右侧的可替换槽：经典界面显示更新时间；现代界面不常驻时间。
- * hover 原位显示归档快捷操作和 More 菜单，避免右侧额外占宽。
+ * 现代界面仅在 hover、键盘聚焦或操作进行中展开归档和 More 槽。
  */
 function AgentSessionRowMeta({
   updatedAt,
@@ -4350,6 +4349,7 @@ function AgentSessionRowMeta({
   return (
     <div
       data-session-row-meta="true"
+      data-actions-visible={forceActionsVisible ? 'true' : 'false'}
       className="flex h-[18px] flex-shrink-0 items-center justify-end gap-0.5"
       onClick={(event) => event.stopPropagation()}
     >
@@ -4362,7 +4362,7 @@ function AgentSessionRowMeta({
           title={`最后更新：${new Date(updatedAt).toLocaleString('zh-CN')}`}
           className={cn(
             'absolute inset-y-0 right-0 block w-full overflow-hidden whitespace-nowrap text-right text-[11px] leading-[18px] tabular-nums text-foreground/35 transition-opacity duration-100',
-            forceActionsVisible ? 'opacity-0' : 'opacity-100 group-hover:opacity-0',
+            forceActionsVisible ? 'opacity-0' : 'opacity-100 group-hover:opacity-0 group-focus-within:opacity-0',
           )}
         >
           {formatRelativeUpdatedAt(updatedAt, relativeTimeNow)}
@@ -4372,7 +4372,7 @@ function AgentSessionRowMeta({
             'absolute inset-y-0 right-0 flex w-full items-center justify-end gap-0.5 transition-opacity duration-100',
             forceActionsVisible
               ? 'pointer-events-auto opacity-100'
-              : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
+              : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100',
           )}
         >
           <SafeTooltip
@@ -4838,7 +4838,7 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
           onMouseEnter={() => { setRowHovered(true); preview.handleMouseEnter() }}
           onMouseLeave={() => { setRowHovered(false); preview.handleMouseLeave() }}
           className={cn(
-            'session-quick-switch-row group relative w-full flex items-center gap-1.5 rounded-md py-1.5 pl-2.5 pr-1.5 transition-colors duration-100 titlebar-no-drag text-left',
+            'agent-session-row session-quick-switch-row group relative w-full flex items-center gap-1.5 rounded-md py-1.5 pl-2.5 pr-1.5 transition-colors duration-100 titlebar-no-drag text-left',
             SESSION_STATUS_ROW_CLASS[indicatorStatus],
             active && 'agent-session-item-active agent-session-item-active-surface',
           )}
@@ -4900,7 +4900,7 @@ export const AgentSessionItem = React.memo(function AgentSessionItem({
                     {session.title}
                   </span>
                   {workspaceName && (
-                    <span className="max-w-[72px] flex-shrink-0 truncate rounded-full bg-primary/10 px-1.5 py-0 text-[10px] font-medium leading-4 workspace-badge">
+                    <span title={workspaceName} className="max-w-[72px] flex-shrink-0 truncate rounded-full bg-primary/10 px-1.5 py-0 text-[10px] font-medium leading-4 workspace-badge">
                       {workspaceName}
                     </span>
                   )}
