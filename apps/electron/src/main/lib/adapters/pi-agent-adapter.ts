@@ -70,7 +70,7 @@ import type {
   Skill,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
-import type { Transport as PiAgentTransport } from '@earendil-works/pi-ai'
+import type { JsonObject, Transport as PiAgentTransport } from '@earendil-works/pi-ai'
 import type { AgentMessage, AgentToolResult } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ToolResultMessage } from '@earendil-works/pi-ai/compat'
 import { Type } from 'typebox'
@@ -143,6 +143,7 @@ import {
 } from './pi-extension-trust.ts'
 import { installPiFinalToolGuard } from './pi-final-tool-guard.ts'
 import { preparePiMcpToolDiscovery } from './pi-mcp-tool-discovery.ts'
+import { preparePiReadonlyCodemode } from './pi-codemode-readonly.ts'
 import {
   createPiRunAuditRecorder,
   type PiRunAuditTimingCallback,
@@ -313,6 +314,8 @@ export interface PiAgentQueryOptions extends AgentQueryInput {
   customToolAnnotations?: Record<string, NonNullable<CanUseToolOptions['toolAnnotations']>>
   /** 内部验证 opt-in；默认保持用户 MCP 全量曝光，不由模型或外部配置开启。 */
   mcpToolDiscovery?: boolean
+  /** 内部只读Codemode opt-in，默认不注册；不是模型参数或用户配置。 */
+  readonlyCodemode?: boolean
   onSessionId?: (sdkSessionId: string, sessionFile?: string) => void
   /** Pi final assistant UI UUID → 持久树状 session entry ID。 */
   onPiEntryBindings?: (bindings: Record<string, string>) => void
@@ -2206,6 +2209,8 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       const sdk = await import('@earendil-works/pi-coding-agent')
       const piAiRuntime = await import('@earendil-works/pi-ai')
       const piAiTranscript = await import('@earendil-works/pi-ai/utils/transcript')
+      const piAiValidation = await import('@earendil-works/pi-ai/utils/validation')
+      const piCodemodeRuntime = input.readonlyCodemode === true ? await import('@earendil-works/pi-codemode') : undefined
       const piAiCompat = input.codexFastMode && input.provider === 'openai-codex'
         ? await import('@earendil-works/pi-ai/compat')
         : undefined
@@ -2343,6 +2348,11 @@ export class PiAgentAdapter implements AgentProviderAdapter {
         toolSources: input.customToolSources,
       })
       const customTools = mcpToolDiscovery.tools
+      const readonlyCodemode = preparePiReadonlyCodemode({ defineTool: sdk.defineTool,
+        CodemodeSandbox: piCodemodeRuntime?.CodemodeSandbox }, {
+        enabled: input.readonlyCodemode, tools: customTools,
+        ownedTools: builtinTools.filter(tool => ['read', 'grep', 'find'].includes(tool.name)),
+      })
 
       const settingsManager = sdk.SettingsManager.inMemory({
         steeringMode: input.steeringMode ?? 'one-at-a-time',
@@ -2401,6 +2411,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       ]
       const extensionFactories = [
         ...mcpToolDiscovery.extensionFactories,
+        ...readonlyCodemode.extensionFactories,
         ...(model.reasoning ? modelExtensionFactories : []),
         ...(contextCompactorSettings.enabled && contextCompactorMode
           ? [{
@@ -2593,17 +2604,21 @@ export class PiAgentAdapter implements AgentProviderAdapter {
           .filter((tool) => tool.sourceInfo.source !== 'sdk' && tool.sourceInfo.source !== 'builtin')
           .map((tool) => tool.name),
       )
-      installPiFinalToolGuard(session, {
+      const finalGuard = installPiFinalToolGuard(session, {
         cwd,
         auditRecorder,
+        validateArguments: (definition, args) => piAiValidation.validateToolArguments(definition,
+          { type: 'toolCall', id: 'verification', name: definition.name, arguments: args as JsonObject }),
         authorize: ({ toolName, input: toolInput, options }) => input.authorizeToolCall(toolName, toolInput, options),
-        resolveToolSource: (toolName) => mcpToolDiscovery.isOwnedTool(session, toolName)
+        resolveToolSource: (toolName) => readonlyCodemode.isOwnedTool(session, toolName) || mcpToolDiscovery.isOwnedTool(session, toolName)
           ? 'host'
           : resourceToolNames.has(toolName) ? 'resource' : input.customToolSources?.[toolName] ?? 'host',
         resolveToolAnnotations: (toolName) => resourceToolNames.has(toolName)
           ? undefined
           : input.customToolAnnotations?.[toolName],
       })
+      try { readonlyCodemode.initialize(session, finalGuard) }
+      catch (error) { session.dispose(); throw error }
       installPiToolExecutionScheduler(
         session,
         (toolName) => {
@@ -2867,7 +2882,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
                 session_id: session.sessionId,
                 tool_use_id: event.toolCallId,
                 tool_name: displayToolName(event.toolName, event.args as Record<string, unknown> | undefined),
-                parent_tool_use_id: null,
+                parent_tool_use_id: event.parentToolCallId ?? null,
               } as unknown as SDKMessage)
               break
             case 'compaction_start':

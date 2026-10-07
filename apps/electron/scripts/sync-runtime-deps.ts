@@ -53,6 +53,7 @@ export const EXTERNAL_RUNTIME_PACKAGES: readonly string[] = [
   '@earendil-works/pi-agent-core',
   '@earendil-works/pi-ai',
   '@earendil-works/pi-mcp',
+  '@earendil-works/pi-codemode',
   '@electron-internal/extract-zip',
   'node-pty',
   'pdfjs-dist',

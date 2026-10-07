@@ -4,6 +4,9 @@ import type { AgentSession, InlineExtension, SessionManager, ToolDefinition } fr
 import { createAssistantMessageEventStream, InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import type { AssistantMessage, JsonObject, Model, Tool } from '@earendil-works/pi-ai'
 import { getCurrentTools } from '@earendil-works/pi-ai/utils/transcript'
+import { validateToolArguments } from '@earendil-works/pi-ai/utils/validation'
+import type { PermissionResult } from '../../agent-permission-service.ts'
+import type { PiRunAuditRecorder } from '../../audit/pi-run-audit.ts'
 import type { PiFinalToolAuthorizationRequest } from '../pi-final-tool-guard.ts'
 import { installPiFinalToolGuard } from '../pi-final-tool-guard.ts'
 import { preparePiMcpToolDiscovery } from '../pi-mcp-tool-discovery.ts'
@@ -28,7 +31,8 @@ interface DiscoverySessionOptions {
   enabled?: boolean
   manager?: SessionManager
   factories?: InlineExtension[]
-  authorize?: (request: PiFinalToolAuthorizationRequest) => boolean | Promise<boolean>
+  auditRecorder?: PiRunAuditRecorder
+  authorize?: (request: PiFinalToolAuthorizationRequest) => boolean | PermissionResult | Promise<boolean | PermissionResult>
 }
 
 export async function discoverySession(options: DiscoverySessionOptions) {
@@ -57,16 +61,20 @@ export async function discoverySession(options: DiscoverySessionOptions) {
     await session.bindExtensions({})
   } catch (error) { session.dispose(); throw error }
   const authorized: PiFinalToolAuthorizationRequest[] = []
-  installPiFinalToolGuard(session, {
-    cwd,
+  const guard = installPiFinalToolGuard(session, {
+    cwd, auditRecorder: options.auditRecorder,
+    validateArguments: (definition, args) => validateToolArguments(definition,
+      { type: 'toolCall', id: 'verification', name: definition.name, arguments: args as JsonObject }),
     resolveToolSource: name => plan.isOwnedTool(session, name) ? 'host' : toolSources[name] === 'mcp' ? 'mcp' : 'resource',
     authorize: async request => {
       authorized.push(request)
       const allowed = options.authorize ? await options.authorize(request) : true
-      return allowed ? { behavior: 'allow', updatedInput: request.input } : { behavior: 'deny', message: 'offline policy denied' }
+      return typeof allowed === 'boolean'
+        ? allowed ? { behavior: 'allow', updatedInput: request.input } : { behavior: 'deny', message: 'offline policy denied' }
+        : allowed
     },
   })
-  return { session, plan, modelRuntime, authorized }
+  return { session, plan, modelRuntime, authorized, guard }
 }
 
 export interface DiscoveryCall {

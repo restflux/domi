@@ -46,6 +46,7 @@ export interface PiRunToolWaitTimingEvent extends PiRunAuditTimingBase {
   phase: 'tool_wait'
   waitType: 'authorization'
   toolCorrelationId: string
+  parentToolCorrelationId?: string
   toolName: string
   outcome: 'allow' | 'deny' | 'error'
   turn?: number
@@ -55,6 +56,7 @@ export interface PiRunToolWaitTimingEvent extends PiRunAuditTimingBase {
 export interface PiRunToolExecutionTimingEvent extends PiRunAuditTimingBase {
   phase: 'tool_execution'
   toolCorrelationId: string
+  parentToolCorrelationId?: string
   toolName: string
   outcome: 'success' | 'error'
   turn?: number
@@ -116,10 +118,10 @@ export type PiRunAuditSourceEvent =
   | { type: 'model_request'; envelope: PiRequestEnvelopeSnapshot }
   | { type: 'assistant_update' }
   | { type: 'assistant_end'; responses?: PiResponsesDiagnostics }
-  | { type: 'authorization_start'; toolCallId: string; toolName: string; validation?: true }
-  | { type: 'authorization_end'; toolCallId: string; toolName: string; outcome: 'allow' | 'deny' | 'error'; validation?: true }
-  | { type: 'tool_execution_start'; toolCallId: string; toolName: string }
-  | { type: 'tool_execution_end'; toolCallId: string; toolName: string; outcome: 'success' | 'error' }
+  | { type: 'authorization_start'; toolCallId: string; parentToolCallId?: string; toolName: string; validation?: true }
+  | { type: 'authorization_end'; toolCallId: string; parentToolCallId?: string; toolName: string; outcome: 'allow' | 'deny' | 'error'; validation?: true }
+  | { type: 'tool_execution_start'; toolCallId: string; parentToolCallId?: string; toolName: string }
+  | { type: 'tool_execution_end'; toolCallId: string; parentToolCallId?: string; toolName: string; outcome: 'success' | 'error' }
   | { type: 'retry_scheduled'; attempt: number; delayMs: number; errorMessage?: string }
   | { type: 'retry_attempt_start'; attempt: number }
   | { type: 'retry_end'; attempt: number; outcome: 'succeeded' | 'exhausted' | 'cancelled'; errorMessage?: string }
@@ -331,6 +333,7 @@ export function createPiRunAuditRecorder(options: PiRunAuditRecorderOptions): Pi
           timestamp: new Date(timestamp).toISOString(),
           durationMs: Math.max(0, timestamp - startedAt),
           toolCorrelationId: toolCorrelationId(event.toolCallId),
+          ...(event.parentToolCallId && { parentToolCorrelationId: toolCorrelationId(event.parentToolCallId) }),
           toolName: event.toolName,
           outcome: event.outcome,
           ...(turn > 0 && { turn }),
@@ -354,6 +357,7 @@ export function createPiRunAuditRecorder(options: PiRunAuditRecorderOptions): Pi
           timestamp: new Date(timestamp).toISOString(),
           durationMs: Math.max(0, timestamp - startedAt),
           toolCorrelationId: toolCorrelationId(event.toolCallId),
+          ...(event.parentToolCallId && { parentToolCorrelationId: toolCorrelationId(event.parentToolCallId) }),
           toolName: event.toolName,
           outcome: event.outcome,
           ...(turn > 0 && { turn }),

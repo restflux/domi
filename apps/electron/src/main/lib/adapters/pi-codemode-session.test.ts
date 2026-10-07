@@ -13,8 +13,8 @@ import { codemodeCall as script, codemodeResults, nativeCodemodeSession, resultT
 import { discoverySession, discoveryTool, DISCOVERY_MODEL, scriptDiscoveryRun } from './fixtures/pi-tool-discovery-session.ts'
 
 describe('Pi 1.0.4 Codemode 只读接入的安全前提', () => {
-  // 保留安全目标的原断言，预期失败必须在 SDK/最终门禁补齐后解除；不能将它当作授权验证通过。
-  test.failing('已知阻塞：Given 父调用获准但 Read 被最终门禁拒绝 When 原生 Codemode 调用 Read Then 实际执行必须为零', async () => {
+  // 同一最终授权必须覆盖公开嵌套pipeline；实际零执行而非仅收到一次回调。
+  test('Given 父调用获准但 Read 被最终门禁拒绝 When 原生 Codemode 调用 Read Then 实际执行必须为零', async () => {
     let calls = 0
     const read = { ...discoveryTool('Read'), async execute() {
       calls++
@@ -31,7 +31,7 @@ describe('Pi 1.0.4 Codemode 只读接入的安全前提', () => {
     } finally { session.dispose() }
   })
 
-  test('Given 同一个最终门禁 When 直接 Read 被拒绝且随后父调用获准 Then 直接调用零执行但嵌套调用实测执行一次', async () => {
+  test('Given 同一个最终门禁 When 直接 Read 被拒绝且随后父调用获准 Then 直接与嵌套拒绝均为零执行', async () => {
     let calls = 0
     const read = { ...discoveryTool('Read'), async execute() {
       calls++
@@ -39,13 +39,13 @@ describe('Pi 1.0.4 Codemode 只读接入的安全前提', () => {
     } }
     const { session, authorized } = await nativeCodemodeSession({ tools: [read], authorize: request => request.toolName === 'codemode' })
     try {
-      // 与生产相同：最终门禁之后安装调度层；嵌套路径仍没有回到这两个 Agent hooks。
+      // 与生产相同安装调度层；子调用独立使用同一个最终授权owner。
       installPiToolExecutionScheduler(session)
       scriptDiscoveryRun(session, [[{ name: 'Read', arguments: {} }], [script('return await tools.Read({});')]])
       await session.prompt('仅 sentinel，不访问真实用户文件')
-      expect(authorized.map(request => request.toolName)).toEqual(['Read', 'codemode'])
-      expect(calls).toBe(1)
-      expect(codemodeResults(session).map(result => result.isError)).toEqual([true, false])
+      expect(authorized.map(request => request.toolName)).toEqual(['Read', 'codemode', 'Read'])
+      expect(calls).toBe(0)
+      expect(codemodeResults(session).map(result => result.isError)).toEqual([true, true])
     } finally { session.dispose() }
   })
 
@@ -231,7 +231,7 @@ describe('Pi 1.0.4 Codemode 只读接入的安全前提', () => {
     } finally { session.dispose() }
   })
 
-  test('Given 子结果已输出到内存事件 When 保存/恢复/fork/模型切换 Then 只有父结果与有界metadata持久化，audit不保留父关联', async () => {
+  test('Given 子结果已输出到内存事件 When 保存/恢复/fork/模型切换 Then 只有父结果与有界metadata持久化，timing保留脱敏父关联', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'domi-codemode-history-'))
     const sessions: Awaited<ReturnType<typeof discoverySession>>['session'][] = []
     const childSecret = 'child-result-not-returned-to-parent'
@@ -262,11 +262,12 @@ describe('Pi 1.0.4 Codemode 只读接入的安全前提', () => {
       expect(rawEvents.filter(event => event.type === 'tool_execution_end' && event.toolName === 'Read'))
         .toMatchObject([{ parentToolCallId: 'call-0-0', result: { content: [{ text: childSecret }] } }])
       expect(audit.filter(event => event.type === 'tool_execution_end')).toEqual([
-        { type: 'tool_execution_end', toolCallId: 'call-0-0/1', toolName: 'Read', outcome: 'success' },
+        { type: 'tool_execution_end', toolCallId: 'call-0-0/1', parentToolCallId: 'call-0-0', toolName: 'Read', outcome: 'success' },
         { type: 'tool_execution_end', toolCallId: 'call-0-0', toolName: 'codemode', outcome: 'success' },
       ])
       const auditFile = join(directory, 'audit.jsonl')
       writeFileSync(auditFile, timing.join('\n'))
+      expect(readFileSync(auditFile, 'utf8')).toContain('parentToolCorrelationId')
       expect(readFileSync(auditFile, 'utf8')).not.toContain('parentToolCallId')
       expect(readFileSync(auditFile, 'utf8')).not.toContain('call-0-0')
       expect(readFileSync(file, 'utf8')).not.toContain(childSecret)

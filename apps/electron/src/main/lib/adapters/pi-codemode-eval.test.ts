@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test'
+import * as sdk from '@earendil-works/pi-coding-agent'
+import { CodemodeSandbox } from '@earendil-works/pi-codemode'
+import { preparePiReadonlyCodemode } from './pi-codemode-readonly.ts'
 import { createReadToolDefinition, defineTool } from '@earendil-works/pi-coding-agent'
 import { access, readFile } from 'node:fs/promises'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -13,7 +16,7 @@ interface Measure { utf8Bytes: number; characterQuarterEstimate: number }
 interface Comparison {
   fileCount: number
   missingFile: boolean
-  mode: 'ordinary-parallel' | 'native-codemode-test-only'
+  mode: 'ordinary-parallel' | 'native-codemode-test-only' | 'domi-readonly-codemode'
   actualReads: number
   providerRequests: number
   correct: boolean
@@ -33,7 +36,7 @@ async function comparison(fileCount: number, missingFile = false): Promise<Compa
   const comparisons: Comparison[] = []
   try {
     filenames.forEach((file, index) => { if (!missingFile || index !== fileCount - 1) writeFileSync(file, JSON.stringify(data)) })
-    for (const mode of ['ordinary-parallel', 'native-codemode-test-only'] as const) {
+    for (const mode of ['ordinary-parallel', 'native-codemode-test-only', 'domi-readonly-codemode'] as const) {
       const reads = new Map<string, number>()
       // 与Domi核心读取相同的公开SDK定义；操作只允许此测试自己创建的固定文件。
       const read = defineTool(createReadToolDefinition(directory, { operations: {
@@ -44,10 +47,14 @@ async function comparison(fileCount: number, missingFile = false): Promise<Compa
           return await readFile(path)
         },
       } }))
-      const { session } = mode === 'ordinary-parallel'
-        ? await discoverySession({ tools: [read] }) : await nativeCodemodeSession({ tools: [read] })
+      const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox }, { enabled: mode === 'domi-readonly-codemode', tools: [read], ownedTools: [read] })
+      const state = mode === 'native-codemode-test-only'
+        ? await nativeCodemodeSession({ tools: [read] }) : await discoverySession({ tools: [read], factories: plan.extensionFactories })
+      const { session } = state
+      plan.initialize(session, state.guard)
       try {
-        const code = `const results=await Promise.allSettled(${JSON.stringify(filenames)}.map(path=>tools.read({path})));
+        const code = `const files=${JSON.stringify(filenames)}; const results=[];
+          for(let i=0;i<files.length;i+=4) results.push(...await Promise.allSettled(files.slice(i,i+4).map(path=>tools.read({path}))));
           const data=results.filter(result=>result.status==="fulfilled").flatMap(result=>JSON.parse(result.value));
           return {ids:[...new Set(data.filter(row=>row.active).map(row=>row.id))].sort((a,b)=>a-b),
             sourceRows:data.length, failed:results.filter(result=>result.status==="rejected").length};`
@@ -69,7 +76,8 @@ async function comparison(fileCount: number, missingFile = false): Promise<Compa
         } else {
           const output = results[0]?.content.find(block => block.type === 'text' && block.text.startsWith('{'))
           if (!output || output.type !== 'text') throw new Error('脚本没有返回汇总JSON')
-          summary = JSON.parse(output.text)
+          const parsed = JSON.parse(output.text)
+          summary = mode === 'domi-readonly-codemode' ? parsed.value : parsed
         }
         expect(summary).toEqual({ ids: data.filter(row => row.active).map(row => row.id),
           sourceRows: (fileCount - Number(missingFile)) * data.length, failed: Number(missingFile) })
@@ -96,7 +104,7 @@ test('Given 同一临时文件任务与并行工具基线 When Codemode只返回
   expect(largeCodemode.returnedContent.utf8Bytes).toBeLessThan(largeOrdinary.returnedContent.utf8Bytes / 10)
   console.log('[Pi Codemode offline comparison]', JSON.stringify({
     version: '1.0.4', method: 'Current toolResult content JSON only; UTF-8 bytes and ceil(JSON characters/4), not tokenizer/billing.',
-    limitation: 'Test-only native factory bypasses final authorization and is not registered in Domi. Fixed scripts know filenames; ordinary path summary is computed by test code, not a model. Does not establish real reasoning, latency, billing, permission or Workspace safety.',
+    limitation: 'Native broad factory stays test-only; Domi path uses its default-off owned factory. Both consume the final guard for these held mutable fixture definitions. Scripts know filenames and use batches of four; ordinary summary is computed by test code, not a model. No real reasoning, latency, billing or autonomous success claim.',
     rows,
   }, null, 2))
 })

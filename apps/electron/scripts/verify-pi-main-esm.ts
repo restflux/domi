@@ -6,14 +6,20 @@ import { resolve } from 'node:path'
 export const PI_ESM_ONLY_RUNTIME_PACKAGES = [
   '@earendil-works/pi-ai',
   '@earendil-works/pi-agent-core',
+  '@earendil-works/pi-tui',
+  '@earendil-works/pi-telemetry',
+  '@earendil-works/chord',
   '@earendil-works/pi-coding-agent',
   '@earendil-works/pi-mcp',
+  '@earendil-works/pi-codemode',
 ] as const
 
 export const PI_REQUIRED_DYNAMIC_IMPORTS = [
   '@earendil-works/pi-ai',
   '@earendil-works/pi-ai/utils/transcript',
+  '@earendil-works/pi-ai/utils/validation',
   '@earendil-works/pi-mcp',
+  '@earendil-works/pi-codemode',
 ] as const
 
 export interface PiMainEsmBundleCheck {

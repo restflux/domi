@@ -26,7 +26,7 @@ export function resultText(result: { content: ReadonlyArray<{ type: string; text
 
 /**
  * 仅测试公开 Sandbox 的有界执行能力，不是可接入生产的扩展。
- * executeTool 仍有最终门禁缺口；这里绝不补另一条授权路径来掩盖它。
+ * 子调用仍使用同一个最终门禁；此probe只测试VM，生产使用单独的宿主持有factory。
  */
 export function sandboxProbe(owned: ReadonlySet<ToolDefinition>, limits = { timeoutMs: 2000, memoryLimitBytes: 32 * 1024 * 1024 }) {
   let session: AgentSession | undefined

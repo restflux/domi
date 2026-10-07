@@ -43,6 +43,7 @@
         "@dnd-kit/utilities": "3.2.2",
         "@earendil-works/pi-agent-core": "1.0.4",
         "@earendil-works/pi-ai": "1.0.4",
+        "@earendil-works/pi-codemode": "1.0.4",
         "@earendil-works/pi-coding-agent": "1.0.4",
         "@earendil-works/pi-mcp": "1.0.4",
         "@electron-internal/extract-zip": "1.0.4",

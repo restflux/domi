@@ -46,12 +46,14 @@ export function recordPiAgentAuditEvent(
       return recorder.record({
         type: 'tool_execution_start',
         toolCallId: event.toolCallId,
+        ...(event.parentToolCallId && { parentToolCallId: event.parentToolCallId }),
         toolName: event.toolName,
       })
     case 'tool_execution_end':
       return recorder.record({
         type: 'tool_execution_end',
         toolCallId: event.toolCallId,
+        ...(event.parentToolCallId && { parentToolCallId: event.parentToolCallId }),
         toolName: event.toolName,
         outcome: event.isError ? 'error' : 'success',
       })

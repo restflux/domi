@@ -92,4 +92,33 @@ describe('Pi Agent timing adapter seam', () => {
       expect(persisted).not.toContain(forbidden)
     }
   })
+
+  test('Given 父子执行及独立授权 When timing序列持久化 Then 可脱敏关联父子而不保留原ID或内容', async () => {
+    const events: PiRunAuditTimingEvent[] = []
+    const recorder = createPiRunAuditRecorder({ sessionId: 'audit-test', runStartedAt: 0,
+      onTimingEvent: event => { events.push(event) } })
+    const parent = 'parent-sensitive-original-id'
+    const child = 'child-sensitive-original-id'
+    for (const [id, name, parentToolCallId] of [[parent, 'codemode', undefined], [child, 'Read', parent]] as const) {
+      await recordPiAgentAuditEvent(recorder, piEvent({ type: 'tool_execution_start', toolCallId: id,
+        toolName: name, parentToolCallId, args: { body: 'secret-payload' } }))
+      await recorder.record({ type: 'authorization_start', toolCallId: id, toolName: name, parentToolCallId })
+      await recorder.record({ type: 'authorization_end', toolCallId: id, toolName: name, parentToolCallId, outcome: 'allow' })
+      await recordPiAgentAuditEvent(recorder, piEvent({ type: 'tool_execution_end', toolCallId: id,
+        toolName: name, parentToolCallId, isError: false, result: { text: 'secret-result' } }))
+    }
+    const parentTiming = events.find(event => event.phase === 'tool_execution' && event.toolName === 'codemode')
+    const childTiming = events.filter(event => (event.phase === 'tool_execution' || event.phase === 'tool_wait') && event.toolName === 'Read')
+    expect(parentTiming?.phase).toBe('tool_execution')
+    if (parentTiming?.phase !== 'tool_execution') throw new Error('父执行记录缺失')
+    expect(childTiming).toHaveLength(2)
+    expect(childTiming).toEqual(expect.arrayContaining([
+      expect.objectContaining({ phase: 'tool_execution', parentToolCorrelationId: parentTiming.toolCorrelationId }),
+      expect.objectContaining({ phase: 'tool_wait', parentToolCorrelationId: parentTiming.toolCorrelationId }),
+    ]))
+    const jsonl = events.map(event => JSON.stringify(event)).join('\n')
+    for (const forbidden of [parent, child, 'secret-payload', 'secret-result', 'parentToolCallId', 'toolCallId']) {
+      expect(jsonl).not.toContain(forbidden)
+    }
+  })
 })
