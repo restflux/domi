@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { AgentSessionMeta } from '@domi/shared'
 import { TooltipProvider } from '@/components/ui/tooltip.tsx'
 import { AgentSessionItem } from './LeftSidebar.tsx'
+import type { SessionIndicatorStatus } from '@/atoms/agent-atoms'
 
 const noop = (): void => {}
 const noopAsync = async (): Promise<void> => {}
@@ -13,6 +14,7 @@ const noopAsync = async (): Promise<void> => {}
 function renderSessionItem(
   sessionOverrides: Partial<AgentSessionMeta> = {},
   withDelegation = false,
+  indicatorStatus: SessionIndicatorStatus = 'idle',
 ): string {
   const session: AgentSessionMeta = {
     id: 'session-1',
@@ -28,7 +30,7 @@ function renderSessionItem(
         <AgentSessionItem
           session={session}
           active={false}
-          indicatorStatus="idle"
+          indicatorStatus={indicatorStatus}
           disableMiniMap
           relativeTimeNow={3}
           delegationSummary={withDelegation ? {
@@ -109,6 +111,27 @@ describe('AgentSessionItem layout', () => {
     expect(styles).toMatch(/:root\.ui-modern \.agent-session-row,\s*:root\.ui-modern \.agent-project-session-list \.agent-session-row\s*\{[^}]*min-height: 2rem;[^}]*padding-left: 1\.5rem;/)
     expect(styles).toMatch(/\.agent-session-row \[data-session-status-slot="true"\]\s*\{\s*left: 0\.25rem;/)
     expect(styles).toMatch(/\.agent-session-row \[data-session-row-meta="true"\]\s*\{\s*width: 0;\s*overflow: hidden;/)
+  })
+
+  test('Given 按项目视图 When 预留行内状态空间 Then 不再由旧规则叠加静态状态列', () => {
+    const styles = readFileSync(resolve(import.meta.dir, '../../styles/globals.css'), 'utf8')
+
+    expect(styles).not.toMatch(/\.agent-project-session-list\s+\[data-session-status-slot="true"\]\s*\{[^}]*position:\s*static/)
+    expect(styles).not.toMatch(/\.agent-project-session-list\s+\[data-session-status-slot="true"\]\s*\{[^}]*transform:\s*none/)
+    expect(styles).toMatch(/:root:not\(\.ui-classic\) \.agent-project-session-list\s*\{\s*margin-left: 12px;/)
+    expect(styles).toMatch(/:root\.ui-modern \.agent-session-row,\s*:root\.ui-modern \.agent-project-session-list \.agent-session-row\s*\{[^}]*padding-left: 1\.5rem;/)
+  })
+
+  test.each(['idle', 'running', 'blocked', 'completed'] as const)('Given %s 会话 When 渲染状态槽 Then 独立定位且不参与标题的 flex 占位', (status) => {
+    const html = renderSessionItem({}, false, status)
+    const slot = html.match(/<span\b[^>]*data-session-status-slot="true"[^>]*>/)?.[0]
+
+    expect(slot).toBeDefined()
+    expect(slot).toContain('absolute')
+    expect(slot).toContain('top-1/2')
+    expect(slot).toContain('-translate-y-1/2')
+    expect(slot).toContain('w-3.5')
+    expect(html).toContain('整理会话标记布局')
   })
 
   test('Given 隐藏操作槽 When 悬浮、键盘聚焦或正在确认 Then 操作槽可见且保留快捷操作', () => {

@@ -987,11 +987,6 @@
   background-color: rgb(249 115 22 / 0.085);
 }
 
-:root:not(.ui-classic) .agent-project-session-list [data-session-status-slot="true"] {
-  position: static;
-  transform: none;
-}
-
 :root:not(.ui-classic) .agent-project-session-list .agent-session-item-active-surface::before {
   background-color: hsl(var(--primary) / 0.085);
   box-shadow: inset 1px 0 0 hsl(var(--primary) / 0.30);
