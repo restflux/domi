@@ -7,11 +7,13 @@ export const PI_ESM_ONLY_RUNTIME_PACKAGES = [
   '@earendil-works/pi-ai',
   '@earendil-works/pi-agent-core',
   '@earendil-works/pi-coding-agent',
+  '@earendil-works/pi-mcp',
 ] as const
 
 export const PI_REQUIRED_DYNAMIC_IMPORTS = [
   '@earendil-works/pi-ai',
   '@earendil-works/pi-ai/utils/transcript',
+  '@earendil-works/pi-mcp',
 ] as const
 
 export interface PiMainEsmBundleCheck {

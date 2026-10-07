@@ -8,6 +8,8 @@ import {
   PI_COMPACTION_FORBIDDEN_MARKERS,
   PI_COMPACTION_REQUIRED_MARKERS,
   PI_COMPACTION_RUNTIME_FILES,
+  PI_MCP_RUNTIME_FILES,
+  PI_MCP_REQUIRED_MARKERS,
   PI_RESPONSE_REQUIRED_MARKERS,
   PI_RESPONSE_RUNTIME_FILES,
   PI_RETRY_REQUIRED_MARKERS,
@@ -72,6 +74,11 @@ function writePiAiRuntime(nodeModulesDir: string): void {
   )
 }
 
+function writePiMcpRuntime(nodeModulesDir: string): void {
+  writeFiles(nodeModulesDir, '@earendil-works/pi-mcp', ['package.json'], JSON.stringify({ version: '1.0.4', type: 'module' }))
+  writeFiles(nodeModulesDir, '@earendil-works/pi-mcp', PI_MCP_RUNTIME_FILES.filter(file => file !== 'package.json'), PI_MCP_REQUIRED_MARKERS.join('\n'))
+}
+
 function writePatch(repoRoot: string): void {
   const patchPath = join(repoRoot, 'patches', '@earendil-works%2Fpi-ai@1.0.4.patch')
   mkdirSync(join(patchPath, '..'), { recursive: true })
@@ -88,6 +95,7 @@ function createFixture(): { root: string; repoRoot: string; appDir: string } {
     writeCodingAgentRuntime(nodeModulesDir)
     writeAgentCoreRuntime(nodeModulesDir)
     writePiAiRuntime(nodeModulesDir)
+    writePiMcpRuntime(nodeModulesDir)
   }
   return { root, repoRoot, appDir }
 }
@@ -106,7 +114,7 @@ describe('verifyPiCompactionRuntime', () => {
 
     const result = verifyPiCompactionRuntime({ repoRoot, appDir, packagedResourcesDir: resourcesDir })
     expect(result.sourceFiles).toBe(
-      PI_COMPACTION_RUNTIME_FILES.length + PI_TERMINATION_RUNTIME_FILES.length + PI_RETRY_RUNTIME_FILES.length + PI_RESPONSE_RUNTIME_FILES.length,
+      PI_COMPACTION_RUNTIME_FILES.length + PI_TERMINATION_RUNTIME_FILES.length + PI_RETRY_RUNTIME_FILES.length + PI_RESPONSE_RUNTIME_FILES.length + PI_MCP_RUNTIME_FILES.length,
     )
     expect(result.syncedFiles).toBe(result.sourceFiles)
     expect(result.packagedFiles).toBe(result.sourceFiles)
@@ -120,9 +128,61 @@ describe('verifyPiCompactionRuntime', () => {
     writeCodingAgentRuntime(packagedNodeModules)
     writeAgentCoreRuntime(packagedNodeModules)
     writePiAiRuntime(packagedNodeModules)
+    writePiMcpRuntime(packagedNodeModules)
 
     expect(verifyPiCompactionRuntime({ repoRoot, appDir, packagedResourcesDir: resourcesDir }).packagedLayout)
       .toBe('unpacked')
+  })
+
+  test('accepts builder-normalized MCP metadata but rejects changed runtime exports', async () => {
+    const { root, repoRoot, appDir } = createFixture()
+    const manifest = {
+      name: '@earendil-works/pi-mcp', version: '1.0.4', type: 'module',
+      exports: { '.': { import: './dist/index.js' } }, dependencies: { 'cross-spawn': '7.0.6' },
+    }
+    const rootManifest = join(repoRoot, 'node_modules/@earendil-works/pi-mcp/package.json')
+    const appManifest = join(appDir, 'node_modules/@earendil-works/pi-mcp/package.json')
+    writeFileSync(rootManifest, JSON.stringify({ ...manifest, scripts: { build: 'tsc' }, keywords: ['mcp'] }, null, 2))
+    writeFileSync(appManifest, JSON.stringify(manifest))
+    const resourcesDir = join(root, 'resources')
+    await createAsar(appDir, resourcesDir)
+    expect(() => verifyPiCompactionRuntime({ repoRoot, packagedResourcesDir: resourcesDir })).not.toThrow()
+    writeFileSync(appManifest, JSON.stringify({ ...manifest, exports: { '.': { import: './dist/wrong.js' } } }))
+    await createAsar(appDir, resourcesDir)
+    expect(() => verifyPiCompactionRuntime({ repoRoot, packagedResourcesDir: resourcesDir })).toThrow('package.json (exports)')
+  })
+
+  test('rejects changed conditional-export priority even when values are identical', async () => {
+    const { root, repoRoot, appDir } = createFixture()
+    const base = { version: '1.0.4', type: 'module' }
+    writeFileSync(join(repoRoot, 'node_modules/@earendil-works/pi-mcp/package.json'), JSON.stringify({
+      ...base, exports: { '.': { import: './dist/index.js', default: './dist/fallback.js' } },
+    }))
+    writeFileSync(join(appDir, 'node_modules/@earendil-works/pi-mcp/package.json'), JSON.stringify({
+      ...base, exports: { '.': { default: './dist/fallback.js', import: './dist/index.js' } },
+    }))
+    const resourcesDir = join(root, 'resources')
+    await createAsar(appDir, resourcesDir)
+    expect(() => verifyPiCompactionRuntime({ repoRoot, packagedResourcesDir: resourcesDir })).toThrow('package.json (exports)')
+  })
+
+  test('rejects a synced native MCP package with a stale version', () => {
+    const { repoRoot, appDir } = createFixture()
+    writeFiles(join(repoRoot, 'node_modules'), '@earendil-works/pi-mcp', ['package.json'], JSON.stringify({ version: '1.0.4', type: 'module' }))
+    writeFiles(join(appDir, 'node_modules'), '@earendil-works/pi-mcp', ['package.json'], JSON.stringify({ version: '1.0.0', type: 'module' }))
+    expect(() => verifyPiCompactionRuntime({ repoRoot, appDir })).toThrow('Pi MCP 版本')
+  })
+
+  test('rejects missing MCP runtime files and mismatched packaged MCP content', async () => {
+    const { root, repoRoot, appDir } = createFixture()
+    const clientPath = join(appDir, 'node_modules', '@earendil-works/pi-mcp/dist/client.js')
+    rmSync(clientPath)
+    expect(() => verifyPiCompactionRuntime({ repoRoot, appDir })).toThrow('缺少 dist/client.js')
+    writePiMcpRuntime(join(appDir, 'node_modules'))
+    writeFileSync(clientPath, `${PI_MCP_REQUIRED_MARKERS.join('\n')}\nchanged`)
+    const resourcesDir = join(root, 'resources')
+    await createAsar(appDir, resourcesDir)
+    expect(() => verifyPiCompactionRuntime({ repoRoot, packagedResourcesDir: resourcesDir })).toThrow('packaged Pi MCP runtime 与根 Pi runtime 不一致')
   })
 
   test('rejects a runtime that lost a native lifecycle marker', () => {

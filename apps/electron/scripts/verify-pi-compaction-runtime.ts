@@ -3,11 +3,13 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { extractFile } from '@electron/asar'
 
 const PI_CODING_AGENT_PACKAGE = '@earendil-works/pi-coding-agent'
 const PI_AGENT_CORE_PACKAGE = '@earendil-works/pi-agent-core'
 const PI_AI_PACKAGE = '@earendil-works/pi-ai'
+const PI_MCP_PACKAGE = '@earendil-works/pi-mcp'
 const PI_AI_RETRY_PATCH_NAME = '@earendil-works%2Fpi-ai@1.0.4.patch'
 
 export const PI_COMPACTION_RUNTIME_FILES = [
@@ -59,6 +61,18 @@ export const PI_RESPONSE_REQUIRED_MARKERS = [
   'textSlotsById',
   'recoveredTextBlocks',
   'domiResponsesDiagnostics',
+] as const
+
+export const PI_MCP_RUNTIME_FILES = [
+  'package.json',
+  'dist/index.js',
+  'dist/client.js',
+  'dist/transports/stdio.js',
+  'dist/transports/streamable-http.js',
+] as const
+
+export const PI_MCP_REQUIRED_MARKERS = [
+  'class McpClient', 'class StdioTransport', 'class StreamableHttpTransport', 'notifications/cancelled',
 ] as const
 
 const PI_AI_PATCH_REQUIRED_MARKERS = [
@@ -165,12 +179,34 @@ function assertSameFiles(expected: Map<string, Buffer>, actual: Map<string, Buff
   }
 }
 
+function assertMcpVersion(files: Map<string, Buffer>, label: string): void {
+  const manifest: unknown = JSON.parse(files.get('package.json')?.toString('utf8') ?? '{}')
+  if (!manifest || typeof manifest !== 'object' || !('version' in manifest) || manifest.version !== '1.0.4'
+    || !('type' in manifest) || manifest.type !== 'module') {
+    throw new Error(`[pi-runtime] ${label} 不满足 Pi MCP 版本/ESM 契约 (1.0.4)`)
+  }
+}
+
 function addedPatchText(patch: string): string {
   return patch
     .split(/\r?\n/u)
     .filter(line => line.startsWith('+') && !line.startsWith('+++'))
     .map(line => line.slice(1))
     .join('\n')
+}
+
+function assertSamePackagedMcpFiles(expected: Map<string, Buffer>, actual: Map<string, Buffer>, label: string): void {
+  assertSameFiles(new Map([...expected].filter(([name]) => name !== 'package.json')), actual, label)
+  // builder 会移除 scripts/keywords 并重写 JSON；代码仍逐字节一致，manifest 按加载契约比对。
+  // exports/imports 的条件顺序影响 Node 解析，不能仅按无序对象深比较。
+  const source: Record<string, unknown> = JSON.parse(expected.get('package.json')!.toString('utf8'))
+  const packaged: Record<string, unknown> = JSON.parse(actual.get('package.json')!.toString('utf8'))
+  for (const key of ['name', 'version', 'type', 'main', 'exports', 'imports', 'dependencies', 'optionalDependencies', 'peerDependencies', 'engines', 'bin', 'os', 'cpu']) {
+    const same = key === 'exports' || key === 'imports'
+      ? JSON.stringify(source[key]) === JSON.stringify(packaged[key])
+      : isDeepStrictEqual(source[key], packaged[key])
+    if (!same) throw new Error(`[pi-runtime] ${label} 与根 Pi runtime 不一致: package.json (${key})`)
+  }
 }
 
 function assertPatchMarkers(repoRoot: string): void {
@@ -201,6 +237,11 @@ export function verifyPiCompactionRuntime(
   const rootResponseFiles = readPackageFiles(
     join(repoRoot, 'node_modules'), 'root Pi AI Responses runtime', PI_AI_PACKAGE, PI_RESPONSE_RUNTIME_FILES,
   )
+  const rootMcpFiles = readPackageFiles(
+    join(repoRoot, 'node_modules'), 'root Pi MCP runtime', PI_MCP_PACKAGE, PI_MCP_RUNTIME_FILES,
+  )
+  assertMcpVersion(rootMcpFiles, 'root Pi MCP runtime')
+  assertRuntimeMarkers(rootMcpFiles, 'root Pi MCP runtime', PI_MCP_REQUIRED_MARKERS)
   assertRuntimeMarkers(rootCompactionFiles, 'root Pi coding-agent runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS)
   assertRuntimeMarkers(rootTerminationFiles, 'root Pi agent-core runtime', PI_TERMINATION_REQUIRED_MARKERS)
   assertRuntimeMarkers(rootRetryFiles, 'root Pi AI retry runtime', PI_RETRY_REQUIRED_MARKERS)
@@ -221,6 +262,10 @@ export function verifyPiCompactionRuntime(
     const appResponseFiles = readPackageFiles(
       appNodeModules, 'Electron synced Pi AI Responses runtime', PI_AI_PACKAGE, PI_RESPONSE_RUNTIME_FILES,
     )
+    const appMcpFiles = readPackageFiles(appNodeModules, 'Electron synced Pi MCP runtime', PI_MCP_PACKAGE, PI_MCP_RUNTIME_FILES)
+    assertMcpVersion(appMcpFiles, 'Electron synced Pi MCP runtime')
+    assertRuntimeMarkers(appMcpFiles, 'Electron synced Pi MCP runtime', PI_MCP_REQUIRED_MARKERS)
+    assertSameFiles(rootMcpFiles, appMcpFiles, 'Electron synced Pi MCP runtime')
     assertRuntimeMarkers(appCompactionFiles, 'Electron synced Pi coding-agent runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS)
     assertRuntimeMarkers(appTerminationFiles, 'Electron synced Pi agent-core runtime', PI_TERMINATION_REQUIRED_MARKERS)
     assertRuntimeMarkers(appRetryFiles, 'Electron synced Pi AI retry runtime', PI_RETRY_REQUIRED_MARKERS)
@@ -229,7 +274,7 @@ export function verifyPiCompactionRuntime(
     assertSameFiles(rootTerminationFiles, appTerminationFiles, 'Electron synced Pi agent-core runtime')
     assertSameFiles(rootRetryFiles, appRetryFiles, 'Electron synced Pi AI retry runtime')
     assertSameFiles(rootResponseFiles, appResponseFiles, 'Electron synced Pi AI Responses runtime')
-    syncedFiles = appCompactionFiles.size + appTerminationFiles.size + appRetryFiles.size + appResponseFiles.size
+    syncedFiles = appCompactionFiles.size + appTerminationFiles.size + appRetryFiles.size + appResponseFiles.size + appMcpFiles.size
   }
 
   let packagedFiles = 0
@@ -240,6 +285,10 @@ export function verifyPiCompactionRuntime(
     const packagedTermination = readPackagedFiles(resourcesDir, PI_AGENT_CORE_PACKAGE, PI_TERMINATION_RUNTIME_FILES)
     const packagedRetry = readPackagedFiles(resourcesDir, PI_AI_PACKAGE, PI_RETRY_RUNTIME_FILES)
     const packagedResponse = readPackagedFiles(resourcesDir, PI_AI_PACKAGE, PI_RESPONSE_RUNTIME_FILES)
+    const packagedMcp = readPackagedFiles(resourcesDir, PI_MCP_PACKAGE, PI_MCP_RUNTIME_FILES)
+    assertMcpVersion(packagedMcp.files, 'packaged Pi MCP runtime')
+    assertRuntimeMarkers(packagedMcp.files, 'packaged Pi MCP runtime', PI_MCP_REQUIRED_MARKERS)
+    assertSamePackagedMcpFiles(rootMcpFiles, packagedMcp.files, 'packaged Pi MCP runtime')
     assertRuntimeMarkers(packagedCompaction.files, 'packaged Pi coding-agent runtime', PI_COMPACTION_REQUIRED_MARKERS, PI_COMPACTION_FORBIDDEN_MARKERS)
     assertRuntimeMarkers(packagedTermination.files, 'packaged Pi agent-core runtime', PI_TERMINATION_REQUIRED_MARKERS)
     assertRuntimeMarkers(packagedRetry.files, 'packaged Pi AI retry runtime', PI_RETRY_REQUIRED_MARKERS)
@@ -248,15 +297,15 @@ export function verifyPiCompactionRuntime(
     assertSameFiles(rootTerminationFiles, packagedTermination.files, 'packaged Pi agent-core runtime')
     assertSameFiles(rootRetryFiles, packagedRetry.files, 'packaged Pi AI retry runtime')
     assertSameFiles(rootResponseFiles, packagedResponse.files, 'packaged Pi AI Responses runtime')
-    if (new Set([packagedCompaction.layout, packagedTermination.layout, packagedRetry.layout, packagedResponse.layout]).size !== 1) {
+    if (new Set([packagedCompaction.layout, packagedTermination.layout, packagedRetry.layout, packagedResponse.layout, packagedMcp.layout]).size !== 1) {
       throw new Error('[pi-runtime] packaged Pi runtime layout 不一致')
     }
-    packagedFiles = packagedCompaction.files.size + packagedTermination.files.size + packagedRetry.files.size + packagedResponse.files.size
+    packagedFiles = packagedCompaction.files.size + packagedTermination.files.size + packagedRetry.files.size + packagedResponse.files.size + packagedMcp.files.size
     packagedLayout = packagedCompaction.layout
   }
 
   return {
-    sourceFiles: rootCompactionFiles.size + rootTerminationFiles.size + rootRetryFiles.size + rootResponseFiles.size,
+    sourceFiles: rootCompactionFiles.size + rootTerminationFiles.size + rootRetryFiles.size + rootResponseFiles.size + rootMcpFiles.size,
     syncedFiles,
     packagedFiles,
     packagedLayout,

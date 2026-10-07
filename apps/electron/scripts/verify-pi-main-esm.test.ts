@@ -7,13 +7,25 @@ describe('Pi main ESM loading contract', () => {
       const pi = await import('@earendil-works/pi-ai')
       const transcript = await import('@earendil-works/pi-ai/utils/transcript')
       await import('@earendil-works/pi-ai/compat')
+      await import('@earendil-works/pi-mcp')
     `)
 
     expect(result.staticRequires).toEqual([])
     expect(result.dynamicImports).toEqual([
       '@earendil-works/pi-ai',
       '@earendil-works/pi-ai/utils/transcript',
+      '@earendil-works/pi-mcp',
     ])
+  })
+
+  test('rejects CommonJS require for native MCP root and subpaths', () => {
+    for (const path of ['@earendil-works/pi-mcp', '@earendil-works/pi-mcp/oauth']) {
+      expect(() => assertPiMainEsmBundle(`
+        await import('@earendil-works/pi-ai')
+        await import('@earendil-works/pi-ai/utils/transcript')
+        const mcp = require('${path}')
+      `)).toThrow('CommonJS 主进程不能静态 require Pi ESM 包')
+    }
   })
 
   test('rejects CommonJS require for Pi ESM packages', () => {

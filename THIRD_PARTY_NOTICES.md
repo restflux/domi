@@ -55,7 +55,7 @@ Domi's root [`LICENSE`](./LICENSE) contains the AGPL-3.0 terms.
 ### Pi Agent Runtime
 
 - Source: https://github.com/earendil-works/pi
-- Packages (1.0.4): `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `@earendil-works/pi-mcp`, `@earendil-works/pi-codemode`, `@earendil-works/pi-telemetry`, `@earendil-works/chord`. MCP and Codemode packages are transitive SDK dependencies; Domi does not enable their CLI execution paths.
+- Packages (1.0.4): `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `@earendil-works/pi-mcp`, `@earendil-works/pi-codemode`, `@earendil-works/pi-telemetry`, `@earendil-works/chord`. The MCP package is a direct runtime dependency: Domi uses its standalone stdio and Streamable HTTP clients under the existing Domi configuration, credential, permission and audit boundaries. Legacy HTTP+SSE retains the official MCP SDK compatibility path. Codemode remains a transitive SDK dependency; Domi does not enable Pi's CLI MCP configuration or Codemode execution paths.
 - License: MIT
 - Copyright: © 2025 Mario Zechner and contributors
 - Active local modifications: `patches/@earendil-works%2Fpi-ai@1.0.4.patch`, rebuilt against the 1.0.4 npm sources. Earlier version patches are retained only as source history and are not applied.
