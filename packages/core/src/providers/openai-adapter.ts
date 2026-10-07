@@ -291,9 +291,10 @@ export class OpenAIAdapter implements ProviderAdapter {
 
   buildTitleRequest(input: TitleRequestInput): ProviderRequest {
     const url = resolveOpenAIChatCompletionsUrl(input.baseUrl, this.providerType)
-    // OpenCode Go 的编程模型会将一部分输出预算用于推理；通用标题请求的
-    // 50 tokens 不足以稳定产出可见正文，导致自动重命名收到空标题。
-    const maxTokens = this.providerType === 'opencode-go-openai' ? 512 : 50
+    // GLM / DeepSeek / Qwen 等推理模型默认输出思考内容且计入 completion 预算：
+    // 50 tokens 连思考都无法完成，message.content 为空，自动命名会停在默认标题。
+    // 统一预留 512 预算；非推理模型只生成短标题即停，提高上限不增加实际消耗。
+    const maxTokens = 512
 
     return {
       url,

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { OpenAIAdapter } from './openai-adapter.ts'
 import { getAdapter } from './index.ts'
 
-function buildTitleBody(provider: 'openai' | 'opencode-go-openai'): Record<string, unknown> {
+function buildTitleBody(provider: 'openai' | 'opencode-go-openai' | 'custom' | 'zhipu'): Record<string, unknown> {
   const request = new OpenAIAdapter(provider).buildTitleRequest({
     baseUrl: provider === 'opencode-go-openai'
       ? 'https://opencode.ai/zen/go/v1'
@@ -16,12 +16,12 @@ function buildTitleBody(provider: 'openai' | 'opencode-go-openai'): Record<strin
 }
 
 describe('OpenAIAdapter 标题生成请求', () => {
-  test('Given OpenCode Go 的推理模型 When 生成标题 Then 预留足够的输出预算', () => {
-    expect(buildTitleBody('opencode-go-openai').max_tokens).toBe(512)
-  })
-
-  test('Given 标准 OpenAI 渠道 When 生成标题 Then 保持原有的小输出预算', () => {
-    expect(buildTitleBody('openai').max_tokens).toBe(50)
+  test('Given 任意 OpenAI 兼容渠道（含推理模型）When 生成标题 Then 预留足够的输出预算', () => {
+    // GLM / DeepSeek / Qwen 等推理模型默认输出思考内容且计入 completion 预算，
+    // 预算不足时 message.content 为空，自动命名会停留在默认标题。
+    for (const provider of ['openai', 'opencode-go-openai', 'custom', 'zhipu'] as const) {
+      expect(buildTitleBody(provider).max_tokens).toBe(512)
+    }
   })
 
   test('Given Qwen Token Plan Individual When 构建请求 Then 使用独立 OpenAI Chat Completions 端点', () => {

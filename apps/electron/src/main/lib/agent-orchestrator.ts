@@ -109,7 +109,7 @@ import {
 import { resolvePiThinkingLevel } from './agent-thinking-level'
 import { resolvePiReasoningCapability } from './adapters/pi-model-registry'
 import { generateCodexTitle } from './adapters/pi-codex-title-generator'
-import { createFallbackTitle, sanitizeGeneratedTitle, TITLE_PROMPT } from './title-generation'
+import { createFallbackTitle, isShortTitleMessage, sanitizeGeneratedTitle, TITLE_PROMPT } from './title-generation'
 import { AuditWriter } from './audit/audit-writer.ts'
 import type { PiRunAuditTimingCallback } from './audit/pi-run-audit.ts'
 import { createPiExecutionController } from './pi-execution-controller.ts'
@@ -557,7 +557,14 @@ export class AgentOrchestrator {
     if (signal?.aborted) return null
     console.log('[Agent 标题生成] 开始生成标题:', { channelId, modelId, userMessage: userMessage.slice(0, 50) })
 
-    // 渠道信息在异常路径也要用于判断是否应用 OpenCode Go 本地兜底，因此提前解析；
+    // 对齐 Chat 模式：过短消息没有明确主题，直接使用原文，避免白打一次标题请求。
+    if (isShortTitleMessage(userMessage)) {
+      const shortTitle = createFallbackTitle(userMessage)
+      console.log('[Agent 标题生成] 消息过短，直接使用原文作为标题:', shortTitle)
+      return shortTitle
+    }
+
+    // 渠道解析提前：区分 openai-codex（OAuth 协议）与常规 Provider 路径；
     // 同时保留 listChannels 自身的错误边界：解析失败时按“无渠道”处理并返回 null。
     let channel: import('@domi/shared').Channel | undefined
     try {
@@ -617,17 +624,18 @@ export class AgentOrchestrator {
       const result = title ? sanitizeGeneratedTitle(title) : null
       if (!result) {
         console.warn('[Agent 标题生成] API 未返回可用标题')
-        // OpenCode Go 的推理模型可能把输出预算全花在推理上返回空正文，或
-        // 内容块为数组；任何取不到可用标题的情况都回退到首行兜底，保证会话一定被重命名。
-        return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
+        // 推理模型可能把输出预算全花在思考上返回空正文，或内容块为数组；
+        // 任何取不到可用标题的情况都回退到首行兜底，保证会话一定被重命名，
+        // 不停留在默认标题（曾仅对 OpenCode Go 兜底，其余渠道长期缺失）。
+        return createFallbackTitle(userMessage)
       }
 
       console.log(`[Agent 标题生成] 生成标题成功: "${result}"`)
       return result
     } catch (error) {
       console.warn('[Agent 标题生成] 生成失败:', error)
-      // OpenCode Go 的服务端偶发返回空标题/异常响应/超时，异常路径同样要完成重命名。
-      return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
+      // 标题请求失败不能让会话停留在默认标题；用首行兜底完成重命名。
+      return createFallbackTitle(userMessage)
     }
   }
 

@@ -4,6 +4,14 @@ export const TITLE_PROMPT = '根据用户的第一条消息，生成一个简短
 /** 短消息阈值：低于此长度直接使用原文作为标题 */
 export const SHORT_MESSAGE_THRESHOLD = 4
 
+/**
+ * 判断消息是否过短：短消息没有明确主题，标题模型容易返回空正文或幻觉，
+ * 直接使用原文作为标题，避免白白请求一次标题 API。Chat 与 Agent 两条路径共用。
+ */
+export function isShortTitleMessage(userMessage: string): boolean {
+  return userMessage.trim().length <= SHORT_MESSAGE_THRESHOLD
+}
+
 /** 最大标题长度 */
 export const MAX_TITLE_LENGTH = 20
 

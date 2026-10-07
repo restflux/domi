@@ -34,7 +34,7 @@ import { getFetchFn } from './proxy-fetch'
 import { getEffectiveProxyUrl } from './proxy-settings-service'
 import { getEnabledTools } from './chat-tool-registry'
 import { executeToolCalls } from './chat-tool-executor'
-import { createFallbackTitle, sanitizeGeneratedTitle, SHORT_MESSAGE_THRESHOLD, TITLE_PROMPT } from './title-generation'
+import { createFallbackTitle, isShortTitleMessage, sanitizeGeneratedTitle, TITLE_PROMPT } from './title-generation'
 import {
   addChatProviderRequest,
   createChatUsageAccumulator,
@@ -662,9 +662,8 @@ export async function generateTitle(input: GenerateTitleInput): Promise<string |
   console.log('[标题生成] 开始生成标题:', { channelId, modelId, userMessage: userMessage.slice(0, 50) })
 
   // 短消息直接使用原文作为标题，避免 AI 幻觉
-  const trimmedMessage = userMessage.trim()
-  if (trimmedMessage.length <= SHORT_MESSAGE_THRESHOLD) {
-    const shortTitle = createFallbackTitle(trimmedMessage)
+  if (isShortTitleMessage(userMessage)) {
+    const shortTitle = createFallbackTitle(userMessage.trim())
     console.log('[标题生成] 消息过短，直接使用原文作为标题:', shortTitle)
     return shortTitle
   }
@@ -689,8 +688,8 @@ export async function generateTitle(input: GenerateTitleInput): Promise<string |
     apiKey = await resolveChannelRuntimeApiKey(channelId)
   } catch {
     console.warn('[标题生成] 解密 API Key 失败')
-    // OpenCode Go 无法解密也仍要完成重命名，避免对话长期停在默认标题。
-    return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
+    // 无法解密也仍要完成重命名，避免对话长期停在默认标题。
+    return createFallbackTitle(userMessage)
   }
 
   try {
@@ -708,15 +707,15 @@ export async function generateTitle(input: GenerateTitleInput): Promise<string |
     const result = title ? sanitizeGeneratedTitle(title) : null
     if (!result) {
       console.warn('[标题生成] API 未返回可用标题')
-      // OpenCode Go 的服务端偶发返回空标题时，仍要完成重命名，避免对话长期停在默认标题。
-      return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
+      // 推理模型空正文等异常场景仍要完成重命名，避免对话长期停在默认标题。
+      return createFallbackTitle(userMessage)
     }
 
     console.log('[标题生成] 成功生成标题:', result)
     return result
   } catch (error) {
     console.warn('[标题生成] 请求失败:', error)
-    // OpenCode Go 的服务端偶发返回空标题/异常响应/超时，异常路径同样要完成重命名。
-    return channel.provider === 'opencode-go-openai' ? createFallbackTitle(userMessage) : null
+    // 服务端偶发返回空标题/异常响应/超时，异常路径同样要完成重命名。
+    return createFallbackTitle(userMessage)
   }
 }
