@@ -1,13 +1,15 @@
 /**
  * TurnFileChangesSummary — Turn 底部文件改动汇总
  *
- * 在 AssistantTurnRenderer 的 MessageActions 之上，以 chip 横排展示本轮所有
+ * 在 AssistantTurnRenderer 的 MessageActions 之上，以列表展示本轮所有
  * 修改类工具调用（Edit / Write / MultiEdit / NotebookEdit）所触及的文件。
+ * 默认折叠，只展示标题与文件数，点击标题展开文件列表。
  *
  * 子代理（Agent/Task）的修改也会冒泡到此处——因为 SDK 的子代理 assistant
  * 消息同样存在于 turn.turnMessages 中（通过 parent_tool_use_id 关联）。
  *
- * 文件 chip 直接复用 FilePathChip（与 Agent 消息中的渲染完全一致）。
+ * 文件行直接复用 FilePathChip（与 Agent 消息中的渲染完全一致），
+ * 并以 openAsDiff 打开该文件在 Session Target 内的改动 Diff。
  */
 
 import * as React from 'react'
@@ -105,12 +107,15 @@ export interface TurnFileChangesSummaryProps {
   basePath?: string
 }
 
+/** 默认折叠：每个 Turn 底部都可能出现汇总，全部展开会让时间线过长。 */
+export const TURN_FILE_CHANGES_DEFAULT_EXPANDED = false
+
 export function TurnFileChangesSummary({
   turnMessages,
   basePath,
 }: TurnFileChangesSummaryProps): React.ReactElement | null {
   const paths = React.useMemo(() => collectFilePaths(turnMessages), [turnMessages])
-  const [expanded, setExpanded] = React.useState(true)
+  const [expanded, setExpanded] = React.useState(TURN_FILE_CHANGES_DEFAULT_EXPANDED)
 
   if (paths.length === 0) return null
 
@@ -128,12 +133,13 @@ export function TurnFileChangesSummary({
             <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
             <Files className="size-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate font-medium">已编辑文件</span>
+            <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">{paths.length} 个文件</span>
           </button>
         </div>
         {expanded && <div className="grid w-full border-t border-border">
           {paths.map((filePath) => (
             <div key={filePath} className="w-full overflow-hidden bg-background/50 px-3 py-1.5 text-sm text-muted-foreground">
-              <FilePathChip filePath={filePath} basePath={basePath} />
+              <FilePathChip filePath={filePath} basePath={basePath} openAsDiff />
             </div>
           ))}
         </div>}

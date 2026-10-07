@@ -433,7 +433,7 @@ describe('Work 消息 V2 视图', () => {
     expect(v2).toContain('data-work-v2-file-summary="true"')
     expect(v2).toContain('overflow-hidden rounded-xl border border-border bg-card')
     expect(v2).toContain('已编辑文件')
-    expect(v2).toContain('summary.ts')
+    expect(v2).toContain('1 个文件')
     expect(v2).toContain('data-work-v2-answer="true"')
     expect(v2).toContain('data-work-v2-metadata="true"')
     expect(v2.indexOf('data-work-v2-answer="true"')).toBeLessThan(v2.indexOf('data-work-v2-file-summary="true"'))

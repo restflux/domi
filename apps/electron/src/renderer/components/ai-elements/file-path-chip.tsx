@@ -16,6 +16,7 @@ import { useOpenPreview } from '@/components/diff/preview-opener'
 import { currentAgentSessionIdAtom } from '@/atoms/agent-atoms'
 import { IMAGE_FILE_EXTENSIONS } from './file-path-kind'
 import { filePathStatusCache, type FilePathStatus } from './file-path-status-cache'
+import type { SessionTargetFileInspection } from '@domi/shared'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -104,10 +105,25 @@ interface FilePathChipProps {
   /** 多个候选基础目录（如主 cwd + 附加目录），点击时由主进程依次解析 */
   basePaths?: string[]
   className?: string
+  /** 为 true 时优先打开该文件在当前 Session Target 内的改动 Diff；不满足条件回退纯预览。 */
+  openAsDiff?: boolean
+}
+
+/**
+ * openAsDiff 入口的 Diff 目标决策。
+ *
+ * 仅当主进程检查确认文件存在于当前 Session Target 且 target 属于 Git 仓库时才打开 Diff；
+ * 否则返回 null，由调用方回退到普通文件预览。导出供单元测试直接覆盖决策规则。
+ */
+export function resolveSessionTargetDiffTarget(
+  inspection: SessionTargetFileInspection | null | undefined,
+): { relativePath: string } | null {
+  if (!inspection?.exists || !inspection.isGitRepo) return null
+  return { relativePath: inspection.relativePath }
 }
 
 /** 文件路径芯片 — 可点击，触发文件预览 */
-export function FilePathChip({ filePath, basePath, basePaths, className }: FilePathChipProps): React.ReactElement {
+export function FilePathChip({ filePath, basePath, basePaths, className, openAsDiff = false }: FilePathChipProps): React.ReactElement {
   const trimmedPath = filePath.trim()
   const { path: cleanPath, suffix: lineColSuffix } = stripLineCol(trimmedPath)
 
@@ -201,6 +217,24 @@ export function FilePathChip({ filePath, basePath, basePaths, className }: FileP
         return
       }
 
+      // openAsDiff 入口（如 Turn 底部「已编辑文件」汇总）：文件位于当前 Session Target
+      // 的 Git 仓库内时打开该文件的改动 Diff；路径不在 target、target 非 Git 或检查失败时回退纯预览。
+      if (openAsDiff) {
+        const inspection = await window.electronAPI
+          .inspectSessionTargetFile(sessionId, cleanPath, false)
+          .catch(() => null)
+        const diffTarget = resolveSessionTargetDiffTarget(inspection)
+        if (diffTarget) {
+          openPreview(sessionId, {
+            filePath: diffTarget.relativePath,
+            dirPath: '.',
+            gitRoot: 'session-target',
+            sessionTarget: true,
+          })
+          return
+        }
+      }
+
       openPreview(sessionId, {
         filePath: cleanPath,
         previewOnly: true,
@@ -209,7 +243,7 @@ export function FilePathChip({ filePath, basePath, basePaths, className }: FileP
     } catch {
       toast.error(`无法打开文件：${displayPath}`)
     }
-  }, [store, openPreview, cleanPath, candidateBases, displayPath])
+  }, [store, openPreview, cleanPath, candidateBases, displayPath, openAsDiff])
 
   const handleShowInFolder = React.useCallback(() => {
     if (sessionId && !isAbsolute) {
@@ -250,7 +284,7 @@ export function FilePathChip({ filePath, basePath, basePaths, className }: FileP
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48 z-[9999]">
         <ContextMenuItem onClick={handleClick}>
-          {isDirectory ? '打开文件夹' : '打开预览'}
+          {isDirectory ? '打开文件夹' : openAsDiff ? '查看改动' : '打开预览'}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={handleShowInFolder}>

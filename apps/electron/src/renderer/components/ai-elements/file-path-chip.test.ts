@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { getFileName } from './file-path-chip'
+import { getFileName, resolveSessionTargetDiffTarget } from './file-path-chip'
 import { isImageFilePath } from './file-path-kind'
+
+describe('resolveSessionTargetDiffTarget', () => {
+  test('文件存在且 Session Target 为 Git 仓库时返回 Diff 目标', () => {
+    expect(resolveSessionTargetDiffTarget({ relativePath: 'src/a.ts', exists: true, isGitRepo: true }))
+      .toEqual({ relativePath: 'src/a.ts' })
+  })
+
+  test('非 Git 仓库、文件不存在或无检查结果时回退纯预览', () => {
+    expect(resolveSessionTargetDiffTarget({ relativePath: 'notes/x.md', exists: true, isGitRepo: false })).toBeNull()
+    expect(resolveSessionTargetDiffTarget({ relativePath: 'gone.ts', exists: false, isGitRepo: true })).toBeNull()
+    expect(resolveSessionTargetDiffTarget(null)).toBeNull()
+    expect(resolveSessionTargetDiffTarget(undefined)).toBeNull()
+  })
+})
 
 describe('getFileName', () => {
   test.each([
