@@ -92,6 +92,58 @@ test('普通内容搜索在结果限额前排除附属侧聊，不删除历史�
   expect(existsSync(join(tempHome, '.domi', 'agent-sessions', 'side-search-0.jsonl'))).toBe(true)
 })
 
+test('Given 非boolean Codemode设置 When 更新JSON元数据 Then 拒绝且磁盘状态不变', () => {
+  writeAgentSessionsIndex(createIndexedSessions(1))
+  const indexPath = join(tempHome, '.domi', 'agent-sessions.json')
+  const original = readFileSync(indexPath, 'utf8')
+  for (const value of ['true', 1, null, {}]) {
+    expect(() => Reflect.apply(manager.updateAgentSessionMeta, undefined, ['session-0', { readonlyCodemode: value }])).toThrow('boolean')
+    expect(readFileSync(indexPath, 'utf8')).toBe(original)
+  }
+})
+
+test('Given 侧聊或协作用途 When 请求开启Codemode Then 拒绝且不保存选择', () => {
+  const ordinary = createIndexedSessions(1)[0]!
+  for (const purpose of [{ sideChatParentSessionId: 'parent' }, { parentSessionId: 'parent' }, { sourceDelegationId: 'delegation' }, { independentReviewId: 'review' }]) {
+    writeAgentSessionsIndex([{ ...ordinary, ...purpose }])
+    expect(() => manager.updateAgentSessionMeta('session-0', { readonlyCodemode: true })).toThrow('主 Work')
+    expect(manager.getAgentSessionMeta('session-0')?.readonlyCodemode).toBeUndefined()
+  }
+})
+
+test('Given 主会话和独立新会话 When 经IPC开启并重读JSON Then 仅该会话持久化且不改变权限', async () => {
+  const { registerReadonlyCodemodeIpc } = await import('../ipc/register-readonly-codemode-ipc.ts')
+  const { resolveReadonlyCodemodeForRun } = await import('@domi/shared')
+  const first = manager.createAgentSession('Codemode主任务', undefined, 'workspace-a')
+  const second = manager.createAgentSession('另一个任务', undefined, 'workspace-a')
+  let handle: (event: unknown, sessionId: unknown, enabled: unknown) => Promise<import('@domi/shared').AgentSessionMeta> = async () => { throw new Error('未注册') }
+  registerReadonlyCodemodeIpc({ handle: (_channel, callback) => { handle = callback } }, { update: manager.updateAgentSessionMeta })
+  await handle({}, first.id, true)
+  const saved = manager.getAgentSessionMeta(first.id)!
+  const runChoice = resolveReadonlyCodemodeForRun(saved)
+  expect(runChoice).toBe(true)
+  expect(saved).toMatchObject({ readonlyCodemode: true, workflow: first.workflow, executionPolicy: first.executionPolicy })
+  // 绕过内存展示，检查已有索引真实落盘；另一个会话没有继承开关。
+  const disk = JSON.parse(readFileSync(join(tempHome, '.domi', 'agent-sessions.json'), 'utf8'))
+  expect(disk.sessions.find((item: { id: string }) => item.id === first.id).readonlyCodemode).toBe(true)
+  expect(manager.getAgentSessionMeta(second.id)?.readonlyCodemode).toBeUndefined()
+  await handle({}, first.id, false)
+  expect(runChoice).toBe(true)
+  expect(resolveReadonlyCodemodeForRun(manager.getAgentSessionMeta(first.id))).toBe(false)
+  await expect(handle({}, 'missing', true)).rejects.toThrow('不存在')
+})
+
+test('Given 已启用选择 When 切为极简预设 Then 当前选择暂停而非补回工具；极简不能再开启', async () => {
+  const { resolveReadonlyCodemodeForRun } = await import('@domi/shared')
+  const session = manager.createAgentSession('Preset兼容', undefined, 'workspace-a')
+  manager.updateAgentSessionMeta(session.id, { readonlyCodemode: true })
+  const minimal = manager.updateAgentSessionMeta(session.id, { modelPresentationPreset: 'minimal' })
+  expect(minimal.readonlyCodemode).toBe(true)
+  expect(resolveReadonlyCodemodeForRun(minimal)).toBe(false)
+  expect(() => manager.updateAgentSessionMeta(session.id, { readonlyCodemode: true })).toThrow('极简')
+  expect(resolveReadonlyCodemodeForRun(manager.updateAgentSessionMeta(session.id, { modelPresentationPreset: 'standard' }))).toBe(true)
+})
+
 function createIndexedSessions(count: number) {
   return Array.from({ length: count }, (_, index) => ({
     id: `session-${index}`,

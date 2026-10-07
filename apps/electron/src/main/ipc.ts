@@ -314,6 +314,7 @@ import { FileExtensionTrustStore } from './lib/adapters/pi-extension-trust.ts'
 import { PiExtensionTrustService } from './lib/pi-extension-trust-service.ts'
 import { registerPiExtensionTrustIpc } from './ipc/register-pi-extension-trust-ipc.ts'
 import { registerPiRunTimingIpc } from './ipc/register-pi-run-timing-ipc.ts'
+import { registerReadonlyCodemodeIpc } from './ipc/register-readonly-codemode-ipc.ts'
 import { registerSideChatIpc } from './ipc/register-side-chat-ipc.ts'
 import { sideChatService } from './lib/side-chat/production'
 import { registerSessionCheckoutIpc } from './ipc/register-session-checkout-ipc.ts'
@@ -1083,6 +1084,7 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
   registerPiExtensionTrustIpc(ipcMain, extensionTrustService)
   registerSideChatIpc(ipcMain, sideChatService)
   registerPiRunTimingIpc(ipcMain, new PiRunTimingQuery({ filePath: getPiRunTimingAuditPath() }))
+  registerReadonlyCodemodeIpc(ipcMain, { update: updateAgentSessionMeta })
   const sessionCheckout = getSessionCheckoutModule()
   registerWorktreeLocalFilesIpc(ipcMain, {
     service: getWorktreeLocalFilesService(),

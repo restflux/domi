@@ -31,6 +31,7 @@ import { ContextUsageBadge } from './ContextUsageBadge'
 import { AgentStatusShortcut } from './AgentStatusShortcut.tsx'
 import { PermissionBanner } from './PermissionBanner'
 import { ExecutionControls } from './ExecutionControls.tsx'
+import { ReadonlyCodemodeToggle } from './ReadonlyCodemodeToggle.tsx'
 import { AGENT_WORKFLOW_DISPLAY_OPTIONS } from '@/lib/agent-control-display.ts'
 import { AskUserBanner } from './AskUserBanner'
 import { ExitPlanModeBanner } from './ExitPlanModeBanner'
@@ -5000,6 +5001,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
             <InputToolbarOverflow
               items={[
                 ...inputToolbarItems,
+                { key: 'readonly-codemode', menuOnly: true, node: <ReadonlyCodemodeToggle sessionId={sessionId} running={streaming || backgroundWaiting} /> },
                 ...(imageSelections[`work:${sessionId}`]
                   ? [{ key: 'image-generation', node: <ImageGenerationButton scope={`work:${sessionId}`} /> }]
                   : !modernLayout ? [{ key: 'image-generation-menu', menuOnly: true, node: <Button type="button" variant="ghost" size="icon" aria-label="图片生成" className={inputToolbarButtonClass}><ImagePlus className="size-4" /></Button>, onMenuSelect: () => store.set(openImageScopeAtom, `work:${sessionId}`) }] : []),

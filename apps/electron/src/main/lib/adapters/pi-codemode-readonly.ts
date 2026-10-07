@@ -1,4 +1,5 @@
 import { Type } from 'typebox'
+import { describeReadonlyCodemode } from './pi-codemode-description.ts'
 import type { AgentSession, InlineExtension, ToolDefinition } from '@earendil-works/pi-coding-agent'
 
 export const PI_READONLY_CODEMODE_LIMITS = Object.freeze({
@@ -15,6 +16,7 @@ const READONLY_NAMES = new Set(['read', 'grep', 'find'])
 interface CodemodeRuntime {
   defineTool: typeof import('@earendil-works/pi-coding-agent').defineTool
   CodemodeSandbox?: typeof import('@earendil-works/pi-codemode').CodemodeSandbox
+  renderToolSignature?: typeof import('@earendil-works/pi-codemode').renderToolSignature
 }
 interface CodemodeOptions { enabled?: boolean; tools: ToolDefinition[]; ownedTools: ToolDefinition[] }
 interface ExecutionGuard { isProtected(definition: ToolDefinition): boolean }
@@ -24,7 +26,7 @@ export interface PiReadonlyCodemode {
   isOwnedTool(session: AgentSession, name: string): boolean
 }
 
-/** 内部opt-in；目录/执行按宿主持有的定义对象限制，不依赖名称或annotations授信。 */
+/** 会话显式opt-in；目录/执行按宿主持有的定义对象限制，不依赖名称或annotations授信。 */
 export function preparePiReadonlyCodemode(runtime: CodemodeRuntime, options: CodemodeOptions): PiReadonlyCodemode {
   let session: AgentSession | undefined
   let guard: ExecutionGuard | undefined
@@ -46,10 +48,12 @@ export function preparePiReadonlyCodemode(runtime: CodemodeRuntime, options: Cod
     name: 'domi-readonly-codemode', hidden: true,
     factory(pi) {
       const Sandbox = runtime.CodemodeSandbox
-      if (!Sandbox) throw new Error('Codemode原生Sandbox尚未加载')
+      const renderSignature = runtime.renderToolSignature
+      if (!Sandbox || !renderSignature) throw new Error('Codemode原生Sandbox或工具声明尚未加载')
+      const description = describeReadonlyCodemode(owned, renderSignature, PI_READONLY_CODEMODE_LIMITS)
       const definition = runtime.defineTool({
         name: 'codemode', label: 'codemode', exposure: 'model-only', defaultActive: true,
-        description: `在受限VM中批量读取、筛选本地内容。仅可调用本轮宿主只读工具：${owned.map(tool => tool.name).join(', ')}。无模型、写入、Shell、网络或MCP能力；每次子调用独立授权。`,
+        description,
         parameters: Type.Object({ code: Type.String({ maxLength: PI_READONLY_CODEMODE_LIMITS.scriptChars,
           description: '只读JavaScript；通过tools调用目录中的工具并返回简短汇总' }) }),
         async execute(_id, { code }, signal, _update, ctx) {
@@ -65,6 +69,7 @@ export function preparePiReadonlyCodemode(runtime: CodemodeRuntime, options: Cod
             tools: owned.map(definition => ({
               name: definition.name, description: definition.description,
               inputSchema: Object.fromEntries<unknown>(Object.entries(definition.parameters)),
+              outputSchema: { type: 'string' },
               async execute(args, child) {
                 assertOwned(definition)
                 if (child.signal.aborted || scopeSignal.aborted) throw new Error('Codemode子调用已取消')

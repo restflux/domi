@@ -34,6 +34,7 @@ import {
   normalizeAgentExecutionSettings,
   isAgentWorkflow,
   isExecutionPolicyMode,
+  resolveReadonlyCodemodeForRun,
 } from '@domi/shared'
 import type { AgentContextBreakdown, DomiPermissionMode, AskUserRequest, ContextWindowSource, ExitPlanModeRequest, SDKSystemMessage, ApplyBaseStrategy } from '@domi/shared'
 import type { PiAgentQueryOptions, ReadyWorktreeHandoffRequest } from './adapters/pi-agent-adapter'
@@ -920,6 +921,8 @@ export class AgentOrchestrator {
     let userMessagePersisted = false
     let persistedUserMessageUuid: string | undefined
     let sessionMeta = getAgentSessionMeta(sessionId)
+    // 在任何异步预检前固定会话选择；运行中改开关只影响下一个 run，不消费外部请求同名字段。
+    const readonlyCodemode = resolveReadonlyCodemodeForRun(sessionMeta)
     const independentReviewId = sessionMeta?.independentReviewId
     if (independentReviewId) {
       callbacks.onError('此历史审查记录不能继续运行；请回到主会话或侧聊中提问。')
@@ -2178,6 +2181,7 @@ export class AgentOrchestrator {
         : undefined
       const queryOptions: PiAgentQueryOptions = {
         sessionId,
+        readonlyCodemode,
         prompt: sideChatParentSessionId ? userMessage : finalPrompt,
         // Pi runtime 使用渠道配置的真实模型 ID，不支持历史 `[1m]` 后缀变体：
         // 智谱等端点不识别 glm-5.2[1m] 这类后缀，会返回 1211「模型不存在」。

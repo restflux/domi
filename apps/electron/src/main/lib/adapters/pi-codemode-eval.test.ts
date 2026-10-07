@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import * as sdk from '@earendil-works/pi-coding-agent'
-import { CodemodeSandbox } from '@earendil-works/pi-codemode'
+import { CodemodeSandbox, renderToolSignature } from '@earendil-works/pi-codemode'
 import { preparePiReadonlyCodemode } from './pi-codemode-readonly.ts'
 import { createReadToolDefinition, defineTool } from '@earendil-works/pi-coding-agent'
 import { access, readFile } from 'node:fs/promises'
@@ -47,7 +47,7 @@ async function comparison(fileCount: number, missingFile = false): Promise<Compa
           return await readFile(path)
         },
       } }))
-      const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox }, { enabled: mode === 'domi-readonly-codemode', tools: [read], ownedTools: [read] })
+      const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox, renderToolSignature }, { enabled: mode === 'domi-readonly-codemode', tools: [read], ownedTools: [read] })
       const state = mode === 'native-codemode-test-only'
         ? await nativeCodemodeSession({ tools: [read] }) : await discoverySession({ tools: [read], factories: plan.extensionFactories })
       const { session } = state

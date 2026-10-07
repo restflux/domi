@@ -790,6 +790,8 @@ export interface AgentSessionMeta {
   sessionTarget?: SessionTargetRef
   /** ChatGPT Codex Fast Mode 开关；仅 Pi + ChatGPT OAuth 的受支持模型实际生效。 */
   codexFastMode?: boolean
+  /** 当前主 Work 会话的只读 Codemode 选择；缺失关闭，下一次 run 生效，不授予执行权限。 */
+  readonlyCodemode?: boolean
   /** 由主进程文件夹选择器签发的视觉目录授权；普通 Renderer 路径输入不能写入。 */
   visionRelayAttachedDirectories?: string[]
   /** @deprecated 仅用于迁移旧 Pi 工具模式；读取后会归并到 workflow。 */
@@ -2344,6 +2346,8 @@ export const AGENT_IPC_CHANNELS = {
   SESSION_CAPABILITY_GRANTS_CHANGED: 'agent:session-capability-grants:changed',
   /** 切换指定会话的 ChatGPT Codex Fast Mode（下一轮 Pi 请求生效） */
   UPDATE_SESSION_CODEX_FAST_MODE: 'agent:update-session-codex-fast-mode',
+  /** 更新当前主 Work 会话的只读 Codemode 选择；下一次 run 生效。 */
+  UPDATE_SESSION_READONLY_CODEMODE: 'agent:update-session-readonly-codemode',
   /** 查询 Pi catalog 或专属 profile 支持的会话级推理档位 */
   GET_PI_REASONING_CAPABILITY: 'agent:get-pi-reasoning-capability',
   /** 查询当前渠道模型是否已被 Pi catalog 收录。 */

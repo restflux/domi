@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import ts from 'typescript'
-import type { AgentSendInput } from '@domi/shared'
+import { resolveReadonlyCodemodeForRun, type AgentSendInput, type AgentSessionMeta } from '@domi/shared'
 import { claimSideChatLaunch, registerSideChatLaunch } from './policy'
 import { parseAgentImageRequest } from '../agent-image-command'
 
@@ -15,23 +15,24 @@ interface Callbacks { onError(message: string): void; onComplete(value: { starte
 interface Entry { sendMessage(input: AgentSendInput, callbacks: Callbacks): Promise<void> }
 interface EntryClass { prototype: Entry }
 const admitted = new Error('已通过入口授权，停止于 Worktree 准备边界')
-function harness(parent: string | undefined = 'parent', capturePersistedInput = false) {
+function harness(parent: string | undefined = 'parent', capturePersistedInput = false, metadata: Partial<AgentSessionMeta> = {}) {
+  const codemodeChoices: boolean[] = []
   let resolutions = 0
   let persistedSelection: AgentSendInput['imageGeneration']
   const defaultSelection: NonNullable<AgentSendInput['imageGeneration']> = { channelId: 'image-channel', modelId: 'image-model' }
   const errors: string[] = []
   let completed = 0
-  const create = new Function('claimSideChatLaunch', 'getAgentSessionMeta', 'resolveRequestImageGeneration', 'normalizeAgentNextTurnAsides', 'worktreeContinuationAuthorizationRegistry', 'parseAgentImageRequest', `${compiled}\nreturn AgentOrchestrator;`) as (...dependencies: unknown[]) => EntryClass
-  const Class = create(claimSideChatLaunch, () => ({ sideChatParentSessionId: parent || undefined }), (selection: AgentSendInput['imageGeneration']) => { resolutions++; return selection ?? defaultSelection }, () => [], {
+  const create = new Function('claimSideChatLaunch', 'getAgentSessionMeta', 'resolveRequestImageGeneration', 'normalizeAgentNextTurnAsides', 'worktreeContinuationAuthorizationRegistry', 'parseAgentImageRequest', 'resolveReadonlyCodemodeForRun', `${compiled}\nreturn AgentOrchestrator;`) as (...dependencies: unknown[]) => EntryClass
+  const Class = create(claimSideChatLaunch, () => ({ id: 'child', title: '测试会话', createdAt: 1, updatedAt: 1, ...metadata, sideChatParentSessionId: parent || undefined }), (selection: AgentSendInput['imageGeneration']) => { resolutions++; return selection ?? defaultSelection }, () => [], {
     isConfirmationInProgress: () => { if (!capturePersistedInput) throw admitted; return false },
     noteSessionActivity: () => {}, clearSession: () => {},
-  }, parseAgentImageRequest)
+  }, parseAgentImageRequest, (session: AgentSessionMeta) => { const choice = resolveReadonlyCodemodeForRun(session); codemodeChoices.push(choice); return choice })
   const entry: Entry = Object.assign(Object.create(Class.prototype), {
     rewindSessions: new Set(), activeSessions: new Set(['child']),
     persistUserMessage: (_id: string, _text: string, _started: number, _asides: unknown, _uuid: string | undefined, selection: AgentSendInput['imageGeneration']) => { persistedSelection = selection },
   })
   const callbacks: Callbacks = { onError: message => errors.push(message), onComplete: () => { completed++ } }
-  return { send: (input: AgentSendInput) => entry.sendMessage(input, callbacks), errors, resolutions: () => resolutions, completed: () => completed, selection: () => persistedSelection, defaultSelection }
+  return { codemodeChoices, send: (input: AgentSendInput) => entry.sendMessage(input, callbacks), errors, resolutions: () => resolutions, completed: () => completed, selection: () => persistedSelection, defaultSelection }
 }
 function request(): AgentSendInput { return { sessionId: 'child', channelId: 'chat-channel', userMessage: '解释这段内容', startedAt: 1 } }
 
@@ -113,4 +114,23 @@ test('Given 宿主 continuation When 进入编排 Then 不补入用户生图默�
   expect(h.errors).toEqual(['上一条消息仍在处理中，请稍候再试'])
   expect(h.resolutions()).toBe(0)
   expect(h.selection()).toBeUndefined()
+})
+
+for (const stored of [false, true]) {
+  test(`Given Main已保存Codemode=${stored} When 请求附加相反值 Then 生产入口仅捕获存储选择`, async () => {
+    const h = harness('', true, { readonlyCodemode: stored })
+    await h.send(Object.assign(request(), { readonlyCodemode: !stored }))
+    expect(h.codemodeChoices).toEqual([stored])
+    expect(h.errors).toEqual(['上一条消息仍在处理中，请稍候再试'])
+  })
+}
+
+test('Given 侧聊旧存储有Codemode=true When 正常侧聊入口启动 Then 不继承模型工具曝光', async () => {
+  const h = harness('parent', true, { readonlyCodemode: true })
+  const input = request()
+  const release = registerSideChatLaunch('child', 'parent', input)
+  try {
+    await h.send(input)
+    expect(h.codemodeChoices).toEqual([false])
+  } finally { release() }
 })

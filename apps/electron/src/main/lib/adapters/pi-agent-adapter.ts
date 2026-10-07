@@ -314,7 +314,7 @@ export interface PiAgentQueryOptions extends AgentQueryInput {
   customToolAnnotations?: Record<string, NonNullable<CanUseToolOptions['toolAnnotations']>>
   /** 内部验证 opt-in；默认保持用户 MCP 全量曝光，不由模型或外部配置开启。 */
   mcpToolDiscovery?: boolean
-  /** 内部只读Codemode opt-in，默认不注册；不是模型参数或用户配置。 */
+  /** Main 从当前主会话保存的选择固定到本 run；默认不注册，不授予子调用权限。 */
   readonlyCodemode?: boolean
   onSessionId?: (sdkSessionId: string, sessionFile?: string) => void
   /** Pi final assistant UI UUID → 持久树状 session entry ID。 */
@@ -2349,7 +2349,7 @@ export class PiAgentAdapter implements AgentProviderAdapter {
       })
       const customTools = mcpToolDiscovery.tools
       const readonlyCodemode = preparePiReadonlyCodemode({ defineTool: sdk.defineTool,
-        CodemodeSandbox: piCodemodeRuntime?.CodemodeSandbox }, {
+        CodemodeSandbox: piCodemodeRuntime?.CodemodeSandbox, renderToolSignature: piCodemodeRuntime?.renderToolSignature }, {
         enabled: input.readonlyCodemode, tools: customTools,
         ownedTools: builtinTools.filter(tool => ['read', 'grep', 'find'].includes(tool.name)),
       })

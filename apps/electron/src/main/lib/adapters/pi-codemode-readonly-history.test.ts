@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 import * as sdk from '@earendil-works/pi-coding-agent'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { CodemodeSandbox } from '@earendil-works/pi-codemode'
+import { CodemodeSandbox, renderToolSignature } from '@earendil-works/pi-codemode'
+import { resolveReadonlyCodemodeForRun, type AgentSessionMeta } from '@domi/shared'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,7 +22,7 @@ test('Given 生产只读切片及真实磁盘JSONL When 模型切换/重启/fork
   const recorder = createPiRunAuditRecorder({ sessionId: 'offline-history', runStartedAt: 1,
     onTimingEvent: event => { events.push(event) } })
   const create = async (manager: sdk.SessionManager) => {
-    const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox }, { enabled: true, tools, ownedTools: [read] })
+    const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox, renderToolSignature }, { enabled: true, tools, ownedTools: [read] })
     const state = await discoverySession({ tools, manager, factories: plan.extensionFactories, auditRecorder: recorder })
     plan.initialize(state.session, state.guard)
     return state
@@ -81,7 +82,7 @@ test('Given 生产worker中子读取已开始 When 用户取消 Then 实际child
     await new Promise<void>((_resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('fixture cancelled')), { once: true }) })
     return { content: [], details: {} }
   } }
-  const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox }, { enabled: true, tools: [read], ownedTools: [read] })
+  const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox, renderToolSignature }, { enabled: true, tools: [read], ownedTools: [read] })
   const state = await discoverySession({ tools: [read], factories: plan.extensionFactories })
   try {
     plan.initialize(state.session, state.guard)
@@ -100,7 +101,7 @@ test('Given 生产worker中子读取已开始 When 用户取消 Then 实际child
 
 test('Given 生产VM内存固定 When 模型分配大数组 Then 原生内存门限拒绝而非扩大权限', async () => {
   const read = discoveryTool('read')
-  const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox }, { enabled: true, tools: [read], ownedTools: [read] })
+  const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox, renderToolSignature }, { enabled: true, tools: [read], ownedTools: [read] })
   const state = await discoverySession({ tools: [read], factories: plan.extensionFactories })
   try {
     plan.initialize(state.session, state.guard)
@@ -111,3 +112,41 @@ test('Given 生产VM内存固定 When 模型分配大数组 Then 原生内存门
     expect(state.authorized.map(request => request.toolName)).toEqual(['codemode'])
   } finally { state.session.dispose() }
 }, 15_000)
+
+test('Given 主会话启动选择 When 运行中关闭及重启恢复 Then 本run定义不变，下run只保留普通工具及历史', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'domi-codemode-selection-'))
+  let stored: AgentSessionMeta = { id: 'main', title: '主任务', createdAt: 1, updatedAt: 1, readonlyCodemode: true }
+  const read = discoveryTool('read')
+  const tools = [read]
+  const plan = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox, renderToolSignature }, {
+    enabled: resolveReadonlyCodemodeForRun(stored), tools, ownedTools: tools,
+  })
+  const first = await discoverySession({ tools, manager: sdk.SessionManager.create(process.cwd(), directory), factories: plan.extensionFactories })
+  let resumed: Awaited<ReturnType<typeof discoverySession>> | undefined
+  try {
+    plan.initialize(first.session, first.guard)
+    const declarations = scriptDiscoveryRun(first.session, seen => {
+      stored = { ...stored, readonlyCodemode: false }
+      return seen.length === 1 ? [codemodeCall('return await tools.read({});')] : []
+    })
+    await first.session.prompt('运行中修改的是下一run配置')
+    expect(declarations).toHaveLength(2)
+    for (const catalog of declarations) expect(catalog.map(tool => tool.name)).toContain('codemode')
+    expect(first.authorized.map(request => request.toolName)).toEqual(['codemode','Read'])
+    const file = first.session.sessionFile!
+    const parent = codemodeResults(first.session)[0]!
+    first.session.dispose()
+    const off = preparePiReadonlyCodemode({ ...sdk, CodemodeSandbox, renderToolSignature }, {
+      enabled: resolveReadonlyCodemodeForRun(stored), tools, ownedTools: tools,
+    })
+    expect(off.extensionFactories).toEqual([])
+    resumed = await discoverySession({ tools, manager: sdk.SessionManager.open(file, directory), factories: off.extensionFactories })
+    off.initialize(resumed.session, resumed.guard)
+    expect(resumed.session.getToolDefinition('codemode')).toBeUndefined()
+    expect(codemodeResults(resumed.session)[0]?.nestedCalls).toEqual(parent.nestedCalls)
+    const nextDeclarations = scriptDiscoveryRun(resumed.session, [[{ name: 'read', arguments: {} }]])
+    await resumed.session.prompt('关闭后普通读取仍工作，不让历史重新开启')
+    for (const catalog of nextDeclarations) expect(catalog.map(tool => tool.name)).toEqual(['read'])
+    expect(resumed.authorized.map(request => request.toolName)).toEqual(['Read'])
+  } finally { first.session.dispose(); resumed?.session.dispose(); rmSync(directory, { recursive: true, force: true }) }
+})

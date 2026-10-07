@@ -52,6 +52,7 @@ import type {
 import {
   isAgentWorkflow,
   isExecutionPolicyMode,
+  getReadonlyCodemodeUnavailableReason,
   migratePermissionMode,
   normalizeAgentExecutionSettings,
 } from '@domi/shared'
@@ -564,8 +565,11 @@ export function getAgentSessionSDKMessages(id: string): SDKMessage[] {
  */
 export function updateAgentSessionMeta(
   id: string,
-  updates: Partial<Pick<AgentSessionMeta, 'title' | 'channelId' | 'modelId' | 'sdkSessionId' | 'piSessionFile' | 'piEntryBindings' | 'piTreeActiveLeafId' | 'sessionTarget' | 'codexFastMode' | 'visionRelayAttachedDirectories' | 'reasoningLevel' | 'openAIThinkingLevel' | 'modelPresentationPreset' | 'workspaceId' | 'pinned' | 'starred' | 'needsFollowUp' | 'archived' | 'attachedDirectories' | 'attachedFiles' | 'forkSourceDir' | 'forkSourceSdkSessionId' | 'resumeAtMessageUuid' | 'stoppedByUser' | 'workActivityRun' | 'workActivityTasks' | 'workActivityViewedAt' | 'workActivityAcknowledgedOutcomeAt' | 'workActivityRemovedOutcomeAt' | 'executionPolicy' | 'workflow' | 'permissionMode' | 'completedButUnconfirmed' | 'sourceAutomationId' | 'automationGraduated' | 'handoffId' | 'handoffOriginSessionId' | 'handoffMode' | 'handoffDegradedReason' | 'handoffStartedAt' | 'recoveryHandoffId' | 'recoveryOriginSessionId' | 'recoveryHandoffStartedAt' | 'parentSessionId' | 'rootSessionId' | 'sourceDelegationId' | 'sideChatParentSessionId' | 'delegationRole' | 'delegationStatus' | 'delegationCheckoutReleasedAt' | 'delegationDepth' | 'delegationGoal'>>,
+  updates: Partial<Pick<AgentSessionMeta, 'title' | 'channelId' | 'modelId' | 'sdkSessionId' | 'piSessionFile' | 'piEntryBindings' | 'piTreeActiveLeafId' | 'sessionTarget' | 'codexFastMode' | 'readonlyCodemode' | 'visionRelayAttachedDirectories' | 'reasoningLevel' | 'openAIThinkingLevel' | 'modelPresentationPreset' | 'workspaceId' | 'pinned' | 'starred' | 'needsFollowUp' | 'archived' | 'attachedDirectories' | 'attachedFiles' | 'forkSourceDir' | 'forkSourceSdkSessionId' | 'resumeAtMessageUuid' | 'stoppedByUser' | 'workActivityRun' | 'workActivityTasks' | 'workActivityViewedAt' | 'workActivityAcknowledgedOutcomeAt' | 'workActivityRemovedOutcomeAt' | 'executionPolicy' | 'workflow' | 'permissionMode' | 'completedButUnconfirmed' | 'sourceAutomationId' | 'automationGraduated' | 'handoffId' | 'handoffOriginSessionId' | 'handoffMode' | 'handoffDegradedReason' | 'handoffStartedAt' | 'recoveryHandoffId' | 'recoveryOriginSessionId' | 'recoveryHandoffStartedAt' | 'parentSessionId' | 'rootSessionId' | 'sourceDelegationId' | 'sideChatParentSessionId' | 'delegationRole' | 'delegationStatus' | 'delegationCheckoutReleasedAt' | 'delegationDepth' | 'delegationGoal'>>,
 ): AgentSessionMeta {
+  if ('readonlyCodemode' in updates && typeof updates.readonlyCodemode !== 'boolean') {
+    throw new Error('只读 Codemode 设置必须是 boolean')
+  }
   const index = readIndex()
   const idx = index.sessions.findIndex((s) => s.id === id)
 
@@ -574,6 +578,11 @@ export function updateAgentSessionMeta(
   }
 
   const existing = index.sessions[idx]!
+  if (updates.readonlyCodemode === true) {
+    const reason = getReadonlyCodemodeUnavailableReason({ ...existing, ...updates })
+    if (reason === 'not-main-session') throw new Error('只读 Codemode 仅可在主 Work 会话开启')
+    if (reason === 'minimal-preset') throw new Error('极简预设不提供只读 Codemode 工具，请先切换为标准预设')
+  }
   if (existing.sideChatParentSessionId && (
     ('sideChatParentSessionId' in updates && updates.sideChatParentSessionId !== existing.sideChatParentSessionId)
     || ('parentSessionId' in updates && updates.parentSessionId !== existing.parentSessionId)
