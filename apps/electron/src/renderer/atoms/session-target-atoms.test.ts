@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createStore } from 'jotai'
-import type { SessionCheckoutRendererApi, SessionTargetView } from '@domi/shared'
+import type { SessionCheckoutRendererApi, SessionTargetView, WorktreeLocalFilesRendererApi } from '@domi/shared'
+import { worktreeLocalFilesDialogAtom } from './worktree-local-files-atoms.ts'
 import {
   bindSessionTargetAtomFamily,
   confirmWorktreeIterationAtomFamily,
@@ -25,10 +26,10 @@ function view(id: string, revision = 1): SessionTargetView {
   }
 }
 
-function installApi(api: SessionCheckoutRendererApi): void {
+function installApi(api: SessionCheckoutRendererApi, worktreeLocalFiles?: Pick<WorktreeLocalFilesRendererApi, 'inspect'>): void {
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
-    value: { electronAPI: { sessionCheckout: api } },
+    value: { electronAPI: { sessionCheckout: api, worktreeLocalFiles } },
   })
 }
 
@@ -939,6 +940,24 @@ describe('session target atoms', () => {
     expect(store.get(sessionTargetWorktreePendingAtomFamily('a'))).toBeTrue()
     store.set(sessionTargetWorktreePendingAtomFamily('a'), false)
     expect(store.get(sessionTargetWorktreePendingAtomFamily('a'))).toBeFalse()
+  })
+
+  test('准备配置受阻时只打开同项目清单，保持失败结果且不自动重发绑定', async () => {
+    let binds = 0
+    let inspections = 0
+    installApi({
+      inspect: async () => ({ ok: true, value: view('unused') }),
+      bind: async () => { binds++; return { ok: false, error: { code: 'local_files_required', message: '请确认配置' } } },
+      operate: async () => ({ ok: true, value: { status: 'applied', target: view('unused'), changedFiles: [] } }),
+    }, {
+      inspect: async (request) => { inspections++; return { ok: true, value: { projectId: request.projectId, manifestVersion: 'v1', entries: [] } } },
+    })
+    const store = createStore()
+    expect(await store.set(bindSessionTargetAtomFamily('a'), 'isolated', 'project-1')).toBeFalse()
+    await flushMicrotasks()
+    expect(store.get(worktreeLocalFilesDialogAtom).request).toEqual({ projectId: 'project-1', sessionId: 'a' })
+    expect(store.get(sessionTargetStateAtomFamily('a')).error?.code).toBe('local_files_required')
+    expect([binds, inspections]).toEqual([1, 1])
   })
 
   test('Given bind 失败 When 调用方等待结果 Then 返回 false 并保留错误', async () => {

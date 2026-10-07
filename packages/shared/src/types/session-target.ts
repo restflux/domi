@@ -473,6 +473,7 @@ export const SESSION_CHECKOUT_ERROR_CODES = [
   'project_not_found',
   'project_root_missing',
   'not_git_repository',
+  'local_files_required',
   'target_unselected',
   'target_already_bound',
   'parent_session_not_found',

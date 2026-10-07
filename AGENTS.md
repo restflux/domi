@@ -289,6 +289,14 @@ Domi 的 `AboutSettings` 只说明版本、环境和源码或外部二进制构�
 - Agent 工作区按 slug 隔离，每个会话独立目录
 - MCP 配置和 Skills 默认按工作区管理；用户显式开启后，Pi 可只读继承外部用户级 Skills 与 `~/.pi/agent/mcp.json` 顶层服务器，工作区同名配置优先
 
+### Worktree 本地配置准备
+
+- 项目菜单「Worktree 本地配置」使用项目内文件树维护原项目 `.worktreeinclude`；显示隐藏文件，支持搜索、跨目录多选和文件夹批量选择。目录选择展开为当时的具体文件，保存前可逐项取消；清单仍只接受明确相对文件路径及注释，不接受 glob、目录条目或链接，后来新增文件不自动批准。清单不是授权，Main 使用独立本机批准（项目 ID、canonical 根及目录身份）准备普通未受控文件，不能扩大 Agent Local 权限。
+- `worktree-local-files/selection.ts` 只枚举元数据；Main 解析项目根，拒绝越界，不遍历链接、受保护目录或嵌套仓库，复核父级/目录身份。按需目录最多1000条、递归扫描最多5000条/32层/8秒；选择仍限100文件、单文件4MiB、总计32MiB，超限整次失败而非截断。浏览/搜索不批准；刷新文件树保留草稿，项目/清单快照及搜索变化使旧结果失效。
+- `main/lib/worktree-local-files/` 负责校验、批准和独立副本复制；创建 ready 前准备，已有 Worktree 补复制走 checkout 独占队列、owner/空闲/revision 校验，覆盖需目标指纹确认，不持续同步或回写。
+- registry 准备凭证是运行配置排除事实源；`session-checkout/runtime-files.ts` 与公共快照在 Git 对象写入前排除配置，也覆盖文件回退、产物列表及 `.domi-local-{UUID}.{tmp,previous}` 异常残留；移除条目不取消已有副本排除，配置变化仍使旧交付计划过期。配置已在 HEAD/index 时 fail closed，不改真实 index 或共享 exclude。
+- 回归：`bun test --max-concurrency=4 ./apps/electron/src/main/lib/worktree-local-files/ ./apps/electron/src/main/lib/session-checkout/ ./apps/electron/src/main/ipc/register-worktree-local-files-ipc.test.ts ./apps/electron/src/renderer/atoms/worktree-local-files-atoms.test.ts ./apps/electron/src/renderer/components/agent/worktree-local-files/`。不承诺阻止任意 Shell/手工 Git 的凭据泄漏。
+
 ### 数据迁移约束
 
 - 备份包括会话记录与索引、会话工作目录中的文档/图片/.context/产物、Domi `attachments/{sessionId}` 附件、所选 Skills 和配置。仅在会话目录排除明确的依赖、Git 元数据与工具缓存，不按 dist/build/out 名称丢弃交付产物；跳过会话符号链接并返回警告，不跟随外部项目。会话文件和附件随所选会话迁移，导入补齐缺失文件且不覆盖本机同名文件；workspace-data 格式兼容旧包。

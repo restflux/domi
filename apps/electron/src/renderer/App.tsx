@@ -5,6 +5,7 @@ import { OnboardingView } from './components/onboarding/OnboardingView'
 import { TutorialBanner } from './components/tutorial/TutorialBanner'
 import { EnvironmentCheckDialog } from './components/environment/EnvironmentCheckDialog'
 import { MigrationImportDialog } from './components/migration/MigrationImportDialog'
+import { WorktreeLocalFilesDialog } from './components/agent/worktree-local-files/WorktreeLocalFilesDialog.tsx'
 import { TooltipProvider } from './components/ui/tooltip'
 import { ShortcutGuideDialog } from './components/shortcuts/ShortcutGuideDialog'
 import { PlanningReminderRail } from './components/planning/PlanningReminderRail'
@@ -111,6 +112,7 @@ export default function App(): React.ReactElement {
       <ShortcutGuideDialog />
       <TutorialBanner />
       <GlobalEnvironmentCheckDialog />
+      <WorktreeLocalFilesDialog />
       <MigrationImportDialog />
     </TooltipProvider>
   )

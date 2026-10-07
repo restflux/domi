@@ -24,6 +24,14 @@ function checkout(overrides: Partial<ManagedCheckoutRecord>): ManagedCheckoutRec
 }
 
 describe('collectSessionProjectArtifactPaths', () => {
+  test('运行配置大小写别名及异常退出的临时副本不能成为会话产物', () => {
+    expect(collectSessionProjectArtifactPaths({
+      sessionId: 'session-1', checkoutRecords: [checkout({ localFiles: { paths: ['.env.local'], manifestVersion: 'v1', state: 'failed' } })],
+      checkpointPaths: ['.ENV.LOCAL'],
+      currentChangedPaths: ['nested/.domi-local-12345678-1234-1234-1234-123456789abc.tmp', 'report.md'],
+      deletedPaths: [],
+    })).toEqual(['report.md'])
+  })
   test('聚合当前改动、文件检查点和历次交付产物，并排除其他会话与已删除路径', () => {
     const records = [
       checkout({

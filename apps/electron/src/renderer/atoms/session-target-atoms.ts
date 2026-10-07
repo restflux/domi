@@ -1,5 +1,6 @@
 import { atom } from 'jotai'
 import { atomFamily } from 'jotai/utils'
+import { openWorktreeLocalFilesDialogAtom } from './worktree-local-files-atoms.ts'
 import type {
   RendererSessionTargetChoice,
   SessionCheckoutAction,
@@ -379,6 +380,10 @@ export const bindSessionTargetAtomFamily = atomFamily((sessionId: string) => {
           return true
         }
         set(stateAtom, (state) => ({ ...state, loading: false, error: result.error }))
+        const projectId = expectedProjectId ?? get(stateAtom).snapshot?.project.id
+        if (result.error.code === 'local_files_required' && projectId) {
+          void set(openWorktreeLocalFilesDialogAtom, { projectId, sessionId })
+        }
       } catch (error) {
         set(stateAtom, (state) => ({
           ...state,

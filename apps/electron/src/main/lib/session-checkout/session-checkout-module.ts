@@ -23,10 +23,14 @@ import type {
   WorktreeApplyPreflightBlockedReason,
   WorktreeDeliveryProofView,
   WorktreeCheckpointView,
+  WorktreeLocalFileOverwrite,
+  WorktreeLocalFilesCopyResult,
+  WorktreeLocalFilesTarget,
 } from '@domi/shared'
 import { SessionCheckoutError } from './index.ts'
 import { SessionCheckoutOperationQueue, SESSION_CHECKOUT_QUEUE_WAIT_MS, waitForSessionCheckoutSignal } from './session-checkout-operation-queue.ts'
 import { collectSessionProjectArtifactPaths } from '../session-project-artifacts.ts'
+import { isRuntimeFile, MAX_RECORDED_LOCAL_FILES } from './runtime-files.ts'
 import { createManagedWorktreePathCandidates } from './managed-worktree-path.ts'
 import type {
   CheckoutLease,
@@ -214,6 +218,8 @@ export function createSessionCheckoutModule(
   dependencies: SessionCheckoutDependencies,
   options: { queueWaitTimeoutMs?: number } = {},
 ): SessionCheckoutModule {
+  const configuringProjects = new Set<string>()
+  const preparingLocalFiles = new Set<string>()
   function emitTiming(event: Parameters<NonNullable<SessionCheckoutDependencies['onTimingEvent']>>[0]): void {
     if (!dependencies.onTimingEvent) return
     try {
@@ -226,6 +232,7 @@ export function createSessionCheckoutModule(
   function requireSession(sessionId: string): SessionCheckoutSessionRecord {
     const session = dependencies.lookup.getSession(sessionId)
     if (!session) throw new SessionCheckoutError('session_not_found', `会话不存在: ${sessionId}`)
+    if (session.projectId && configuringProjects.has(session.projectId)) throw new SessionCheckoutError('operation_not_allowed', '项目本地配置正在保存，请稍后重试')
     return session
   }
 
@@ -800,6 +807,16 @@ export function createSessionCheckoutModule(
       if (persistRecovery) record = markRecoveryRequired(record)
       return recoveryView(binding, record)
     }
+    if (persistRecovery && record.journal?.operation === 'prepare_local_files' && !preparingLocalFiles.has(record.checkoutId)
+      && !dependencies.lookup.isSessionActive(record.ownerSessionId)) {
+      if (await validateManagedCheckout(binding, record, false)) {
+        record = updateManagedCheckout(record.checkoutId, (current) => ({ ...current,
+          phase: 'ready', journal: null,
+          ...(current.localFiles ? { localFiles: { ...current.localFiles, state: 'failed' as const } } : {}),
+          revision: current.revision + 1,
+        })) ?? record
+      }
+    }
     if (record.phase === 'discarded') {
       if (record.delivery.state === 'delivered') return committedFollowupView(binding, record)
       return discardedFollowupView(binding, record)
@@ -1271,6 +1288,81 @@ export function createSessionCheckoutModule(
       currentChangedPaths: [],
       deletedPaths: [],
     })
+  }
+
+  function canPrepareLocalFiles(binding: SessionBindingRecord, record: ManagedCheckoutRecord): boolean {
+    if (binding.sessionId !== record.ownerSessionId || record.phase !== 'ready'
+      || (record.delivery.state !== 'working' && record.delivery.state !== 'ready_for_review')) return false
+    return Object.values(dependencies.registry.read().sessionBindings).every((candidate) => (
+      candidate.target.kind !== 'isolated' || candidate.target.checkoutId !== record.checkoutId
+      || !dependencies.lookup.isSessionActive(candidate.sessionId)
+    ))
+  }
+
+  async function inspectLocalFilesTarget(sessionId: string, projectId: string, paths: readonly string[]): Promise<WorktreeLocalFilesTarget | undefined> {
+    const binding = dependencies.registry.read().sessionBindings[sessionId]
+    if (!binding || binding.projectId !== projectId || binding.target.kind !== 'isolated') return undefined
+    const view = await inspectTarget(sessionId)
+    const record = dependencies.registry.read().managedCheckouts[binding.target.checkoutId]
+    if (!record || !dependencies.localFiles) return undefined
+    return {
+      sessionId, revision: view.revision,
+      canPrepare: canPrepareLocalFiles(binding, record),
+      files: await dependencies.localFiles.inspectTarget(record.managedRoot, paths),
+    }
+  }
+
+  async function prepareLocalFiles(sessionId: string, expectedRevision: number, overwriteFiles: readonly WorktreeLocalFileOverwrite[] = []): Promise<WorktreeLocalFilesCopyResult> {
+    if (!dependencies.localFiles) throw new SessionCheckoutError('operation_not_allowed', '本地配置准备服务不可用')
+    const binding = await resolveBinding(sessionId)
+    if (binding.target.kind !== 'isolated') throw new SessionCheckoutError('operation_not_allowed', '仅 Worktree 支持补充本地配置')
+    const record = dependencies.registry.read().managedCheckouts[binding.target.checkoutId]
+    if (!record || record.revision !== expectedRevision) throw new SessionCheckoutError('stale_target', 'Worktree 状态已变化，请刷新后重试')
+    if (!canPrepareLocalFiles(binding, record)) throw new SessionCheckoutError('operation_not_allowed', '请先停止 Worktree 会话并结束当前预览，再补充本地配置')
+    if (!await validateManagedCheckout(binding, record, false)) throw new SessionCheckoutError('recovery_required', 'Worktree 身份无法确认')
+    const project = { id: record.projectId, root: record.localRoot }
+    const plan = await dependencies.localFiles.preflight(project)
+    const paths = [...new Set([...(record.localFiles?.paths ?? []), ...plan.paths])]
+    if (paths.length > MAX_RECORDED_LOCAL_FILES) throw new SessionCheckoutError('operation_not_allowed', '本轮累计本地配置路径过多，请为新清单创建新的 Worktree')
+    // 先记录保护凭证，再复制任何字节；失败也不得撤销旧副本的排除。
+    const pending = updateManagedCheckout(record.checkoutId, (current) => ({
+      ...current, phase: 'mutating',
+      localFiles: { paths, manifestVersion: plan.manifestVersion, state: 'pending' },
+      ...(current.delivery.state === 'ready_for_review' ? { previousReview: projectPreviousReview(current.delivery.review) } : {}),
+      delivery: { state: 'working', iteration: record.delivery.state === 'working' ? record.delivery.iteration : 'review' in record.delivery ? record.delivery.review.iteration : 1 },
+      journal: { operation: 'prepare_local_files', operationId: dependencies.createCheckoutId(), step: 'planning', startedAt: Date.now() },
+      revision: current.revision + 1,
+    }))
+    if (!pending) throw new SessionCheckoutError('checkout_missing', 'Worktree 记录不存在')
+    try {
+      preparingLocalFiles.add(record.checkoutId)
+      const result = await dependencies.localFiles.copy(project, record.managedRoot, plan, overwriteFiles)
+      updateManagedCheckout(record.checkoutId, (current) => ({ ...current, phase: 'ready', journal: null,
+        localFiles: { paths, manifestVersion: plan.manifestVersion, state: 'ready' }, revision: current.revision + 1 }))
+      return result
+    } catch (error) {
+      updateManagedCheckout(record.checkoutId, (current) => ({ ...current, phase: 'ready', journal: null,
+        localFiles: { paths, manifestVersion: plan.manifestVersion, state: 'failed' }, revision: current.revision + 1 }))
+      throw error
+    } finally {
+      preparingLocalFiles.delete(record.checkoutId)
+    }
+  }
+
+  async function configureProject<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    const project = dependencies.lookup.getProject(projectId)
+    if (!project) throw new SessionCheckoutError('project_not_found', '项目不存在')
+    const registry = dependencies.registry.read()
+    for (const binding of Object.values(registry.sessionBindings)) {
+      if (binding.projectId === projectId && dependencies.lookup.isSessionActive(binding.sessionId)) {
+        throw new SessionCheckoutError('operation_not_allowed', '请先停止项目中的会话，再修改本地配置清单')
+      }
+    }
+    if (Object.values(registry.managedCheckouts).some((record) => record.projectId === projectId && holdsProjectAcceptanceSlot(record))) {
+      throw new SessionCheckoutError('operation_not_allowed', '请先完成或撤回项目预览，再修改本地配置清单')
+    }
+    configuringProjects.add(projectId)
+    try { return await operation() } finally { configuringProjects.delete(projectId) }
   }
 
   async function assertReleaseSession(
@@ -4424,6 +4516,12 @@ export function createSessionCheckoutModule(
         }
         selectedSource = { ref: `refs/heads/${choice.sourceBranch}`, oid }
       }
+      let localFilesPlan: Awaited<ReturnType<NonNullable<SessionCheckoutDependencies['localFiles']>['preflight']>> | undefined
+      try {
+        localFilesPlan = await dependencies.localFiles?.preflight({ id: project.id, root: project.root }, verifiedIsolatedProof?.seedSnapshot?.headOid ?? isolatedForkSeed?.headOid ?? selectedSource?.oid ?? snapshot.headOid)
+      } catch (error) {
+        throw new SessionCheckoutError('local_files_required', error instanceof Error ? error.message : '请确认 Worktree 本地配置')
+      }
       if (verifiedIsolatedProof) {
         if (snapshot.headOid !== verifiedIsolatedProof.expectedCurrentOid) {
           throw new SessionCheckoutError('stale_target', 'Local HEAD 在确认后已变化，请重新发起 Worktree handoff')
@@ -4493,6 +4591,7 @@ export function createSessionCheckoutModule(
         gitDir: '',
         baseOid: isolatedSeed?.baseOid ?? selectedSource?.oid ?? snapshot.headOid,
         ...(seedSnapshot?.applyBaseOid ? { applyBaseOid: seedSnapshot.applyBaseOid } : {}),
+        ...(localFilesPlan?.paths.length ? { localFiles: { paths: localFilesPlan.paths, manifestVersion: localFilesPlan.manifestVersion, state: 'pending' as const } } : {}),
         sourceRef: isolatedSeed?.sourceRef ?? selectedSource?.ref ?? snapshot.headRef,
         phase: 'preparing',
         delivery: { state: 'working', iteration: nextIteration },
@@ -4573,6 +4672,16 @@ export function createSessionCheckoutModule(
             throw new SessionCheckoutError('stale_target', '新 Worktree 与源 Fork snapshot 不一致')
           }
         }
+        let localFilesError: unknown
+        if (localFilesPlan?.paths.length && dependencies.localFiles) {
+          try {
+            await dependencies.localFiles.copy({ id: project.id, root: localRoot }, canonicalManagedRoot, localFilesPlan)
+            record.localFiles = { paths: localFilesPlan.paths, manifestVersion: localFilesPlan.manifestVersion, state: 'ready' }
+          } catch (error) {
+            localFilesError = error
+            record.localFiles = { paths: localFilesPlan.paths, manifestVersion: localFilesPlan.manifestVersion, state: 'failed' }
+          }
+        }
         const readyRegistry = dependencies.registry.read()
         const readyRecord: ManagedCheckoutRecord = {
           ...record,
@@ -4596,8 +4705,10 @@ export function createSessionCheckoutModule(
           timestamp: new Date(readyAt).toISOString(),
           durationMs: Math.max(0, readyAt - bindStartedAt),
         })
+        if (localFilesError) throw new SessionCheckoutError('local_files_required', localFilesError instanceof Error ? localFilesError.message : '本地配置复制失败，请补充后重试')
         return inspectIsolated(binding)
       } catch (error) {
+        if (error instanceof SessionCheckoutError && error.code === 'local_files_required') throw error
         const failedAt = Date.now()
         if (!createTimingRecorded) {
           emitTiming({
@@ -4674,6 +4785,14 @@ export function createSessionCheckoutModule(
 
   return {
     inspect: inspectAvailable,
+    isRuntimeFile: (targetRoot, filePath) => isRuntimeFile(dependencies.registry.read(), targetRoot, filePath),
+    inspectLocalFilesTarget: (sessionId, projectId, paths) => withBindingLock(
+      () => inspectLocalFilesTarget(sessionId, projectId, paths), { operation: 'inspect_local_files', sessionIds: [sessionId] }),
+    prepareLocalFiles: (sessionId, expectedRevision, overwriteFiles) => withBindingLock(
+      () => prepareLocalFiles(sessionId, expectedRevision, overwriteFiles), { operation: 'prepare_local_files', sessionIds: [sessionId] }),
+    runExclusiveProjectConfiguration: (projectId, operation) => withBindingLock(
+      () => configureProject(projectId, operation), { operation: 'configure_local_files' }),
+
     readSessionDeliveries,
     readSessionChangedFiles,
     preflight: (sessionId, expectedRevision) => withBindingLock(
@@ -4827,6 +4946,9 @@ export function createSessionCheckoutModule(
       }
       if (view.checkout.phase !== 'ready') {
         throw new SessionCheckoutError('recovery_required', 'Isolated Checkout 需要恢复后才能租用')
+      }
+      if (record.localFiles && record.localFiles.state !== 'ready') {
+        throw new SessionCheckoutError('local_files_required', '本地配置未准备完成，请在项目菜单中补充到当前 Worktree')
       }
       const cwd = await dependencies.files.canonicalize(record.managedRoot)
       const previousReview = record.previousReview

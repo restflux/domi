@@ -28,6 +28,8 @@ import {
   PLANNING_IPC_CHANNELS,
   PROXY_IPC_CHANNELS,
   SESSION_CHECKOUT_IPC_CHANNELS,
+  WORKTREE_LOCAL_FILES_IPC_CHANNELS,
+  type WorktreeLocalFilesRendererApi,
   SYSTEM_PROMPT_IPC_CHANNELS,
   TERMINAL_IPC_CHANNELS,
   USAGE_IPC_CHANNELS,
@@ -317,6 +319,7 @@ export interface ElectronAPI extends SideChatAPI {
   piExtensionTrust: PiExtensionTrustApi
   /** 按会话检查、绑定和操作 Session Target。 */
   sessionCheckout: SessionCheckoutRendererApi
+  worktreeLocalFiles: WorktreeLocalFilesRendererApi
   /** 只读查询 main-owned Pi run timing 证据。 */
   piRunTiming: PiRunTimingRendererApi
 
@@ -1558,6 +1561,14 @@ const electronAPI: ElectronAPI = {
   },
   piRunTiming: {
     query: (input) => ipcRenderer.invoke(PI_RUN_TIMING_IPC_CHANNELS.QUERY, input),
+  },
+  worktreeLocalFiles: {
+    inspect: (input) => ipcRenderer.invoke(WORKTREE_LOCAL_FILES_IPC_CHANNELS.INSPECT, input),
+    listDirectory: (input) => ipcRenderer.invoke(WORKTREE_LOCAL_FILES_IPC_CHANNELS.LIST_DIRECTORY, input),
+    resolveSelection: (input) => ipcRenderer.invoke(WORKTREE_LOCAL_FILES_IPC_CHANNELS.RESOLVE_SELECTION, input),
+    save: (input) => ipcRenderer.invoke(WORKTREE_LOCAL_FILES_IPC_CHANNELS.SAVE, input),
+    confirm: (input) => ipcRenderer.invoke(WORKTREE_LOCAL_FILES_IPC_CHANNELS.CONFIRM, input),
+    prepare: (input) => ipcRenderer.invoke(WORKTREE_LOCAL_FILES_IPC_CHANNELS.PREPARE, input),
   },
   sessionCheckout: {
     inspect: (input) => ipcRenderer.invoke(SESSION_CHECKOUT_IPC_CHANNELS.INSPECT, input),

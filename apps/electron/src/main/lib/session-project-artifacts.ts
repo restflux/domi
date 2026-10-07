@@ -1,5 +1,6 @@
 import { isAbsolute, posix, win32 } from 'node:path'
 import type { ManagedCheckoutRecord } from './session-checkout/ports.ts'
+import { isLocalFileTemporaryPath } from './worktree-local-files/temporary-path.ts'
 
 export interface CollectSessionProjectArtifactPathsInput {
   sessionId: string
@@ -52,10 +53,18 @@ export function collectSessionProjectArtifactPaths(
       .map(normalizeProjectRelativePath)
       .filter((path): path is string => path !== null),
   )
+  const excluded = new Set<string>()
+  for (const record of input.checkoutRecords) {
+    if (record.ownerSessionId !== input.sessionId && !input.boundCheckoutIds?.has(record.checkoutId)) continue
+    for (const path of record.localFiles?.paths ?? []) {
+      const normalized = normalizeProjectRelativePath(path)
+      if (normalized) excluded.add(normalized.normalize('NFD').toLowerCase())
+    }
+  }
   const paths = new Set<string>()
   const add = (value: string): void => {
     const normalized = normalizeProjectRelativePath(value)
-    if (normalized && !deleted.has(normalized)) paths.add(normalized)
+    if (normalized && !deleted.has(normalized) && !excluded.has(normalized.normalize('NFD').toLowerCase()) && !isLocalFileTemporaryPath(normalized)) paths.add(normalized)
   }
 
   for (const value of input.checkpointPaths) add(value)

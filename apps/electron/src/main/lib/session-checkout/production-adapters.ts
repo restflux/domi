@@ -9,6 +9,7 @@ import { readJsonFileSafe, writeJsonFileAtomic } from '../safe-file.ts'
 import { SessionCheckoutError } from './index.ts'
 import { removeDirectoryBounded } from './bounded-directory-removal.ts'
 import { createSessionCheckoutApplyEngine } from './session-checkout-apply.ts'
+import { collectRuntimeFilePaths, isRuntimeFilePath, MAX_RECORDED_LOCAL_FILES } from './runtime-files.ts'
 import type {
   DirectoryIdentity,
   GitCheckoutSnapshot,
@@ -422,6 +423,7 @@ function isJournal(value: unknown): boolean {
     || value.operation === 'finish'
     || value.operation === 'finalize_preview'
     || value.operation === 'cleanup'
+    || value.operation === 'prepare_local_files'
   const validStep = value.step === 'planning'
     || value.step === 'artifacts_retained'
     || value.step === 'writing_local'
@@ -466,6 +468,11 @@ function isManagedCheckout(value: unknown): boolean {
     && (value.applyBaseOid === undefined || typeof value.applyBaseOid === 'string')
     && (value.previousReview === undefined || isPreviousReview(value.previousReview))
     && (value.checkpoints === undefined || (Array.isArray(value.checkpoints) && value.checkpoints.every(isCheckpoint)))
+    && (value.localFiles === undefined || (isRecord(value.localFiles)
+      && isStringArray(value.localFiles.paths) && value.localFiles.paths.length <= MAX_RECORDED_LOCAL_FILES
+      && value.localFiles.paths.every(isRuntimeFilePath)
+      && typeof value.localFiles.manifestVersion === 'string'
+      && ['pending', 'ready', 'failed'].includes(String(value.localFiles.state))))
     && typeof value.sourceRef === 'string'
     && (value.phase === 'preparing' || value.phase === 'ready' || value.phase === 'mutating' || value.phase === 'recovery_required' || value.phase === 'finalized' || value.phase === 'retained' || value.phase === 'discarded')
     && isDelivery(value.delivery)
@@ -577,13 +584,14 @@ export function createNodeSessionCheckoutDependencies(
   const runSessionGit = (cwd: string, args: string[]) => runGit(cwd, args, gitOptions)
   const runSessionGitChecked = (cwd: string, args: string[]) => runGitChecked(cwd, args, gitOptions)
 
+  const registry = new AtomicJsonCheckoutRegistry(join(options.configDir, 'managed-checkouts.json'))
   return {
     lookup: options.lookup,
-    applyEngine: createSessionCheckoutApplyEngine(),
+    applyEngine: createSessionCheckoutApplyEngine({ runtimeFilePaths: (root) => collectRuntimeFilePaths(registry.read(), root) }),
     managedCheckoutsRoot,
     createCheckoutId: randomUUID,
     ...(options.onTimingEvent && { onTimingEvent: options.onTimingEvent }),
-    registry: new AtomicJsonCheckoutRegistry(join(options.configDir, 'managed-checkouts.json')),
+    registry,
     files: {
       exists: existsSync,
       canonicalize: async (path) => realpath(resolve(path)),

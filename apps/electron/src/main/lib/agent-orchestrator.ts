@@ -2185,9 +2185,11 @@ export class AgentOrchestrator {
         proxyUrl,
         runtimeEnv,
         fileCheckpoint: {
-          beforeMutation: (filePath) => {
+          beforeMutation: async (filePath) => {
             const context = this.activeFileCheckpointContexts.get(sessionId)
             if (!context || context.generation !== runGeneration) return false
+            const { getSessionCheckoutModule } = await import('./session-checkout/production.ts')
+            if (getSessionCheckoutModule().isRuntimeFile?.(context.targetRoot, filePath)) return false
             getAgentFileCheckpointStore().trackFileBeforeMutation({
               sessionId,
               userMessageUuid: context.userMessageUuid,
@@ -2196,9 +2198,11 @@ export class AgentOrchestrator {
             })
             return true
           },
-          afterMutation: (filePath) => {
+          afterMutation: async (filePath) => {
             const context = this.activeFileCheckpointContexts.get(sessionId)
             if (!context || context.generation !== runGeneration) return
+            const { getSessionCheckoutModule } = await import('./session-checkout/production.ts')
+            if (getSessionCheckoutModule().isRuntimeFile?.(context.targetRoot, filePath)) return
             getAgentFileCheckpointStore().recordFileAfterMutation({
               sessionId,
               targetRoot: context.targetRoot,

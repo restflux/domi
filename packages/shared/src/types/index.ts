@@ -76,3 +76,4 @@ export * from './usage'
 export * from "./side-chat"
 
 export * from './image-generation.ts'
+export * from './worktree-local-files.ts'

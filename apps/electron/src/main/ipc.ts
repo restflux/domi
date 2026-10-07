@@ -317,6 +317,8 @@ import { registerPiRunTimingIpc } from './ipc/register-pi-run-timing-ipc.ts'
 import { registerSideChatIpc } from './ipc/register-side-chat-ipc.ts'
 import { sideChatService } from './lib/side-chat/production'
 import { registerSessionCheckoutIpc } from './ipc/register-session-checkout-ipc.ts'
+import { registerWorktreeLocalFilesIpc } from './ipc/register-worktree-local-files-ipc.ts'
+import { getWorktreeLocalFilesService } from './lib/worktree-local-files/production.ts'
 import { registerBrowserIpc, type BrowserIpcGuard } from './ipc/register-browser-ipc.ts'
 import type { BrowserSessionService } from './lib/browser/browser-session-service.ts'
 import { registerTerminalIpc, type TerminalIpcGuard } from './ipc/register-terminal-ipc.ts'
@@ -1082,6 +1084,28 @@ export function registerIpcHandlers(modules: IpcRuntimeModules = {}): void {
   registerSideChatIpc(ipcMain, sideChatService)
   registerPiRunTimingIpc(ipcMain, new PiRunTimingQuery({ filePath: getPiRunTimingAuditPath() }))
   const sessionCheckout = getSessionCheckoutModule()
+  registerWorktreeLocalFilesIpc(ipcMain, {
+    service: getWorktreeLocalFilesService(),
+    checkout: sessionCheckout,
+    resolveProject: (projectId) => {
+      const project = getAgentWorkspace(projectId)
+      if (!project) throw new Error('项目不存在')
+      return { id: project.id, root: getProjectFilesPath(project.slug) }
+    },
+    assertProjectIdle: (projectId) => {
+      if (listAgentSessions().some((session) => session.workspaceId === projectId && isAgentSessionActive(session.id))) {
+        throw new Error('请先停止项目中的会话，再保存本地配置清单')
+      }
+    },
+    assertSender: async (event) => {
+      const { getMainWindow } = await import('./index')
+      const win = getMainWindow()
+      if (!win || win.isDestroyed() || event.sender.id !== win.webContents.id || event.senderFrame !== win.webContents.mainFrame) {
+        throw new Error('仅应用主窗口可以管理 Worktree 本地配置')
+      }
+    },
+
+  })
   const sessionCheckoutOperationGuard = new SessionCheckoutOperationGuard({
     listSessionIds: () => listAgentSessions().map((session) => session.id),
     isSessionActive: isAgentSessionActive,

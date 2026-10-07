@@ -7,6 +7,8 @@ import { copyFile, mkdir, mkdtemp, open, readFile, rename, rm, unlink, writeFile
 import { tmpdir } from 'node:os'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import type { ApplyBaseStrategy } from '@domi/shared'
+import { isLocalFileTemporaryPath, LOCAL_FILE_TEMPORARY_EXCLUDES } from '../worktree-local-files/temporary-path.ts'
+import { readSnapshot, safeLocation } from '../worktree-local-files/filesystem.ts'
 
 export interface ApplyPlanInput {
   baseOid: string
@@ -285,6 +287,8 @@ export interface SessionCheckoutApplyEngine {
 }
 
 export interface SessionCheckoutApplyEngineOptions {
+  /** Main 复制凭证提供的仓库相对配置路径；读取内容和写入对象前排除。 */
+  runtimeFilePaths?(checkoutPath: string): Promise<readonly string[]> | readonly string[]
   /** 测试/宿主 seam：在最后一次 Local fingerprint 校验前执行。 */
   beforeFinalLocalValidation?(): Promise<void> | void
 }
@@ -606,18 +610,47 @@ async function findCommitWithTree(
   return null
 }
 
+/** 配置只参与 CAS 指纹，不进入 Git 对象；变更后仍能阻止旧验收或破坏性清理。 */
+async function fingerprintRuntimeFiles(root: string, paths: readonly string[]): Promise<string> {
+  const digest = createHash('sha256')
+  for (const path of [...paths].sort()) {
+    digest.update(path).update('\0')
+    const location = await safeLocation(root, path)
+    if (location.stat) {
+      const snapshot = await readSnapshot(location)
+      digest.update(snapshot.bytes).update(String(snapshot.stat.mode))
+    } else {
+      digest.update('missing')
+    }
+    digest.update('\0')
+  }
+  return digest.digest('hex')
+}
+
 async function captureSnapshot(
   checkoutPath: string,
   indexPath: string,
   objectDirectory: string | null,
   sourceObjects: string | null,
   forceIncludePaths: readonly string[] = [],
+  runtimeFilePaths: readonly string[] = [],
+  includeRuntimeFingerprint = true,
 ): Promise<CheckoutSnapshot> {
   const headOid = stdoutText(await runGit(checkoutPath, ['rev-parse', 'HEAD']))
   const headTreeOid = stdoutText(await runGit(checkoutPath, ['rev-parse', `${headOid}^{tree}`]))
   const symbolic = await runGit(checkoutPath, ['symbolic-ref', '--quiet', 'HEAD'], { allowedExitCodes: [0, 1] })
   const headRef = symbolic.exitCode === 0 ? stdoutText(symbolic) : null
   const indexEntries = (await runGit(checkoutPath, ['ls-files', '--stage', '-z'])).stdout
+  const portablePath = (path: string): string => path.normalize('NFD').toLowerCase()
+  const runtimePaths = new Set(runtimeFilePaths.map(portablePath))
+  {
+    const headPaths = parseNullSeparated((await runGit(checkoutPath, ['ls-tree', '-r', '--name-only', '-z', headOid])).stdout)
+    const stagedPaths = parseNullSeparated(indexEntries).map((entry) => entry.slice(entry.indexOf('\t') + 1))
+    if ([...headPaths, ...stagedPaths].some((path) => runtimePaths.has(portablePath(path)) || isLocalFileTemporaryPath(path))) {
+      throw new Error('本地运行配置已进入 Git HEAD 或暂存区，请先移出版本控制再交付')
+    }
+  }
+  const runtimeFingerprint = runtimeFilePaths.length ? await fingerprintRuntimeFiles(checkoutPath, runtimeFilePaths) : ''
   const stagedPatch = (
     await runGit(checkoutPath, [
       'diff',
@@ -634,6 +667,8 @@ async function captureSnapshot(
   const env: NodeJS.ProcessEnv = {
     ...(objectDirectory && sourceObjects ? gitObjectEnvironment(objectDirectory, sourceObjects) : {}),
     GIT_INDEX_FILE: indexPath,
+    // 排除 pathspec 必须由 Git 解析，不能继承环境中的 literal/glob 开关。
+    GIT_LITERAL_PATHSPECS: '0', GIT_GLOB_PATHSPECS: '0', GIT_NOGLOB_PATHSPECS: '0', GIT_ICASE_PATHSPECS: '0',
   }
 
   await runGit(checkoutPath, ['read-tree', headOid], { env })
@@ -645,8 +680,8 @@ async function captureSnapshot(
   }
   const indexTreeOid = stdoutText(await runGit(checkoutPath, ['write-tree'], { env }))
   // 先还原真实 index 的 staged 语义，再叠加 working tree，得到完整最终状态。
-  await runGit(checkoutPath, ['add', '-A', '--', '.'], { env })
-  const forceIncludedExistingPaths = forceIncludePaths.filter((path) => existsSync(join(checkoutPath, path)))
+  await runGit(checkoutPath, ['add', '-A', '--', '.', ...runtimeFilePaths.map((path) => `:(top,exclude,icase,literal)${path}`), ...LOCAL_FILE_TEMPORARY_EXCLUDES], { env })
+  const forceIncludedExistingPaths = forceIncludePaths.filter((path) => !runtimePaths.has(portablePath(path)) && !isLocalFileTemporaryPath(path) && existsSync(join(checkoutPath, path)))
   if (forceIncludedExistingPaths.length > 0) {
     // Local 与 Isolated 的 ignore 规则可能不同；任务明确写入且仍存在的路径必须进入验收快照。
     // 删除已经由上面的 add -A 记录，不能再次作为 pathspec 传入，否则 Git 会因路径不存在而拒绝。
@@ -664,6 +699,7 @@ async function captureSnapshot(
     .update(indexEntries)
     .update('\0')
     .update(treeOid)
+    .update(includeRuntimeFingerprint ? runtimeFingerprint : '')
     .digest('hex')
 
   return { fingerprint, headOid, headRef, headTreeOid, indexTreeOid, treeOid }
@@ -999,6 +1035,18 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
 
   constructor(private readonly options: SessionCheckoutApplyEngineOptions) {}
 
+  private async captureSnapshot(
+    checkoutPath: string,
+    indexPath: string,
+    objectDirectory: string | null,
+    sourceObjects: string | null,
+    forceIncludePaths: readonly string[] = [],
+    includeRuntimeFingerprint = true,
+  ): Promise<CheckoutSnapshot> {
+    const runtimePaths = await this.options.runtimeFilePaths?.(checkoutPath) ?? []
+    return captureSnapshot(checkoutPath, indexPath, objectDirectory, sourceObjects, forceIncludePaths, runtimePaths, includeRuntimeFingerprint)
+  }
+
   async captureHandoffSnapshot(input: CaptureHandoffSnapshotInput): Promise<CaptureHandoffSnapshotResult> {
     if (!OID_PATTERN.test(input.baseOid)) {
       return { status: 'error', error: { code: 'invalid_input', message: 'Session handoff base OID 无效' } }
@@ -1012,7 +1060,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'invalid_input', message: 'Session handoff 项目目录不属于当前 Worktree' } }
       }
       await runGit(isolatedGitRoot, ['cat-file', '-e', `${input.baseOid}^{commit}`])
-      const snapshot = await captureSnapshot(isolatedGitRoot, join(tempRoot, 'snapshot.index'), null, null)
+      const snapshot = await this.captureSnapshot(isolatedGitRoot, join(tempRoot, 'snapshot.index'), null, null, [], false)
       const changedPaths = await changedTreePaths(isolatedGitRoot, input.baseOid, snapshot.treeOid, null, null)
       if (changedPaths.some((path) => !isProjectPath(path, projectPathPrefix))) {
         return { status: 'error', error: { code: 'invalid_input', message: 'Worktree 包含项目根目录外的变更，不能交接' } }
@@ -1058,11 +1106,13 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       await runGit(isolatedGitRoot, ['read-tree', '--reset', '-u', input.treeOid])
       await runGit(isolatedGitRoot, ['read-tree', input.indexTreeOid])
 
-      const restored = await captureSnapshot(
+      const restored = await this.captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'restored.index'),
         null,
         null,
+        [],
+        false,
       )
       if (
         restored.headOid !== input.expectedHeadOid
@@ -1101,7 +1151,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       if (projectPathPrefix === null) {
         return { status: 'error', error: { code: 'invalid_input', message: 'Checkpoint 项目目录不属于当前 Worktree' } }
       }
-      const snapshot = await captureSnapshot(
+      const snapshot = await this.captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'checkpoint.index'),
         null,
@@ -1136,7 +1186,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       await indexLock.close()
       await copyFile(finalIndexPath, adjacentIndex)
 
-      const finalSnapshot = await captureSnapshot(
+      const finalSnapshot = await this.captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'final-checkpoint.index'),
         null,
@@ -1171,7 +1221,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'git_error', message: `Checkpoint 写入失败，已回滚：${this.errorMessage(error)}` } }
       }
 
-      const completed = await captureSnapshot(
+      const completed = await this.captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'completed.index'),
         null,
@@ -1218,7 +1268,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       const targetTreeOid = stdoutText(await runGit(isolatedGitRoot, ['rev-parse', `${input.commitOid}^{tree}`]))
       const existingLock = await inspectIndexFileTree(isolatedGitRoot, indexLockPath)
       const markerOwned = await checkpointLockMarkerOwned(indexLockMarker, input.commitOid)
-      const snapshot = await captureSnapshot(isolatedGitRoot, join(tempRoot, 'current.index'), null, null)
+      const snapshot = await this.captureSnapshot(isolatedGitRoot, join(tempRoot, 'current.index'), null, null)
       if (snapshot.headRef !== null) {
         return { status: 'error', error: { code: 'stale_isolated', message: 'Worktree 已不再是 detached HEAD' } }
       }
@@ -1261,7 +1311,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         await copyFile(cleanIndexPath, indexLockPath)
       }
 
-      const lockedSnapshot = await captureSnapshot(isolatedGitRoot, join(tempRoot, 'locked-current.index'), null, null)
+      const lockedSnapshot = await this.captureSnapshot(isolatedGitRoot, join(tempRoot, 'locked-current.index'), null, null)
       if (
         lockedSnapshot.headOid !== snapshot.headOid
         || lockedSnapshot.fingerprint !== snapshot.fingerprint
@@ -1273,7 +1323,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       ownedIndexLock = null
       await removeBestEffort(indexLockMarker)
       ownedLockMarker = null
-      const completed = await captureSnapshot(isolatedGitRoot, join(tempRoot, 'completed.index'), null, null)
+      const completed = await this.captureSnapshot(isolatedGitRoot, join(tempRoot, 'completed.index'), null, null)
       if (
         completed.headOid !== input.commitOid
         || completed.headRef !== null
@@ -1314,13 +1364,13 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'invalid_input', message: 'Local 与 Isolated 的项目子目录不一致' } }
       }
       await runGit(localGitRoot, ['cat-file', '-e', `${input.baseOid}^{commit}`])
-      const local = await captureSnapshot(
+      const local = await this.captureSnapshot(
         localGitRoot,
         join(tempRoot, 'local.index'),
         objectDirectory,
         localObjects,
       )
-      const isolated = await captureSnapshot(
+      const isolated = await this.captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
@@ -1390,7 +1440,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       }
       await runGit(localGitRoot, ['cat-file', '-e', `${input.baseOid}^{commit}`])
 
-      const local = await captureSnapshot(
+      const local = await this.captureSnapshot(
         localGitRoot,
         join(tempRoot, 'local.index'),
         objectDirectory,
@@ -1399,7 +1449,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       if (input.expectedLocalHeadRef && local.headRef !== input.expectedLocalHeadRef) {
         return { status: 'error', error: { code: 'stale_local', message: '原项目当前分支与 Worktree 来源分支不同' } }
       }
-      const isolated = await captureSnapshot(
+      const isolated = await this.captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
@@ -1497,7 +1547,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       if (!pathsMatch(sourceObjects, stored.scope.sourceObjects)) {
         return { status: 'error', error: { code: 'invalid_plan', message: 'Apply plan 的 Git 仓库身份已变化' } }
       }
-      const local = await captureSnapshot(
+      const local = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'local.index'),
         objectDirectory,
@@ -1507,7 +1557,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'stale_local', message: 'Local 在 plan 后发生变化，请重新计算' } }
       }
 
-      const isolated = await captureSnapshot(
+      const isolated = await this.captureSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
@@ -1519,7 +1569,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
 
       // 将已审核的 Isolated 最终状态写成无 ref 的内部 commit，供同一 checkout 后续 Apply 去重。
       // 使用独立 index，不改变 Isolated 的真实 staged/working tree。
-      const persistentIsolated = await captureSnapshot(
+      const persistentIsolated = await this.captureSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'persistent-isolated.index'),
         null,
@@ -1538,7 +1588,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       )
 
       await this.options.beforeFinalLocalValidation?.()
-      const finalLocal = await captureSnapshot(
+      const finalLocal = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'final-local.index'),
         objectDirectory,
@@ -1589,7 +1639,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       if (!pathsMatch(sourceObjects, stored.scope.sourceObjects)) {
         return { status: 'error', error: { code: 'invalid_plan', message: 'Preview plan 的 Git 仓库身份已变化' } }
       }
-      const local = await captureSnapshot(
+      const local = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'local.index'),
         objectDirectory,
@@ -1602,7 +1652,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       ) {
         return { status: 'error', error: { code: 'stale_local', message: 'Local 在 plan 后发生变化，请重新计算' } }
       }
-      const isolated = await captureSnapshot(
+      const isolated = await this.captureSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
@@ -1612,13 +1662,13 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'stale_isolated', message: 'Isolated 在 plan 后发生变化，请重新计算' } }
       }
 
-      const persistentLocal = await captureSnapshot(
+      const persistentLocal = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'persistent-local.index'),
         null,
         null,
       )
-      const persistentIsolated = await captureSnapshot(
+      const persistentIsolated = await this.captureSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'persistent-isolated.index'),
         null,
@@ -1666,7 +1716,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       }
 
       await this.options.beforeFinalLocalValidation?.()
-      const finalLocal = await captureSnapshot(
+      const finalLocal = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'final-local.index'),
         objectDirectory,
@@ -1679,7 +1729,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       if (stored.patch.length > 0) {
         await runGit(stored.scope.localGitRoot, ['apply', '--binary', '--whitespace=nowarn'], { input: stored.patch })
       }
-      const previewedLocal = await captureSnapshot(
+      const previewedLocal = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'previewed-local.index'),
         null,
@@ -1766,7 +1816,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       const localProjectPrefix = projectPrefix(localGitRoot, input.localPath)
       if (localProjectPrefix === null) throw new Error('Local Project 不在 Git 根目录内')
       const receiptPaths = toRepositoryPaths(input.receipt.changedFiles, localProjectPrefix)
-      const current = await captureSnapshot(
+      const current = await this.captureSnapshot(
         localGitRoot,
         join(tempRoot, 'current.index'),
         objectDirectory,
@@ -1792,7 +1842,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       const localProjectPrefix = projectPrefix(localGitRoot, input.localPath)
       if (localProjectPrefix === null) throw new Error('Local Project 不在 Git 根目录内')
       const receiptPaths = toRepositoryPaths(input.receipt.changedFiles, localProjectPrefix)
-      const current = await captureSnapshot(
+      const current = await this.captureSnapshot(
         localGitRoot,
         join(tempRoot, 'current.index'),
         objectDirectory,
@@ -1803,7 +1853,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       if (inspection.status === 'error') return inspection
       if (inspection.status === 'preview_committed') {
         await this.options.beforeFinalLocalValidation?.()
-        const finalLocal = await captureSnapshot(
+        const finalLocal = await this.captureSnapshot(
           localGitRoot,
           join(tempRoot, 'final-committed-local.index'),
           objectDirectory,
@@ -1844,7 +1894,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         sourceObjects,
       )
       await this.options.beforeFinalLocalValidation?.()
-      const finalLocal = await captureSnapshot(
+      const finalLocal = await this.captureSnapshot(
         localGitRoot,
         join(tempRoot, 'final-local.index'),
         objectDirectory,
@@ -1890,7 +1940,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       const localProjectPrefix = projectPrefix(localGitRoot, input.localPath)
       if (localProjectPrefix === null) throw new Error('Local Project 不在 Git 根目录内')
       const receiptPaths = toRepositoryPaths(input.receipt.changedFiles, localProjectPrefix)
-      const current = await captureSnapshot(
+      const current = await this.captureSnapshot(
         localGitRoot,
         join(tempRoot, 'current.index'),
         objectDirectory,
@@ -1925,7 +1975,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
 
       if (input.receipt.changedFiles.length === 0) {
         await this.options.beforeFinalLocalValidation?.()
-        const finalLocal = await captureSnapshot(
+        const finalLocal = await this.captureSnapshot(
           localGitRoot,
           join(tempRoot, 'final-empty.index'),
           objectDirectory,
@@ -2012,7 +2062,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       await input.beforeCommit?.(commitOid)
 
       await this.options.beforeFinalLocalValidation?.()
-      const finalLocal = await captureSnapshot(
+      const finalLocal = await this.captureSnapshot(
         localGitRoot,
         join(tempRoot, 'final-local.index'),
         objectDirectory,
@@ -2090,7 +2140,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'invalid_plan', message: 'Finish plan 的 Git 仓库身份已变化' } }
       }
 
-      const local = await captureSnapshot(
+      const local = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'local.index'),
         objectDirectory,
@@ -2103,7 +2153,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       ) {
         return { status: 'error', error: { code: 'stale_local', message: 'Local 在 plan 后发生变化，请重新计算' } }
       }
-      const isolated = await captureSnapshot(
+      const isolated = await this.captureSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
@@ -2136,7 +2186,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'invalid_plan', message: 'Finish 复验的文件集合已变化' } }
       }
 
-      const persistentIsolated = await captureSnapshot(
+      const persistentIsolated = await this.captureSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'persistent-isolated.index'),
         null,
@@ -2156,7 +2206,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
 
       if (merge.changedFiles.length === 0) {
         await this.options.beforeFinalLocalValidation?.()
-        const finalLocal = await captureSnapshot(
+        const finalLocal = await this.captureSnapshot(
           stored.scope.localGitRoot,
           join(tempRoot, 'final-local.index'),
           objectDirectory,
@@ -2247,7 +2297,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       )
 
       await this.options.beforeFinalLocalValidation?.()
-      const finalLocal = await captureSnapshot(
+      const finalLocal = await this.captureSnapshot(
         stored.scope.localGitRoot,
         join(tempRoot, 'final-local-validation.index'),
         objectDirectory,

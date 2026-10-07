@@ -9,6 +9,7 @@ import type { SessionCheckoutModule } from './index.ts'
 import { createNodeSessionCheckoutDependencies } from './production-adapters.ts'
 import { createSessionCheckoutModule } from './session-checkout-module.ts'
 import { resolveUnboundSessionTargetPolicy } from './unbound-session-target-policy.ts'
+import { getWorktreeLocalFilesService } from '../worktree-local-files/production.ts'
 
 /** 生产 Session Checkout factory。 */
 export function createProductionSessionCheckoutModule(): SessionCheckoutModule {
@@ -69,6 +70,7 @@ export function createProductionSessionCheckoutModule(): SessionCheckoutModule {
       },
     },
   })
+  dependencies.localFiles = getWorktreeLocalFilesService()
   dependencies.onQueueEvent = async (event) => {
     await timingWriter.record({
       category: 'session_checkout_queue',

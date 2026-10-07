@@ -15,6 +15,9 @@ import type {
   WorktreeApplyPreflightView,
   WorktreeDeliveryView,
   ApplyBaseStrategy,
+  WorktreeLocalFileOverwrite,
+  WorktreeLocalFilesCopyResult,
+  WorktreeLocalFilesTarget,
 } from '@domi/shared'
 
 /** 仅存在于 main 的运行租约，renderer 不得接收这些路径。 */
@@ -164,6 +167,11 @@ export interface CloneIsolatedTargetOptions {
 /** Session Checkout Module 对业务调用方暴露的完整核心接口。 */
 export interface SessionCheckoutModule {
   inspect(sessionId: string): Promise<SessionTargetView>
+  /** 本地配置 UI 只得到状态和文件指纹，不得到 checkout 路径。 */
+  inspectLocalFilesTarget?(sessionId: string, projectId: string, paths: readonly string[]): Promise<WorktreeLocalFilesTarget | undefined>
+  prepareLocalFiles?(sessionId: string, expectedRevision: number, overwriteFiles?: readonly WorktreeLocalFileOverwrite[]): Promise<WorktreeLocalFilesCopyResult>
+  runExclusiveProjectConfiguration?<T>(projectId: string, operation: () => Promise<T>): Promise<T>
+  isRuntimeFile?(targetRoot: string, filePath: string): boolean
   /**
    * 批量读取 registry 中已持久化的 Isolated 交付状态。
    * 不执行 Git/fs 校验，也不进入 checkout mutation 队列；用于全局只读投影。

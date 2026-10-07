@@ -69,6 +69,53 @@ async function readyPlan(engine: SessionCheckoutApplyEngine, fixture: CheckoutFi
 }
 
 describe('SessionCheckoutApplyEngine', () => {
+  test('Given 本地配置未被 ignore When 生成交付与 handoff 快照 Then 不写入配置对象且正常任务文件可交付', async () => {
+    const fixture = await createFixture()
+    await writeFile(join(fixture.localPath, '.env.local'), 'LOCAL_CONFIG=local-only\n')
+    await writeFile(join(fixture.isolatedPath, '.env.local'), 'LOCAL_CONFIG=worktree-only\n')
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'work\n')
+    const temporaryName = '.domi-local-12345678-1234-1234-1234-123456789abc.previous'
+    await writeFile(join(fixture.isolatedPath, temporaryName), 'CRASHED_CONFIG=private\n')
+    const temporaryOid = await runGit(fixture.isolatedPath, ['hash-object', temporaryName])
+    const secretOid = await runGit(fixture.isolatedPath, ['hash-object', '.env.local'])
+    const engine = createSessionCheckoutApplyEngine({
+      runtimeFilePaths: async () => ['.env.local'],
+    })
+    const handoff = await engine.captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })
+    expect(handoff.status).toBe('captured')
+    if (handoff.status === 'captured') expect(handoff.changedFiles).toEqual(['tracked.txt'])
+    await expect(runGit(fixture.isolatedPath, ['cat-file', '-e', secretOid])).rejects.toThrow()
+    await expect(runGit(fixture.isolatedPath, ['cat-file', '-e', temporaryOid])).rejects.toThrow()
+    const plan = await readyPlan(engine, fixture)
+    expect(plan.changedFiles).toEqual(['tracked.txt'])
+    const result = await engine.finish(plan, { commitMessage: 'feat: deliver work' })
+    expect(result.status).toBe('finished')
+    expect(await readFile(join(fixture.localPath, '.env.local'), 'utf8')).toBe('LOCAL_CONFIG=local-only\n')
+    expect(await runGit(fixture.localPath, ['ls-tree', '-r', '--name-only', 'HEAD'])).not.toContain('.env.local')
+  })
+
+  test('配置或宿主临时副本已被手工暂存时拒绝生成快照，不改真实 index', async () => {
+    const fixture = await createFixture()
+    const path = '.domi-local-12345678-1234-1234-1234-123456789abc.tmp'
+    await writeFile(join(fixture.isolatedPath, path), 'CONFIG=staged\n')
+    await runGit(fixture.isolatedPath, ['add', path])
+    const before = await runGit(fixture.isolatedPath, ['ls-files', '--stage'])
+    const engine = createSessionCheckoutApplyEngine()
+    expect(await engine.captureHandoffSnapshot!({ isolatedPath: fixture.isolatedPath, baseOid: fixture.baseOid })).toMatchObject({ status: 'error' })
+    expect(await runGit(fixture.isolatedPath, ['ls-files', '--stage'])).toBe(before)
+  })
+
+  test('Given 已排除配置在验收后变化 When 使用旧计划交付 Then 拒绝旧快照且保留副本', async () => {
+    const fixture = await createFixture()
+    await writeFile(join(fixture.isolatedPath, '.env.local'), 'CONFIG=before\n')
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'work\n')
+    const engine = createSessionCheckoutApplyEngine({ runtimeFilePaths: async () => ['.env.local'] })
+    const plan = await readyPlan(engine, fixture)
+    await writeFile(join(fixture.isolatedPath, '.env.local'), 'CONFIG=after\n')
+    expect(await engine.finish(plan, { commitMessage: 'feat: work' })).toMatchObject({ status: 'error', error: { code: 'stale_isolated' } })
+    expect(await readFile(join(fixture.isolatedPath, '.env.local'), 'utf8')).toBe('CONFIG=after\n')
+  })
+
   test('Given Local switches branches at the same OID When planning or applying Then no patch reaches the other branch', async () => {
     const fixture = await createFixture()
     const engine = createSessionCheckoutApplyEngine()

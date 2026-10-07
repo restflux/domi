@@ -137,7 +137,7 @@ function createContext(options: {
   outerRepository?: boolean
   timingFailure?: boolean
 } = {}): TestContext {
-  const root = mkdtempSync(join(tmpdir(), 'domi-checkout-测试 空格-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'domi-checkout-测试 空格-')))
   temporaryRoots.push(root)
   const repositoryRoot = join(root, '本地 project')
   const projectRoot = options.projectSubdirectory
@@ -1142,7 +1142,9 @@ describe.concurrent('SessionCheckoutModule', () => {
   test('Given 旧 ready inspect 被可控 deferred 暂停 When owner 并发 Discard Then inspect 与 Discard 串行且 discarded 不会被旧结果覆盖', async () => {
     const context = createContext()
     const target = await context.module.bind('session-1', { kind: 'isolated' })
-    const pause = context.pauseNextGitInspect()
+    const lease = await context.module.lease('session-1')
+    // 精确暂停持有 checkout 队列的检查，不暂停队列外的 Local 项目身份读取。
+    const pause = context.pauseNextGitInspect(lease.cwd)
     const staleInspect = context.module.inspect('session-1')
     await pause.started
 
@@ -1757,7 +1759,7 @@ describe.concurrent('SessionCheckoutModule', () => {
 
     expect(preflight).toMatchObject({
       status: 'conflict',
-      localModified: false,
+      localModified: true,
       conflictingFiles: ['tracked.txt'],
     })
     expect(readFileSync(join(context.projectRoot, 'tracked.txt'), 'utf8')).toBe(localBefore)
@@ -3915,7 +3917,7 @@ describe.concurrent('SessionCheckoutModule', () => {
     })))
 
     expect(result.cleaned).toEqual([{ checkoutId: safeTarget.checkout.id, iteration: 1, commitOid: safe.commitOid }])
-    expect(result.retained.map((item) => ({ id: item.checkoutId, eligibility: item.cleanup.eligibility, reason: item.cleanup.reason }))).toEqual([
+    expect(result.retained.map((item) => ({ id: item.checkoutId, eligibility: item.cleanup.eligibility, reason: item.cleanup.reason })).sort((left, right) => left.id.localeCompare(right.id))).toEqual([
       { id: retainedTarget.checkout.id, eligibility: 'retained' as const, reason: 'retention_active' as const },
       { id: working.checkout.id, eligibility: 'blocked' as const, reason: 'working' as const },
     ].sort((left, right) => left.id.localeCompare(right.id)))

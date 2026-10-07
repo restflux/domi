@@ -99,6 +99,8 @@ import { CollapsedWorkspacePopover } from '@/components/agent/CollapsedWorkspace
 import { LocalProjectBadge } from '@/components/agent/LocalProjectBadge'
 import { MoveSessionDialog } from '@/components/agent/MoveSessionDialog'
 import { getAgentSessionTransferLabel } from '@/components/session-header-menu-model'
+import { getWorktreeLocalFilesDialogRequest, openWorktreeLocalFilesDialogAtom } from '@/atoms/worktree-local-files-atoms.ts'
+import { openDialogAfterDropdownMenu } from '@/lib/open-dialog-after-dropdown-menu.ts'
 import {
   SessionMiniMapPopover,
   useSessionMiniMapHover,
@@ -5200,6 +5202,8 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
   onToggleDelegationParent,
 }: AgentProjectGroupItemProps): React.ReactElement {
   const isCurrent = group.workspace.id === currentWorkspaceId
+  const store = useStore()
+  const openLocalFiles = useSetAtom(openWorktreeLocalFilesDialogAtom)
   const newSessionShortcutLabel = getAcceleratorDisplay(getActiveAccelerator('new-session'))
   const sessionHoverPreviewEnabled = useAtomValue(sessionHoverPreviewEnabledAtom)
   const hasUnavailableProjectRoot = Boolean(
@@ -5494,6 +5498,16 @@ const AgentProjectGroupItem = React.memo(function AgentProjectGroupItem({
             >
               <Settings size={14} />
               配置 MCP 与 Skills
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={hasUnavailableProjectRoot}
+              className="text-xs py-1 [&>svg]:size-3.5"
+              onSelect={() => openDialogAfterDropdownMenu(() => {
+                void openLocalFiles(getWorktreeLocalFilesDialogRequest(group.workspace.id, activeSessionId, store.get(agentSessionsAtom)))
+              })}
+            >
+              <GitBranch size={14} />
+              Worktree 本地配置
             </DropdownMenuItem>
             {hasUnavailableProjectRoot && (
               <>

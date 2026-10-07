@@ -9,6 +9,8 @@ import type {
 } from '@domi/shared'
 import type { SessionCheckoutApplyEngine } from './session-checkout-apply.ts'
 import type { SessionCheckoutQueueEvent } from './session-checkout-operation-queue.ts'
+import type { WorktreeLocalFileOverwrite, WorktreeLocalFilesCopyResult } from '@domi/shared'
+import type { WorktreeLocalFilesPlan, WorktreeLocalFilesProject } from '../worktree-local-files/service.ts'
 
 export interface SessionCheckoutSessionRecord {
   id: string
@@ -113,7 +115,7 @@ export interface ManagedCheckoutCreateJournal extends ManagedCheckoutJournalBase
 }
 
 export interface ManagedCheckoutMutationJournal extends ManagedCheckoutJournalBase {
-  operation: 'apply' | 'preview' | 'checkpoint' | 'rollback_preview' | 'finish' | 'finalize_preview' | 'cleanup'
+  operation: 'apply' | 'preview' | 'checkpoint' | 'rollback_preview' | 'finish' | 'finalize_preview' | 'cleanup' | 'prepare_local_files'
   step: 'planning' | 'artifacts_retained' | 'writing_local' | 'updating_ref' | 'replacing_index' | 'removing_worktree'
   baseOid?: string
   planRevision?: string
@@ -274,6 +276,12 @@ export interface ManagedCheckoutRecord {
   previousReview?: ManagedWorktreePreviousReviewRecord
   /** 当前 managed Worktree 内尚未交付到 Local 的线性阶段 checkpoint。 */
   checkpoints?: ManagedWorktreeCheckpointRecord[]
+  /** 配置复制前持久化，失败/重启仍保持路径排除。移除清单不撤销已有副本保护。 */
+  localFiles?: {
+    paths: string[]
+    manifestVersion: string
+    state: 'pending' | 'ready' | 'failed'
+  }
   sourceRef: string
   phase: SessionCheckoutPhase
   delivery: ManagedCheckoutDelivery
@@ -304,6 +312,11 @@ export interface SessionCheckoutTimingEvent {
 }
 
 export interface SessionCheckoutDependencies {
+  localFiles?: {
+    preflight(project: WorktreeLocalFilesProject, targetHeadOid?: string): Promise<WorktreeLocalFilesPlan>
+    copy(project: WorktreeLocalFilesProject, targetRoot: string, plan: WorktreeLocalFilesPlan, overwriteFiles?: readonly WorktreeLocalFileOverwrite[]): Promise<WorktreeLocalFilesCopyResult>
+    inspectTarget(targetRoot: string, paths: readonly string[]): Promise<Array<{ path: string; exists: boolean; fingerprint: string }>>
+  }
   /** 仅记录有界操作身份与耗时，不携带路径、对话或原始异常。 */
   onQueueEvent?: (event: SessionCheckoutQueueEvent) => void | Promise<void>
   lookup: SessionCheckoutLookupPort

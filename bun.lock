@@ -195,7 +195,7 @@
     },
     "packages/shared": {
       "name": "@domi/shared",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "devDependencies": {
         "typescript": "^5.0.0",
       },
