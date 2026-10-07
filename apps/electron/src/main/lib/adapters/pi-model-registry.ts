@@ -368,7 +368,7 @@ async function findGptCatalogModel(provider: ProviderType, modelId: string): Pro
 
 type PiImageInputCapability = 'supported' | 'unsupported' | 'unknown'
 
-/** 只有所有精确 catalog 声明一致时才接受跨 Provider 的能力结论。 */
+/** 同一优先级的精确 catalog 声明有冲突时，仍保守返回未知。 */
 export function resolveImageCapabilityConsensus(
   capabilities: readonly Exclude<PiImageInputCapability, 'unknown'>[],
 ): PiImageInputCapability {
@@ -390,14 +390,25 @@ const GLOBAL_CATALOG_CAPABILITY_FALLBACK_PROVIDERS = new Set<ProviderType>([
   'qwen-token-plan-individual',
 ])
 
+// 原厂目录用于确认模型身份与能力；聚合服务的同名记录可能只反映其接入限制。
+// 这里只维护 Pi Provider 的来源身份，不维护模型名称规则或图片能力副本。
+const MODEL_ORIGIN_CATALOG_PROVIDERS = new Set<KnownProvider>([
+  'anthropic', 'openai', 'google', 'deepseek', 'moonshotai', 'moonshotai-cn',
+  'minimax', 'minimax-cn', 'zai', 'xiaomi', 'xai', 'mistral', 'meta', 'ant-ling',
+  'qwen-token-plan', 'qwen-token-plan-cn', 'qwen-token-plan-individual',
+])
+
 async function buildGlobalExactImageCapabilities(): Promise<Map<string, PiImageInputCapability>> {
   const { getProviders } = await loadPiAiCompat()
-  const declarations = new Map<string, Array<Exclude<PiImageInputCapability, 'unknown'>>>()
-  const catalogs = await Promise.all(getProviders().map(async (provider) => (
-    provider === 'openai-codex' ? getCodexCatalogModels() : getCatalogModels(provider)
-  )))
+  const originDeclarations = new Map<string, Array<Exclude<PiImageInputCapability, 'unknown'>>>()
+  const routedDeclarations = new Map<string, Array<Exclude<PiImageInputCapability, 'unknown'>>>()
+  const catalogs = await Promise.all(getProviders().map(async (provider) => ({
+    provider,
+    models: provider === 'openai-codex' ? await getCodexCatalogModels() : await getCatalogModels(provider),
+  })))
 
-  for (const models of catalogs) {
+  for (const { provider, models } of catalogs) {
+    const declarations = MODEL_ORIGIN_CATALOG_PROVIDERS.has(provider) ? originDeclarations : routedDeclarations
     for (const model of models) {
       const key = model.id.trim().toLowerCase()
       if (!key) continue
@@ -408,9 +419,10 @@ async function buildGlobalExactImageCapabilities(): Promise<Map<string, PiImageI
     }
   }
 
-  return new Map([...declarations].map(([modelId, capabilities]) => [
+  const modelIds = new Set([...originDeclarations.keys(), ...routedDeclarations.keys()])
+  return new Map([...modelIds].map((modelId) => [
     modelId,
-    resolveImageCapabilityConsensus(capabilities),
+    resolveImageCapabilityConsensus(originDeclarations.get(modelId) ?? routedDeclarations.get(modelId) ?? []),
   ]))
 }
 
@@ -497,7 +509,8 @@ async function findProviderScopedCatalogModel(
 /**
  * 解析模型图片输入能力：优先使用当前 Provider 自己的 Pi catalog；对协议兼容渠道，
  * 仅在 Provider-scoped 未命中时按精确 model ID 查询全部 Pi catalog。跨 Provider
- * 声明必须一致，冲突、缺失或仅名称近似时继续 fail closed。
+ * 优先使用原厂目录声明，避免聚合服务的接入限制否决模型能力。同级声明
+ * 冲突、缺失或仅名称近似时继续 fail closed。
  */
 export async function resolvePiImageInputCapability(
   provider: ProviderType,
@@ -612,8 +625,16 @@ function metadataThinkingLevelMap(metadata: ChannelModelCapabilities | undefined
 
 async function resolvePiModelDefaults(input: PiAgentQueryOptions): Promise<PiModelDefaults> {
   const catalogModel = input.model ? await findPiCatalogModel(input.provider, input.model) : undefined
+  const imageCapability = await resolvePiImageInputCapability(input.provider, input.model, input.channelModel)
   const providerMetadata = input.channelModel?.providerMetadata
   const temporaryAdaptation = input.channelModel?.temporaryAdaptation
+  let modelInput: PiCatalogModel['input'] = [
+    ...(providerMetadata?.input ?? catalogModel?.input ?? temporaryAdaptation?.input ?? ['text', 'image']),
+  ]
+  // 明确的图片能力与设置/工具资格共用解析器；未知模型保留原有运行时适配。
+  if (!providerMetadata?.input && imageCapability !== 'unknown') {
+    modelInput = imageCapability === 'supported' ? ['text', 'image'] : ['text']
+  }
   const api = normalizePiApi(input.provider)
   const providerSpecificCapabilities = input.model && isGptModel(input.model)
     ? undefined
@@ -655,13 +676,7 @@ async function resolvePiModelDefaults(input: PiAgentQueryOptions): Promise<PiMod
       ...providerSpecificCapabilities?.compat,
       ...(configuredReasoningEffort ? { supportsReasoningEffort: true } : {}),
     },
-    input: providerMetadata?.input
-      ? [...providerMetadata.input]
-      : catalogModel
-        ? [...catalogModel.input]
-        : temporaryAdaptation?.input
-          ? [...temporaryAdaptation.input]
-          : ['text', 'image'],
+    input: modelInput,
     cost: catalogModel ? { ...catalogModel.cost } : { ...ZERO_MODEL_COST },
     contextWindow,
     contextWindowSource,

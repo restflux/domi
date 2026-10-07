@@ -1120,6 +1120,7 @@ async function buildVisionRelayTools(sdk: PiSdk, ctx: PiBuiltinToolsContext): Pr
           sessionId: ctx.sessionId,
           sourceProvider: ctx.provider!,
           sourceModelId: ctx.modelId,
+          sourceChannelModel: ctx.channelModel,
           triggeredBy: ctx.triggeredBy,
           imagePath: args.imagePath ?? '',
           question: args.question ?? '',

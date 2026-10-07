@@ -1,4 +1,4 @@
-import type { ProviderType } from '@domi/shared'
+import type { ChannelModel, ProviderType } from '@domi/shared'
 import type { VisionRelayQualityPreset, VisionRelaySettings } from '../../types'
 import type { VisionRelayAccessScope } from './vision-relay-access-scope'
 import type { NormalizedVisionImage } from './vision-relay-image'
@@ -24,13 +24,17 @@ export interface VisionRelayChannel {
   baseUrl: string
   credentialVersion?: string
   enabled: boolean
-  models: Array<{ id: string; enabled: boolean }>
+  models: Array<Pick<ChannelModel, 'id' | 'enabled' | 'providerMetadata' | 'temporaryAdaptation'>>
 }
 
 export interface VisionRelayServiceDependencies {
   getSettings: () => VisionRelaySettings | undefined
   getChannel: (channelId: string) => VisionRelayChannel | undefined
-  resolveImageCapability: (provider: ProviderType, modelId: string | undefined) => Promise<'supported' | 'unsupported' | 'unknown'>
+  resolveImageCapability: (
+    provider: ProviderType,
+    modelId: string | undefined,
+    model?: Pick<ChannelModel, 'providerMetadata' | 'temporaryAdaptation'>,
+  ) => Promise<'supported' | 'unsupported' | 'unknown'>
   normalizeImage: (input: { imagePath: string; scope: VisionRelayAccessScope; signal?: AbortSignal }) => Promise<NormalizedVisionImage>
   executeProvider: (input: {
     channel: VisionRelayChannel
@@ -96,6 +100,10 @@ function isAllowedTrigger(triggeredBy: 'user' | 'automation' | 'delegation' | un
   return triggeredBy === 'user'
 }
 
+function modelInputIdentity(model: VisionRelayChannel['models'][number]): string {
+  return JSON.stringify([model.providerMetadata?.input ?? null, model.temporaryAdaptation?.input ?? null])
+}
+
 function mapFailure(error: unknown): VisionRelayServiceResult {
   if (error instanceof VisionRelayImageError) return failure(error.code)
   // Provider 层错误 message 已按安全策略生成（仅附加 HTTP 状态码数字），优先透出提高可诊断性
@@ -109,6 +117,7 @@ export async function executeVisionRelay(input: {
   sessionId: string
   sourceProvider: ProviderType
   sourceModelId?: string
+  sourceChannelModel?: Pick<ChannelModel, 'providerMetadata' | 'temporaryAdaptation'>
   triggeredBy?: 'user' | 'automation' | 'delegation'
   imagePath: string
   question: string
@@ -129,16 +138,16 @@ export async function executeVisionRelay(input: {
   if (!settings?.enabled || !settings.channelId || !settings.modelId || !settings.authorizationVersion) {
     return failure('VISION_NOT_CONFIGURED')
   }
-  const sourceCapability = await dependencies.resolveImageCapability(input.sourceProvider, input.sourceModelId)
+  const sourceCapability = await dependencies.resolveImageCapability(input.sourceProvider, input.sourceModelId, input.sourceChannelModel)
   if (!isVisionRelaySourceEligible(sourceCapability)) return failure('VISION_SOURCE_NOT_ELIGIBLE')
 
   const channel = dependencies.getChannel(settings.channelId)
-  if (!channel?.enabled || !channel.models.some((model) => model.id === settings.modelId && model.enabled)) {
-    return failure('VISION_ROUTE_UNAVAILABLE')
-  }
+  const targetModel = channel?.models.find((model) => model.id === settings.modelId && model.enabled)
+  if (!channel?.enabled || !targetModel) return failure('VISION_ROUTE_UNAVAILABLE')
   const initialRoute = buildVisionRelayRouteIdentity(channel, settings.modelId)
   if (!initialRoute) return failure('VISION_ROUTE_UNAVAILABLE')
-  const targetCapability = await dependencies.resolveImageCapability(channel.provider, settings.modelId)
+  const initialModelInput = modelInputIdentity(targetModel)
+  const targetCapability = await dependencies.resolveImageCapability(channel.provider, settings.modelId, targetModel)
   if (!isVisionRelayTargetEligible(targetCapability)) return failure('VISION_ROUTE_UNAVAILABLE')
   if (activeSessions.has(input.sessionId) || activeRequestCount >= MAX_CONCURRENT_VISION_REQUESTS) return failure('VISION_BUSY')
 
@@ -151,6 +160,7 @@ export async function executeVisionRelay(input: {
     // 执行前仍重新读取路由，防止同一 channel ID 被原地改到其他端点或路由被切换。
     const currentSettings = dependencies.getSettings()
     const currentChannel = currentSettings?.channelId ? dependencies.getChannel(currentSettings.channelId) : undefined
+    const currentModel = currentChannel?.models.find((model) => model.id === currentSettings?.modelId && model.enabled)
     const currentRoute = currentSettings?.modelId && currentChannel
       ? buildVisionRelayRouteIdentity(currentChannel, currentSettings.modelId)
       : undefined
@@ -158,9 +168,10 @@ export async function executeVisionRelay(input: {
       || !currentSettings.modelId
       || currentSettings.authorizationVersion !== settings.authorizationVersion
       || !currentChannel?.enabled
-      || !currentChannel.models.some((model) => model.id === currentSettings.modelId && model.enabled)
+      || !currentModel
       || !currentRoute
-      || currentRoute.routeKey !== initialRoute.routeKey) {
+      || currentRoute.routeKey !== initialRoute.routeKey
+      || modelInputIdentity(currentModel) !== initialModelInput) {
       return failure('VISION_ROUTE_UNAVAILABLE')
     }
 

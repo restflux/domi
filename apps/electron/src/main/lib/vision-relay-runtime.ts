@@ -1,4 +1,4 @@
-import type { ProviderType } from '@domi/shared'
+import type { ChannelModel, ProviderType } from '@domi/shared'
 import { getSettings } from './settings-service'
 import {
   getChannelById,
@@ -23,6 +23,7 @@ export interface InspectImageWithVisionRelayInput {
   sessionId: string
   sourceProvider: ProviderType
   sourceModelId?: string
+  sourceChannelModel?: Pick<ChannelModel, 'providerMetadata' | 'temporaryAdaptation'>
   triggeredBy?: 'user' | 'automation' | 'delegation'
   imagePath: string
   question: string

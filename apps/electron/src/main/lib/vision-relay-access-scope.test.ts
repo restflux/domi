@@ -9,7 +9,7 @@ import {
   type VisionRelayPathGrant,
 } from './vision-relay-access-scope'
 
-const tempRoot = mkdtempSync(join(tmpdir(), 'domi-vision-scope-'))
+const tempRoot = realpathSync(mkdtempSync(join(tmpdir(), 'domi-vision-scope-')))
 const targetRoot = join(tempRoot, 'target')
 const workbenchRoot = join(tempRoot, 'workbench')
 const attachedRoot = join(tempRoot, 'assets')

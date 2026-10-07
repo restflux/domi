@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test'
 import { getModels } from '@earendil-works/pi-ai/compat'
 import { catalogCredentials, PiRemoteModelCatalog, piRemoteModelCatalog } from './pi-remote-model-catalog'
+import { collectVisionRelayModelOptions } from '../vision-relay-model-options'
+import { executeVisionRelay } from '../vision-relay-service'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -92,6 +94,102 @@ async function buildOpenAIResponsesModel(model: string) {
 }
 
 describe('Pi 模型图片输入能力', () => {
+  test('Given 自定义渠道使用 GLM-5.3-Flash 且 Radius 限制为文本 When 解析图片能力 Then 采用 Pi 原厂模型的图片声明', async () => {
+    expect(getModels('zai').find((model) => model.id === 'glm-5.3-flash')?.input).toContain('image')
+    expect(getModels('radius').find((model) => model.id === 'glm-5.3-flash')?.input).toEqual(['text'])
+    await expect(resolvePiImageInputCapability('custom', 'glm-5.3-flash')).resolves.toBe('supported')
+  })
+
+  test('Given 自定义渠道的 GLM 视觉模型进入设置列表 When 使用同一解析器执行 Then 图片路由校验一致', async () => {
+    const channel = {
+      id: 'glm-channel', name: 'GLM Router', provider: 'custom' as const,
+      baseUrl: 'https://vision.example/v1', credentialVersion: 'credential-v1',
+      apiKey: 'fixture', enabled: true, createdAt: 1, updatedAt: 1,
+      models: [{ id: 'glm-5.3-flash', name: 'GLM-5.3-Flash', enabled: true }],
+    }
+    expect(await collectVisionRelayModelOptions([channel], resolvePiImageInputCapability)).toMatchObject([
+      { channelId: channel.id, modelId: 'glm-5.3-flash' },
+    ])
+    let providerCalls = 0
+    const result = await executeVisionRelay({
+      sessionId: 'glm-vision-integration', sourceProvider: 'custom', sourceModelId: 'glm-5.3',
+      triggeredBy: 'user', imagePath: '/fixture/screen.png', question: '界面显示了什么？',
+      accessScope: { roots: [], files: [] },
+    }, {
+      getSettings: () => ({ enabled: true, channelId: channel.id, modelId: 'glm-5.3-flash', qualityPreset: 'balanced', authorizationVersion: 'auth-v1' }),
+      getChannel: () => channel,
+      resolveImageCapability: resolvePiImageInputCapability,
+      normalizeImage: async () => ({
+        filename: 'screen.png', mediaType: 'image/png', data: Buffer.from('fixture'),
+        width: 100, height: 100, animatedFirstFrame: false, warnings: [],
+      }),
+      executeProvider: async () => {
+        providerCalls += 1
+        return '{"answer":"设置界面","observations":[],"limitations":[],"confidence":"medium"}'
+      },
+    })
+    expect(result).toMatchObject({ ok: true, observation: { answer: '设置界面' } })
+    expect(providerCalls).toBe(1)
+  })
+
+  test('Given 原厂视觉模型与路由接入限制不一致 When 构建主会话模型 Then 图片输入与能力解析保持一致', async () => {
+    const nativeModel = getModels('zai').find((entry) => entry.id === 'glm-5.3-flash')!
+    catalogRead.mockImplementation(async (provider) => provider === 'amazon-bedrock'
+      ? [{ ...nativeModel, provider: 'amazon-bedrock', input: ['text'] }]
+      : getModels(provider as Parameters<typeof getModels>[0]))
+    await expect(resolvePiImageInputCapability('custom', 'glm-5.3-flash')).resolves.toBe('supported')
+    const { model } = await buildModel(await sdkPromise, {
+      sessionId: 'glm-native-vision', prompt: '检查图片', apiKey: 'fixture', provider: 'custom',
+      baseUrl: 'https://vision.example/v1', model: 'glm-5.3-flash',
+      permissionMode: 'plan', authorizeToolCall: async (_toolName, args) => ({ behavior: 'allow', updatedInput: args }),
+      systemPrompt: 'system', piAgentDir: '/tmp/pi-agent', piSessionDir: '/tmp/pi-session',
+    })
+    expect(model.input).toEqual(['text', 'image'])
+  })
+
+  test('Given 渠道明确声明模型仅文本 When 解析已知视觉模型 Then 保留渠道能力限制', async () => {
+    await expect(resolvePiImageInputCapability('custom', 'glm-5.3-flash', {
+      providerMetadata: { input: ['text'] },
+      temporaryAdaptation: { input: ['text', 'image'] },
+    })).resolves.toBe('unsupported')
+  })
+
+  test('Given 原厂声明纯文本但聚合服务声明图片 When 解析模型 Then 不提升为视觉模型', async () => {
+    catalogRead.mockImplementation(async (provider) => getModels(provider as Parameters<typeof getModels>[0])
+      .map((model) => provider === 'opencode' && model.id === 'glm-5.3'
+        ? { ...model, input: ['text', 'image'] }
+        : model))
+    await expect(resolvePiImageInputCapability('custom', 'glm-5.3')).resolves.toBe('unsupported')
+  })
+
+  test('Given 原厂精确记录之间冲突 When 解析模型 Then 保持未知且不借聚合声明放行', async () => {
+    const model = getModels('zai').find((entry) => entry.id === 'glm-5.3-flash')!
+    catalogRead.mockImplementation(async (provider) => provider === 'deepseek'
+      ? [{ ...model, provider: 'deepseek', input: ['text'] }]
+      : getModels(provider as Parameters<typeof getModels>[0]))
+    await expect(resolvePiImageInputCapability('custom', model.id)).resolves.toBe('unknown')
+  })
+
+  test('Given 无原厂精确记录且路由目录存在冲突 When 解析模型 Then 保持保守回退', async () => {
+    const model = getModels('zai').find((entry) => entry.id === 'glm-5.3-flash')!
+    catalogRead.mockImplementation(async (provider) => {
+      if (provider === 'opencode') return [{ ...model, id: 'private-vision-model', provider: 'opencode' }]
+      if (provider === 'opencode-go') return [{ ...model, id: 'private-vision-model', provider: 'opencode-go', input: ['text'] }]
+      return []
+    })
+    await expect(resolvePiImageInputCapability('custom', 'private-vision-model')).resolves.toBe('unknown')
+    await expect(resolvePiImageInputCapability('custom', 'private-vision-model', {
+      temporaryAdaptation: { input: ['text', 'image'] },
+    })).resolves.toBe('supported')
+  })
+
+  test('Given 名称或前缀类似 GLM 但没有精确模型 ID When 解析图片能力 Then 不按名称猜测', async () => {
+    catalogRead.mockImplementation(async (provider) => getModels(provider as Parameters<typeof getModels>[0])
+      .map((model) => model.id === 'glm-5.3-flash' ? { ...model, name: 'private-glm-vision' } : model))
+    await expect(resolvePiImageInputCapability('custom', 'private-glm-vision')).resolves.toBe('unknown')
+    await expect(resolvePiImageInputCapability('custom', 'glm-5.3-flash-custom')).resolves.toBe('unknown')
+  })
+
   test('Given catalog missing but temporary adaptation declares image input When resolving Then uses the fallback', async () => {
     await expect(resolvePiImageInputCapability('opencode-go-openai', 'ox-alpha-free', {
       temporaryAdaptation: { input: ['text', 'image'] },

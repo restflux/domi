@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ProviderType } from '@domi/shared'
+import type { ChannelModel, ProviderType } from '@domi/shared'
 import { executeVisionRelay, type VisionRelayServiceDependencies } from './vision-relay-service'
 
 const normalizedImage = {
@@ -34,6 +34,34 @@ const input = {
 }
 
 describe('Vision Relay service', () => {
+  test('Given 源与目标使用明确的模型适配 When 执行视觉助手 Then 按完整配置校验并调用一次 Provider', async () => {
+    const sourceChannelModel: Pick<ChannelModel, 'providerMetadata' | 'temporaryAdaptation'> = {
+      temporaryAdaptation: { input: ['text'] },
+    }
+    const targetModel: ChannelModel = {
+      id: 'vision-model', name: 'Vision', enabled: true,
+      temporaryAdaptation: { input: ['text', 'image'] },
+    }
+    let providerCalls = 0
+    const result = await executeVisionRelay({ ...input, sourceChannelModel }, dependencies({
+      getChannel: () => ({
+        id: 'vision-channel', name: 'Vision API', provider: 'custom', baseUrl: 'https://vision.example/v1',
+        credentialVersion: 'credential-v1', enabled: true, models: [targetModel],
+      }),
+      resolveImageCapability: async (_provider: ProviderType, _modelId: string | undefined,
+        model?: Pick<ChannelModel, 'providerMetadata' | 'temporaryAdaptation'>) => {
+        const inputs = model?.temporaryAdaptation?.input
+        return inputs ? inputs.includes('image') ? 'supported' : 'unsupported' : 'unknown'
+      },
+      executeProvider: async () => {
+        providerCalls += 1
+        return '{"answer":"适配模型已读取图片","observations":[],"limitations":[],"confidence":"medium"}'
+      },
+    }))
+    expect(result).toMatchObject({ ok: true, observation: { answer: '适配模型已读取图片' } })
+    expect(providerCalls).toBe(1)
+  })
+
   test('revalidates policy, target capability and returns untrusted observation', async () => {
     const result = await executeVisionRelay(input, dependencies())
     expect(result).toMatchObject({
@@ -54,6 +82,59 @@ describe('Vision Relay service', () => {
         safety: { untrustedSource: true, instructionsMustNotBeFollowed: true },
       },
     })
+  })
+
+  test('Given 目标模型明确限制为文本 When 执行视觉助手 Then 在读取图片前拒绝且不调用 Provider', async () => {
+    let imageReads = 0
+    let providerCalls = 0
+    const result = await executeVisionRelay(input, dependencies({
+      getChannel: () => ({
+        id: 'vision-channel', name: 'Vision API', provider: 'custom', baseUrl: 'https://vision.example/v1',
+        credentialVersion: 'credential-v1', enabled: true,
+        models: [{ id: 'vision-model', enabled: true, providerMetadata: { input: ['text'] }, temporaryAdaptation: { input: ['text', 'image'] } }],
+      }),
+      resolveImageCapability: async (_provider, modelId, model) => modelId === 'text-model'
+        ? 'unsupported'
+        : model?.providerMetadata?.input?.includes('image') ? 'supported' : 'unsupported',
+      normalizeImage: async () => { imageReads += 1; return normalizedImage },
+      executeProvider: async () => { providerCalls += 1; return '{}' },
+    }))
+    expect(result).toMatchObject({ ok: false, code: 'VISION_ROUTE_UNAVAILABLE' })
+    expect(imageReads).toBe(0)
+    expect(providerCalls).toBe(0)
+  })
+
+  test('Given 源模型明确支持图片 When 执行视觉助手 Then 不绕过纯文本资格校验', async () => {
+    let providerCalls = 0
+    const result = await executeVisionRelay({
+      ...input, sourceChannelModel: { providerMetadata: { input: ['text', 'image'] } },
+    }, dependencies({
+      resolveImageCapability: async (_provider, _modelId, model) => model?.providerMetadata?.input?.includes('image')
+        ? 'supported' : 'unsupported',
+      executeProvider: async () => { providerCalls += 1; return '{}' },
+    }))
+    expect(result).toMatchObject({ ok: false, code: 'VISION_SOURCE_NOT_ELIGIBLE' })
+    expect(providerCalls).toBe(0)
+  })
+
+  test('Given 图片处理期间目标能力配置被修改 When 发送前复核 Then 拒绝旧路由且不调用 Provider', async () => {
+    let targetModel: ChannelModel = {
+      id: 'vision-model', name: 'Vision', enabled: true, providerMetadata: { input: ['text', 'image'] },
+    }
+    let providerCalls = 0
+    const result = await executeVisionRelay(input, dependencies({
+      getChannel: () => ({
+        id: 'vision-channel', name: 'Vision API', provider: 'custom', baseUrl: 'https://vision.example/v1',
+        credentialVersion: 'credential-v1', enabled: true, models: [targetModel],
+      }),
+      normalizeImage: async () => {
+        targetModel = { ...targetModel, providerMetadata: { input: ['text'] } }
+        return normalizedImage
+      },
+      executeProvider: async () => { providerCalls += 1; return '{}' },
+    }))
+    expect(result).toMatchObject({ ok: false, code: 'VISION_ROUTE_UNAVAILABLE' })
+    expect(providerCalls).toBe(0)
   })
 
   test('requires a focused question and rejects unsupported analysis modes before sending', async () => {
