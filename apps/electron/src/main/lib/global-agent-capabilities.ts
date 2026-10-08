@@ -146,11 +146,13 @@ function discoverSkillFiles(root: string, sourceLabel: string): { files: string[
 
   const files: string[] = []
   const diagnostics: string[] = []
-  const pending: Array<{ directory: string; depth: number }> = [{ directory: root, depth: 0 }]
+  // allowedRoot：该分支允许的 canonical 边界。顶层外部链接被跟随后，以解析出的真实 Skill 目录为边界继续遍历
+  const pending: Array<{ directory: string; depth: number; allowedRoot?: string }> = [{ directory: root, depth: 0 }]
   const visited = new Set<string>()
   const startedAt = Date.now()
   let visitedEntries = 0
   let outsideLinkCount = 0
+  let followedTopLevelLinks = 0
 
   while (pending.length > 0) {
     if (Date.now() - startedAt > MAX_SKILL_SCAN_MS) {
@@ -162,10 +164,11 @@ function discoverSkillFiles(root: string, sourceLabel: string): { files: string[
       break
     }
 
-    const { directory, depth } = pending.shift()!
+    const { directory, depth, allowedRoot } = pending.shift()!
     const canonicalDirectory = canonicalPath(directory)
     if (!canonicalDirectory || visited.has(canonicalDirectory)) continue
-    if (!isCanonicalPathWithinRoot(canonicalDirectory, canonicalRoot)) {
+    const effectiveRoot = allowedRoot ?? canonicalRoot
+    if (!isCanonicalPathWithinRoot(canonicalDirectory, effectiveRoot)) {
       outsideLinkCount += 1
       continue
     }
@@ -183,7 +186,7 @@ function discoverSkillFiles(root: string, sourceLabel: string): { files: string[
     if (skillMd) {
       const candidate = join(directory, skillMd.name)
       const canonicalFile = canonicalPath(candidate)
-      if (!canonicalFile || !isCanonicalPathWithinRoot(canonicalFile, canonicalRoot)) {
+      if (!canonicalFile || !isCanonicalPathWithinRoot(canonicalFile, effectiveRoot)) {
         outsideLinkCount += 1
         continue
       }
@@ -208,8 +211,19 @@ function discoverSkillFiles(root: string, sourceLabel: string): { files: string[
       try {
         if (!statSync(candidate).isDirectory()) continue
         const canonicalCandidate = canonicalPath(candidate)
-        if (!canonicalCandidate || !isCanonicalPathWithinRoot(canonicalCandidate, canonicalRoot)) {
+        if (!canonicalCandidate) {
           outsideLinkCount += 1
+          continue
+        }
+        if (!isCanonicalPathWithinRoot(canonicalCandidate, effectiveRoot)) {
+          if (depth === 0) {
+            // 生态工具（ego / magpie 等）常以顶层符号链接分发 Skill：跟随一层，
+            // 并把该分支边界收敛到解析后的真实目录；更深层的外部链接仍拒绝
+            followedTopLevelLinks += 1
+            pending.push({ directory: candidate, depth: depth + 1, allowedRoot: canonicalCandidate })
+          } else {
+            outsideLinkCount += 1
+          }
           continue
         }
         pending.push({ directory: candidate, depth: depth + 1 })
@@ -219,6 +233,9 @@ function discoverSkillFiles(root: string, sourceLabel: string): { files: string[
     }
   }
 
+  if (followedTopLevelLinks > 0) {
+    diagnostics.push(`${sourceLabel} 已跟随 ${followedTopLevelLinks} 个顶层外部链接`)
+  }
   if (outsideLinkCount > 0) {
     diagnostics.push(`${sourceLabel} 已跳过 ${outsideLinkCount} 个指向来源目录外的链接`)
   }

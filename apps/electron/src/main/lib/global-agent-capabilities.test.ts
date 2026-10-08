@@ -63,10 +63,22 @@ describe('外部全局 Skill 扫描', () => {
     expect(result.skills[0]?.origin).toBe('pi-global')
   })
 
-  test('Given 来源根内链接指向根外 When 扫描 Then 不读取越界 Skill', () => {
-    const outside = writeSkill(join(root, 'outside'), 'escaped')
+  test('Given 顶层条目是来源根外链接 When 扫描 Then 跟随一层并读取该 Skill', () => {
+    const outside = writeSkill(join(root, 'outside'), 'ego-browser')
     mkdirSync(paths.piSkillsDir, { recursive: true })
-    symlinkSync(outside, join(paths.piSkillsDir, 'escaped-link'), process.platform === 'win32' ? 'junction' : 'dir')
+    symlinkSync(outside, join(paths.piSkillsDir, 'ego-browser'), process.platform === 'win32' ? 'junction' : 'dir')
+
+    const result = scanGlobalSkills(paths)
+
+    expect(result.skills.map((skill) => skill.slug)).toEqual(['ego-browser'])
+    expect(result.diagnostics.some((message) => message.includes('已跟随 1 个顶层外部链接'))).toBe(true)
+  })
+
+  test('Given 来源根内嵌套目录中的外部链接 When 扫描 Then 顶层以下不跟随', () => {
+    const outside = writeSkill(join(root, 'outside'), 'deep-escaped')
+    const collection = join(paths.piSkillsDir, 'collection')
+    mkdirSync(collection, { recursive: true })
+    symlinkSync(outside, join(collection, 'escaped-link'), process.platform === 'win32' ? 'junction' : 'dir')
 
     const result = scanGlobalSkills(paths)
 
