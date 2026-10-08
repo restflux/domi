@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  buildQueuedMessageSendPayload,
   changeQueuedMessageKind,
   createAgentQueuedMessage,
   getAsideQueuedMessages,
@@ -207,4 +208,43 @@ describe('Agent message queue kinds', () => {
     expect(hasActiveNativeMessageQueue(false, true)).toBe(true)
   })
 
+})
+
+describe('/image 生图命令的原文回传（主进程授权事实源）', () => {
+  test('Given 队列消息带 rawUserMessage When 构建发送 payload Then rawText 保留原文、sdkText 保持剥离', () => {
+    const message = createAgentQueuedMessage('一只戴宇航头盔的橘猫，电影海报风格', 'm1', 1, null, {
+      imageGeneration: { channelId: 'images', modelId: 'gpt-image-2.5-flare' },
+      imageGenerationRequested: true,
+      rawUserMessage: '/image 一只戴宇航头盔的橘猫，电影海报风格',
+    })
+    expect(message.rawUserMessage).toBe('/image 一只戴宇航头盔的橘猫，电影海报风格')
+    const payload = buildQueuedMessageSendPayload(message)
+    expect(payload.rawText).toBe('/image 一只戴宇航头盔的橘猫，电影海报风格')
+    expect(payload.sdkText).toBe('一只戴宇航头盔的橘猫，电影海报风格')
+  })
+
+  test('Given 普通消息没有 rawUserMessage When 构建 payload Then rawText 回退到 text', () => {
+    const message = createAgentQueuedMessage('普通问题', 'm2', 1)
+    const payload = buildQueuedMessageSendPayload(message)
+    expect(payload.rawText).toBe('普通问题')
+    expect(payload.sdkText).toBe('普通问题')
+  })
+
+  test('Given 附件上下文块加 rawUserMessage When 构建 payload Then rawText 前置上下文块且命令仍位于正文开头', () => {
+    const fileBlock = '<attached_files>\n- a.jpg: /tmp/a.jpg\n</attached_files>'
+    const message = createAgentQueuedMessage('按原图二创植物形状', 'm3', 1, null, {
+      imageGenerationRequested: true,
+      rawUserMessage: '/image 按原图二创植物形状',
+      fileReferenceBlock: fileBlock,
+    })
+    const payload = buildQueuedMessageSendPayload(message, '')
+    expect(payload.rawText).toBe(`${fileBlock}\n\n/image 按原图二创植物形状`)
+    expect(payload.sdkText).toBe(`${fileBlock}\n\n按原图二创植物形状`)
+  })
+
+  test('Given 重建 deferred 队列记录 When 无 options Then 不会误带 rawUserMessage 字段', () => {
+    const message = createAgentQueuedMessage('普通消息', 'm4', 1, null, { kind: 'steering' })
+    expect(message.rawUserMessage).toBeUndefined()
+    expect(message.imageGenerationRequested).toBeUndefined()
+  })
 })

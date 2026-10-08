@@ -204,8 +204,10 @@ export async function sendMessage(
   webContents: WebContents,
 ): Promise<void> {
   // 生图授权必须由当前消息正文产生；持久化选择或陈旧 flag 不能单独授权本轮工具。
-  const imageGenerationRequested = parseAgentImageCommand(input.userMessage).matched
-    || parseAgentImageRequest(input.userMessage).matched
+  // 渲染进程会把 /image 前缀从 userMessage 剥离，原文保留在 rawUserMessage 里，授权解析优先用它。
+  const authorizationText = input.rawUserMessage ?? input.userMessage
+  const imageGenerationRequested = parseAgentImageCommand(authorizationText).matched
+    || parseAgentImageRequest(authorizationText).matched
   let imageGeneration: import('@domi/shared').ImageGenerationSelection | undefined
   try {
     imageGeneration = resolveRequestImageGeneration(input.imageGeneration, imageGenerationRequested)

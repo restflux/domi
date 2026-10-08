@@ -3,6 +3,7 @@ import {
   buildAgentImageCommandPrompt,
   collectAvailableAgentImageToolNames,
   parseAgentImageCommand,
+  parseAgentImageRequest,
 } from './agent-image-command'
 
 describe('parseAgentImageCommand', () => {
@@ -114,5 +115,32 @@ describe('buildAgentImageCommandPrompt', () => {
     expect(prompt).toContain('没有提供图片描述')
     expect(prompt).toContain('/image 一只戴宇航头盔的橘猫')
     expect(prompt).toContain('不要调用生图工具')
+  })
+})
+
+describe('parseAgentImageRequest 自然语言生图意图', () => {
+  const hitCases: [string][] = [
+    ['帮我生成一张图片'],
+    ['帮我生成一张图，内容随便，简单点'],
+    ['帮我生成一张好看的图'],
+    ['生成一幅图'],
+    ['请帮我制作一张概念图'],
+  ]
+
+  test.each(hitCases)('Given 明确生图口令 %j When 解析 Then 识别为生图请求', (text) => {
+    expect(parseAgentImageRequest(text).matched).toBe(true)
+  })
+
+  const missCases: [string][] = [
+    // 单字「图」后接其他字时不是词尾：防止图表、图纸类请求误触发付费生图
+    ['帮我生成一个图表'],
+    ['帮我生成一份图纸'],
+    // 任务描述式、咨询式表达继续保持保守不命中
+    ['进行二创，二创方向主要植物的形状'],
+    ['生图功能怎么用'],
+  ]
+
+  test.each(missCases)('Given 非生图口令 %j When 解析 Then 不触发生图请求', (text) => {
+    expect(parseAgentImageRequest(text).matched).toBe(false)
   })
 })

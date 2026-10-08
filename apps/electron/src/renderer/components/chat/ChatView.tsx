@@ -244,6 +244,8 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
   ): Promise<void> => {
     if (!selectedModel) return
     const scope = `chat:${conversationId}`
+    // 原文保留 /image 前缀：主进程靠它做生图授权解析；模型 prompt 用剥离后的 content。
+    const rawContent = content
     const command = parseImageCommand(content)
     const preferredImage = store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom)
     const selection = options && 'imageGeneration' in options ? options.imageGeneration : command.requested
@@ -369,6 +371,8 @@ function ChatViewInner({ conversationId }: ChatViewProps): React.ReactElement {
       userMessage: finalContent,
       ...(imageGeneration ? { imageGeneration } : {}),
       imageGenerationRequested: command.requested,
+      // 主进程的生图授权只认当前消息原文；剥离 /image 后的 userMessage 会让命令失效。
+      ...(command.requested ? { rawUserMessage: (quotedSelection ? buildQuotedSelectionBlock(quotedSelection) : '') + rawContent } : {}),
       messageHistory: [], // 后端已改为从磁盘读取完整历史，无需前端传入
       channelId: selectedModel.channelId,
       modelId: selectedModel.modelId,

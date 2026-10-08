@@ -1364,6 +1364,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     nextTurnAsides: AgentNextTurnAside[] = [],
     imageGeneration?: ImageGenerationSelection,
     imageGenerationRequested = false,
+    rawUserMessage?: string,
   ): Promise<void> => {
     const streamStartedAt = Date.now()
     const additionalDirectoriesForRun = createBaseAdditionalDirectories()
@@ -1398,7 +1399,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return map
     })
 
-    appendOptimisticPersistedMessage(createUserSDKMessage(text, undefined, streamStartedAt, nextTurnAsides, imageGenerationRequested ? imageGeneration : undefined))
+    appendOptimisticPersistedMessage(createUserSDKMessage(rawUserMessage ?? text, undefined, streamStartedAt, nextTurnAsides, imageGenerationRequested ? imageGeneration : undefined))
 
     try {
       await window.electronAPI.sendAgentMessage({
@@ -1406,6 +1407,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         userMessage: text,
         ...(imageGenerationRequested && imageGeneration ? { imageGeneration } : {}),
         imageGenerationRequested,
+        // 生图授权解析只认当前消息原文；text 可能已被剥离 /image 前缀，原文从这里补上。
+        ...(rawUserMessage ? { rawUserMessage } : {}),
         ...(nextTurnAsides.length > 0 && { nextTurnAsides }),
         channelId,
         modelId: agentModelId || undefined,
@@ -1473,7 +1476,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return
     }
 
-    await startQueuedMessageRun(payload.rawText, payload.mentions, agentChannelId, message.additionalDirectories, message.nextTurnAsides, message.imageGeneration, message.imageGenerationRequested === true)
+    // 模型 prompt 用 sdkText（命令前缀与引用语法已剥离）；rawText 作为 rawUserMessage 供主进程授权解析与展示。
+    await startQueuedMessageRun(payload.sdkText, payload.mentions, agentChannelId, message.additionalDirectories, message.nextTurnAsides, message.imageGeneration, message.imageGenerationRequested === true, payload.rawText)
   }, [
     agentChannelId,
     backgroundWaiting,
@@ -2555,7 +2559,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     }
     const cleanInput = isWorktreeContinuation || isSideChatHandoff
     const scope = `work:${sessionId}`
-    const command = parseImageCommand((overrideText ?? inputContent).trim())
+    // 原文保留 /image 前缀：主进程靠它做生图授权解析与历史展示；模型 prompt 用剥离后的 effectiveText。
+    const rawComposerText = (overrideText ?? inputContent).trim()
+    const command = parseImageCommand(rawComposerText)
     const preferredImage = store.get(imageGenerationSelectionsAtom)[scope] ?? store.get(imageGenerationDefaultAtom)
     const imageGenerationRequested = !cleanInput && command.requested
     const selectedImage = imageGenerationRequested
@@ -2687,6 +2693,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         {
           ...(imageGeneration ? { imageGeneration } : {}),
           imageGenerationRequested,
+          // 主进程以 rawUserMessage 重新解析生图授权；缺失会导致 /image 被判定为普通消息。
+          ...(imageGenerationRequested ? { rawUserMessage: rawComposerText } : {}),
           kind,
           ...(attachmentContext ? {
             fileReferenceBlock: attachmentContext.referenceBlock,
@@ -2757,6 +2765,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       const message = createAgentQueuedMessage(effectiveText, crypto.randomUUID(), Date.now(), quotedSelection, {
         ...(imageGeneration ? { imageGeneration } : {}),
         imageGenerationRequested,
+        // 主进程以 rawUserMessage 重新解析生图授权；缺失会导致 /image 被判定为普通消息。
+        ...(imageGenerationRequested ? { rawUserMessage: rawComposerText } : {}),
         ...(attachmentContext ? {
           fileReferenceBlock: attachmentContext.referenceBlock,
           attachments: attachmentContext.attachments,
@@ -2897,7 +2907,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
     })
 
     // 乐观更新：附言作为展示元数据挂在用户消息上，不混入正文与树摘要。
-    const tempUserSDKMsg = createUserSDKMessage(finalMessage, undefined, Date.now(), nextTurnAsides)
+    // 生图命令消息与主进程持久化保持一致：展示并保留用户原文（含 /image 前缀）。
+    const optimisticDisplayMessage = imageGenerationRequested ? `${fileReferences}${rawComposerText}` : finalMessage
+    const tempUserSDKMsg = createUserSDKMessage(optimisticDisplayMessage, undefined, Date.now(), nextTurnAsides)
     if (tempUserSDKMsg.type === 'user' && imageGenerationRequested && imageGeneration) tempUserSDKMsg._imageGeneration = imageGeneration
     appendOptimisticPersistedMessage(tempUserSDKMsg)
 
@@ -2906,6 +2918,8 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       userMessage: finalMessage,
       ...(imageGeneration ? { imageGeneration } : {}),
       imageGenerationRequested,
+      // 主进程的生图授权只认当前消息原文；剥离 /image 后的 userMessage 会让命令失效。
+      ...(imageGenerationRequested ? { rawUserMessage: `${fileReferences}${rawComposerText}` } : {}),
       ...(nextTurnAsides.length > 0 && { nextTurnAsides }),
       channelId: agentChannelId,
       modelId: agentModelId || undefined,

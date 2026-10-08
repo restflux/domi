@@ -215,6 +215,8 @@ export interface ChatSendInput {
   conversationId: string
   /** 用户消息内容 */
   userMessage: string
+  /** 仅用于生图授权解析与持久化展示的原始输入；/image 命令在 userMessage 中剥离后由此字段保留。 */
+  rawUserMessage?: string
   /** 消息历史（用于上下文） */
   messageHistory: ChatMessage[]
   /** 渠道 ID */

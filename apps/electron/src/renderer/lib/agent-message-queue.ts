@@ -24,6 +24,8 @@ export interface AgentQueuedAttachment {
 export interface AgentQueuedMessage {
   imageGeneration?: ImageGenerationSelection
   imageGenerationRequested?: boolean
+  /** 用户原始输入（保留 /image 等命令前缀）；生图授权解析与展示使用，省略时回退到 text。 */
+  rawUserMessage?: string
   id: string
   text: string
   createdAt: number
@@ -46,6 +48,7 @@ export function createAgentQueuedMessage(
   options?: {
     imageGeneration?: ImageGenerationSelection
     imageGenerationRequested?: boolean
+    rawUserMessage?: string
     fileReferenceBlock?: string
     attachments?: AgentQueuedAttachment[]
     additionalDirectories?: string[]
@@ -61,6 +64,7 @@ export function createAgentQueuedMessage(
   }
   if (options?.imageGenerationRequested && options.imageGeneration) message.imageGeneration = { ...options.imageGeneration }
   if (options?.imageGenerationRequested) message.imageGenerationRequested = true
+  if (options?.rawUserMessage && options.rawUserMessage.trim() && options.rawUserMessage.trim() !== message.text) message.rawUserMessage = options.rawUserMessage.trim()
   if (quotedSelection) message.quotedSelection = quotedSelection
   if (options?.fileReferenceBlock) message.fileReferenceBlock = options.fileReferenceBlock
   if (options?.attachments && options.attachments.length > 0) message.attachments = options.attachments
@@ -380,7 +384,9 @@ export function buildQueuedMessageSendPayload(
     : ''
 
   return {
-    rawText: `${prefix}${text}`.trim(),
+    // rawText 保留用户原文（含 /image 命令前缀），供主进程做生图授权解析与历史展示；
+    // 命令前缀不进模型 prompt，模型收到的是 sdkText。
+    rawText: `${prefix}${message.rawUserMessage ?? message.text}`.trim(),
     sdkText: `${prefix}${mentions.cleanedText}`.trim(),
     mentions,
   }
