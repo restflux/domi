@@ -14,6 +14,9 @@ describe('ZCode 式侧聊面板', () => {
     // 完整会话：面板内直接审批权限/问答
     expect(source).toContain('PermissionBanner sessionId={childSessionId}')
     expect(source).toContain('AskUserBanner sessionId={childSessionId}')
+    // 时间线 wrapper 必须是 flex column：AgentMessages 根节点靠 flex-1 拿到受约束高度，
+    // 否则 StickToBottom 无受约束高度可滚动，消息区溢出被裁剪且无法滚动
+    expect(source).toContain('flex min-h-0 flex-1 flex-col overflow-hidden')
     // 主输入区同款组件与容器形态；窄栏仅图标/紧凑控件，无独立上传按钮
     expect(source).toContain('InputToolbarOverflow')
     expect(source).toContain('ExecutionControls sessionId={childSessionId}')

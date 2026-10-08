@@ -144,8 +144,9 @@ export function SideChatPanel({ parentSessionId, childSessionId }: { parentSessi
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="侧聊">
-      {/* 时间线：复用主会话完整渲染（markdown / 工具活动 / 流式）；继承上下文只进模型侧，时间线从空白开始 */}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      {/* 时间线：复用主会话完整渲染（markdown / 工具活动 / 流式）；继承上下文只进模型侧，时间线从空白开始。
+          wrapper 必须是 flex column：AgentMessages 根节点靠 flex-1 拿到受约束高度，StickToBottom 才能滚动 */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {timeline.length > 0 || running ? (
           <AgentSessionProvider sessionId={childSessionId}>
             <AgentMessages
