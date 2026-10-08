@@ -36,10 +36,27 @@ describe('Vision Relay untrusted result schema', () => {
     expect(() => parseVisionRelayModelOutput('Result: {"answer":"ok"}', source)).toThrow(VisionRelayResultError)
   })
 
+  test('长观测与长 OCR 正文在放宽后的有界上限内仍然有效', () => {
+    const longAnswer = 'a'.repeat(8_000)
+    const longExtracted = 'b'.repeat(12_000)
+    const observation = parseVisionRelayModelOutput(JSON.stringify({
+      answer: longAnswer,
+      observations: [],
+      limitations: [],
+      extractedText: longExtracted,
+      confidence: 'medium',
+    }), source)
+    expect(observation.answer).toHaveLength(8_000)
+    expect(observation.extractedText).toHaveLength(12_000)
+    expect(() => parseVisionRelayModelOutput(JSON.stringify({
+      answer: 'a'.repeat(8_001), observations: [], limitations: [], confidence: 'medium',
+    }), source)).toThrow(VisionRelayResultError)
+  })
+
   test('fails closed on invalid fields, oversized output, or instruction-shaped non-schema data', () => {
     expect(() => parseVisionRelayModelOutput('{"answer":3,"observations":[],"limitations":[],"confidence":"high"}', source)).toThrow(VisionRelayResultError)
     expect(() => parseVisionRelayModelOutput(JSON.stringify({ answer: 'x', observations: ['x'], limitations: [], confidence: 'certain' }), source)).toThrow(VisionRelayResultError)
-    expect(() => parseVisionRelayModelOutput('x'.repeat(12_001), source)).toThrow(VisionRelayResultError)
+    expect(() => parseVisionRelayModelOutput('x'.repeat(30_001), source)).toThrow(VisionRelayResultError)
     expect(() => parseVisionRelayModelOutput(JSON.stringify({
       answer: 'x', observations: [], limitations: [], confidence: 'high',
       candidates: [{ name: 'Maybe', confidence: 'certain', evidence: 'shape' }],

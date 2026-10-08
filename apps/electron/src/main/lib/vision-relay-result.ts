@@ -2,9 +2,10 @@ import type { ProviderType } from '@domi/shared'
 import type { VisionRelayQualityPreset } from '../../types'
 import type { VisionRelayAnalysisMode } from './vision-relay-provider'
 
-const MAX_RESULT_CHARS = 12_000
-const MAX_ANSWER_CHARS = 4_000
-const MAX_EXTRACTED_TEXT_CHARS = 6_000
+// 与 vision-relay-provider 的正文上限保持对齐：思考型模型的详细观测允许更长，仍保持有界。
+const MAX_RESULT_CHARS = 30_000
+const MAX_ANSWER_CHARS = 8_000
+const MAX_EXTRACTED_TEXT_CHARS = 12_000
 const MAX_LIST_ITEMS = 20
 const MAX_LIST_ITEM_CHARS = 500
 const MAX_CANDIDATES = 10

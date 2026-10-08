@@ -5,10 +5,31 @@ import type { VisionRelayQualityPreset } from '../../types'
 import type { NormalizedVisionImage } from './vision-relay-image'
 
 const MAX_QUESTION_CHARS = 1_000
-const MAX_PROVIDER_OUTPUT_CHARS = 12_000
-const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024
-const MAX_PROVIDER_SSE_LINE_CHARS = 128 * 1024
-const PROVIDER_TIMEOUT_MS = 60_000
+// 思考型视觉模型（如 glm-5.3-flash，无法关闭思考）的流式响应以 reasoning 事件为主，
+// 正文上限只约束最终观测 JSON；原始流与单行上限需要容纳长思考的 SSE 开销。
+const MAX_PROVIDER_OUTPUT_CHARS = 30_000
+const MAX_PROVIDER_RESPONSE_BYTES = 4 * 1024 * 1024
+const MAX_PROVIDER_SSE_LINE_CHARS = 256 * 1024
+// 超时按质量档区分：精确档开启 thinking，思考链在大截图上经常超过 60 秒。
+const PROVIDER_TIMEOUT_MS_BY_QUALITY: Record<VisionRelayQualityPreset, number> = {
+  fast: 60_000,
+  balanced: 120_000,
+  accurate: 180_000,
+}
+
+export function resolveVisionProviderTimeoutMs(qualityPreset: VisionRelayQualityPreset): number {
+  return PROVIDER_TIMEOUT_MS_BY_QUALITY[qualityPreset]
+}
+
+// 部分中转会把思考文本并入正文；累积时先剥离 <think>/<thinking> 段，
+// 未闭合的尾部思考段也先不计入正文。观测结果本身是纯 JSON，误剥离风险可接受。
+function stripInlineThinkingText(content: string): string {
+  if (!content.includes('<think')) return content
+  let result = content.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, '')
+  const openTag = result.search(/<think(?:ing)?>/)
+  if (openTag !== -1) result = result.slice(0, openTag)
+  return result
+}
 
 export const VISION_RELAY_ANALYSIS_MODES = ['general', 'identify', 'ocr', 'ui', 'code', 'chart'] as const
 export type VisionRelayAnalysisMode = typeof VISION_RELAY_ANALYSIS_MODES[number]
@@ -150,7 +171,7 @@ async function readCappedVisionResponse(input: {
     for (const event of input.adapter.parseSSELine(data)) {
       if (event.type === 'chunk') {
         content += event.delta
-        if (content.length > MAX_PROVIDER_OUTPUT_CHARS) throw new VisionRelayProviderError('VISION_OUTPUT_TOO_LARGE')
+        if (stripInlineThinkingText(content).length > MAX_PROVIDER_OUTPUT_CHARS) throw new VisionRelayProviderError('VISION_OUTPUT_TOO_LARGE')
       } else if (event.type === 'error') {
         throw new Error('Vision provider returned a stream error')
       }
@@ -173,7 +194,7 @@ async function readCappedVisionResponse(input: {
     }
     buffer += decoder.decode()
     if (buffer) processLine(buffer)
-    return content
+    return stripInlineThinkingText(content)
   } catch (error) {
     await reader.cancel().catch(() => {})
     throw error
@@ -222,7 +243,7 @@ export async function executeAdapterVisionRequest(input: {
   const timer = setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, PROVIDER_TIMEOUT_MS)
+  }, resolveVisionProviderTimeoutMs(input.qualityPreset))
   try {
     const content = await readCappedVisionResponse({ request, adapter, fetchFn: requestFetch.fetchFn, signal: effectiveSignal })
     if (!content.trim()) throw new Error('Vision provider returned empty content')
