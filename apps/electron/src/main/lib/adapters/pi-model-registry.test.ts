@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test'
-import { getModels } from '@earendil-works/pi-ai/compat'
+import { getSupportedThinkingLevels, getModels } from '@earendil-works/pi-ai/compat'
 import { catalogCredentials, PiRemoteModelCatalog, piRemoteModelCatalog } from './pi-remote-model-catalog'
 import { collectVisionRelayModelOptions } from '../vision-relay-model-options'
 import { executeVisionRelay } from '../vision-relay-service'
@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { DEEPSEEK_PRESET_MODELS, type ChannelModel } from '@domi/shared'
 import {
   buildModel,
+  buildCodexModel,
   getCodexCatalogModels,
   refreshCodexModelCatalog,
   resolveImageCapabilityConsensus,
@@ -294,7 +295,8 @@ describe('临时模型适配', () => {
     expect(model.maxTokens).toBe(131_072)
     expect(model.input).toEqual(['text', 'image'])
     expect(model.reasoning).toBe(true)
-    expect(model.thinkingLevelMap).toEqual({ low: 'low', high: 'high', max: 'max' })
+    expect(getSupportedThinkingLevels(model)).toEqual(['low', 'high', 'max'])
+    expect(model.thinkingLevelMap).toMatchObject({ low: 'low', high: 'high', max: 'max' })
     expect(model.compat).toMatchObject({ supportsReasoningEffort: true })
   })
 
@@ -678,7 +680,8 @@ describe('中转 GPT 自动能力适配', () => {
     const { model } = await build('custom', configured)
     expect(model.contextWindow).toBe(64_000)
     expect(model.maxTokens).toBe(8_000)
-    expect(model.thinkingLevelMap).toEqual({ low: 'low', high: 'high' })
+    expect(getSupportedThinkingLevels(model)).toEqual(['low', 'high'])
+    expect(model.thinkingLevelMap).toMatchObject({ low: 'low', high: 'high' })
     expect(model.input).toEqual(['text'])
   })
 
@@ -693,7 +696,9 @@ describe('中转 GPT 自动能力适配', () => {
     const model = publish()
     expect(await resolvePiModelCatalogStatus('custom', 'gpt6')).toBe('missing')
     expect(await resolvePiModelCatalogStatus('custom', 'gpt-6-astra-fast')).toBe('missing')
-    expect(await resolvePiReasoningCapability('custom', 'gpt-5.5-fast')).toBeUndefined()
+    expect(await resolvePiReasoningCapability('custom', 'gpt-5.5-fast')).toMatchObject({
+      source: 'runtime-default', levels: ['off', 'minimal', 'low', 'medium', 'high'],
+    })
     expect(await resolvePiModelCatalogStatus('anthropic-compatible', 'gpt-6-astra')).toBe('missing')
     catalogRead.mockImplementation(async (provider) => provider === 'openai-codex'
       ? [{ ...model, provider, api: 'openai-codex-responses', contextWindow: 272_000 }]
@@ -716,4 +721,78 @@ describe('中转 GPT 自动能力适配', () => {
       source: 'temporary-adaptation', levels: ['high', 'max'],
     })
   })
+})
+
+describe('路由模型的 UI 与 Pi runtime 推理能力一致性', () => {
+  async function assertRuntimeCapability(modelId: string, channelModel?: ChannelModel) {
+    catalogRead.mockResolvedValue([])
+    const { model } = await buildModel(await sdkPromise, {
+      sessionId: 'router-thinking', prompt: 'hi', apiKey: 'test-key', provider: 'openai-responses',
+      model: modelId, baseUrl: 'https://router.example.com/v1', channelModel,
+      permissionMode: 'plan', systemPrompt: 'system', piAgentDir: '/tmp/pi-agent', piSessionDir: '/tmp/pi-session',
+      authorizeToolCall: async (_name, input) => ({ behavior: 'allow', updatedInput: input }),
+    })
+    const capability = await resolvePiReasoningCapability('openai-responses', modelId, channelModel)
+    expect(capability?.levels ?? ['off']).toEqual(getSupportedThinkingLevels(model))
+    expect(model.id).toBe(modelId)
+    return capability
+  }
+
+  test.each([
+    'wisdomrouter-responses/gpt-6.1-sol', 'router/claude-private',
+    'router/kimi-k3', 'router/glm-5.2', 'router/deepseek-v4-pro',
+  ])('Given 未命中目录的 %s When 查询与注册 Then 提供相同基础档位且保留请求 ID', async (modelId) => {
+    expect(await assertRuntimeCapability(modelId)).toMatchObject({
+      source: 'runtime-default', levels: ['off', 'minimal', 'low', 'medium', 'high'],
+    })
+  })
+
+  test('Given 渠道仅声明支持推理 When 无目录映射 Then 保留 Pi 基础档位', async () => {
+    expect(await assertRuntimeCapability('router/private', {
+      id: 'router/private', name: 'Private', enabled: true, providerMetadata: { reasoning: true },
+    })).toMatchObject({ source: 'provider-metadata', levels: ['off', 'minimal', 'low', 'medium', 'high'] })
+  })
+
+  test('Given 渠道明确禁用推理 When 存在低优先级适配 Then UI 与运行时都不支持推理', async () => {
+    expect(await assertRuntimeCapability('router/private', {
+      id: 'router/private', name: 'Private', enabled: true, providerMetadata: { reasoning: false },
+      temporaryAdaptation: { reasoning: true, reasoningLevels: ['high', 'max'] },
+    })).toBeUndefined()
+  })
+
+  test('Given 渠道明确限制档位 When 注册 Then Pi 不额外开放稀疏映射中的基础档位', async () => {
+    expect(await assertRuntimeCapability('router/private', {
+      id: 'router/private', name: 'Private', enabled: true,
+      providerMetadata: { reasoningLevels: ['low', 'high', 'xhigh', 'max'], defaultReasoningLevel: 'max' },
+    })).toMatchObject({ levels: ['low', 'high', 'xhigh', 'max'], defaultLevel: 'max' })
+  })
+
+  test('Given 映射明确禁用部分档位 When 查询 Then 保留 null 限制', async () => {
+    expect(await assertRuntimeCapability('router/private', {
+      id: 'router/private', name: 'Private', enabled: true,
+      providerMetadata: { reasoning: true, thinkingLevelMap: { off: null, minimal: null, xhigh: 'xhigh', max: 'max' } },
+    })).toMatchObject({ levels: ['low', 'medium', 'high', 'xhigh', 'max'] })
+  })
+
+  test('Given 专属 profile When 注册 Then runtime 与 UI 使用同一档位集合', async () => {
+    catalogRead.mockResolvedValue([])
+    const { model } = await buildModel(await sdkPromise, {
+      sessionId: 'profile-thinking', prompt: 'hi', apiKey: 'test-key', provider: 'deepseek',
+      model: 'deepseek-v4-pro', baseUrl: 'https://api.deepseek.com/anthropic', permissionMode: 'plan', systemPrompt: 'system',
+      piAgentDir: '/tmp/pi-agent', piSessionDir: '/tmp/pi-session',
+      authorizeToolCall: async (_name, input) => ({ behavior: 'allow', updatedInput: input }),
+    })
+    const capability = await resolvePiReasoningCapability('deepseek', model.id)
+    expect(capability?.levels).toEqual(['off', 'low', 'high', 'max'])
+    expect(getSupportedThinkingLevels(model)).toEqual([...capability!.levels])
+  })
+})
+
+test('Given Codex 专属 profile When 构建实际模型 Then UI 档位与原生可选档位一致', async () => {
+  const { model } = await buildCodexModel(await sdkPromise, {
+    model: 'gpt-5.6', piAgentDir: '/tmp/pi-agent',
+    codexOAuthCredentials: { access: 'fixture', refresh: 'fixture', expires: Date.now() + 86_400_000 },
+  })
+  const capability = await resolvePiReasoningCapability('openai-codex', model.id)
+  expect(getSupportedThinkingLevels(model)).toEqual([...capability!.levels])
 })

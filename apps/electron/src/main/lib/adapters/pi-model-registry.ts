@@ -13,6 +13,7 @@ import {
   extractZhipuCodingTeamApiToken,
   inferAgentSdkContextWindow,
   resolveReasoningCapability,
+  normalizeReasoningCapabilityLevel,
   resolveReasoningProfile,
   type AgentThinkingLevel,
   type ChannelModel,
@@ -545,71 +546,77 @@ function hasReasoningMetadata(metadata: ChannelModelCapabilities | undefined): b
     || metadata?.thinkingLevelMap != null
 }
 
-function configuredReasoningCapability(
-  metadata: ChannelModelCapabilities,
-  source: 'provider-metadata' | 'temporary-adaptation',
-): ReasoningCapability | undefined {
-  if (metadata.reasoning === false) return undefined
-  const configuredLevels = metadata.reasoningLevels
-    ?? Object.keys(metadata.thinkingLevelMap ?? {}).filter((level) =>
-      metadata.thinkingLevelMap?.[level as AgentThinkingLevel] !== null) as AgentThinkingLevel[]
-  const levels = VALID_THINKING_LEVELS.filter((level) => configuredLevels.includes(level))
-  if (levels.length === 0 || levels.every((level) => level === 'off')) return undefined
-  const defaultLevel = metadata.defaultReasoningLevel && levels.includes(metadata.defaultReasoningLevel)
-    ? metadata.defaultReasoningLevel
-    : levels.find((level) => level !== 'off') ?? levels[0]!
-  return { source, levels, defaultLevel }
+interface PiReasoningDefinition extends Pick<PiModelDefaults, 'reasoning' | 'thinkingLevelMap' | 'compat'> {
+  capability?: ReasoningCapability
 }
 
-/**
- * 解析 Pi runtime 的会话级 reasoning capability。
- *
- * 供应商明确返回的元数据最优先；经过验证的专属 profile 其次；Pi catalog
- * 精确声明再其次。只有以上来源都缺失时，才启用用户的临时适配。
- */
+/** UI 与请求模型共用最终定义；未知模型沿用既有 runtime 的 reasoning=true 默认值。 */
+function resolvePiReasoningDefinition(
+  provider: ProviderType,
+  modelId: string | undefined,
+  catalogModel: PiCatalogModel | undefined,
+  configured?: ChannelModelCapabilitySources,
+): PiReasoningDefinition {
+  const api = provider === 'openai-codex' ? 'openai-responses' : normalizePiApi(provider)
+  const profile = provider !== 'openai-codex' && modelId && isGptModel(modelId)
+    ? undefined
+    : resolveReasoningProfile({ modelId, transport: toReasoningTransport(api) })
+  const compiled = profile ? compilePiReasoningCapabilities(api, modelId) : undefined
+  const providerMetadata = configured?.providerMetadata
+  const temporaryAdaptation = configured?.temporaryAdaptation
+  const source: ReasoningCapability['source'] = hasReasoningMetadata(providerMetadata)
+    ? 'provider-metadata'
+    : profile ? 'profile'
+      : catalogModel ? 'pi-catalog'
+        : hasReasoningMetadata(temporaryAdaptation) ? 'temporary-adaptation' : 'runtime-default'
+  const metadata = source === 'provider-metadata' ? providerMetadata
+    : source === 'temporary-adaptation' ? temporaryAdaptation : undefined
+  const reasoning = providerMetadata?.reasoning
+    ?? (profile ? true : catalogModel?.reasoning)
+    ?? temporaryAdaptation?.reasoning
+    ?? true
+  let thinkingLevelMap = metadataThinkingLevelMap(providerMetadata)
+    ?? compiled?.thinkingLevelMap
+    ?? catalogModel?.thinkingLevelMap
+    ?? metadataThinkingLevelMap(temporaryAdaptation)
+  const restrictedLevels = metadata?.reasoningLevels
+    ?? (source === 'profile' ? profile?.levels : undefined)
+  if (restrictedLevels) {
+    // Pi 的稀疏 map 不会禁用基础档位，必须用 null 明确表达产品/渠道的档位限制。
+    thinkingLevelMap = Object.fromEntries(VALID_THINKING_LEVELS.map((level) => {
+      const mapped = thinkingLevelMap?.[level]
+      return [level, restrictedLevels.includes(level) ? (mapped === undefined ? level : mapped) : null]
+    }))
+  }
+  const nativeCapability = resolveReasoningCapability({ catalog: { reasoning, thinkingLevelMap } })
+  // 显式适配沿用首个启用档位作为默认；其余来源保留 profile / Pi 默认值。
+  const defaultLevel = metadata?.defaultReasoningLevel
+    ?? (source === 'profile' ? profile?.defaultLevel : undefined)
+    ?? (metadata?.reasoningLevels || metadata?.thinkingLevelMap
+      ? nativeCapability?.levels.find((level) => level !== 'off') : undefined)
+  const capability = nativeCapability ? {
+    ...nativeCapability,
+    source,
+    defaultLevel: normalizeReasoningCapabilityLevel(nativeCapability, defaultLevel)!,
+  } : undefined
+  return {
+    reasoning,
+    thinkingLevelMap,
+    compat: compiled?.compat,
+    capability,
+  }
+}
+
+/** 与实际注册给 Pi 的模型共用能力定义，不以原厂目录命中作为档位选择的前提。 */
 export async function resolvePiReasoningCapability(
   provider: ProviderType,
   modelId: string | undefined,
   configured?: ChannelModelCapabilitySources,
 ): Promise<ReasoningCapability | undefined> {
   const resolvedModelId = stripAgentSdkContextSuffix(modelId)
-  if (configured?.providerMetadata?.reasoning === false) return undefined
-  const catalogModel = resolvedModelId
-    ? await findPiCatalogModel(provider, resolvedModelId)
-    : undefined
-  if (hasReasoningMetadata(configured?.providerMetadata)) {
-    return configuredReasoningCapability({
-      reasoning: catalogModel?.reasoning,
-      thinkingLevelMap: catalogModel?.thinkingLevelMap,
-      ...configured!.providerMetadata,
-      // 显式档位集合优先；只声明 reasoning=true 时继续补全目录中的 max 等档位。
-      ...(configured?.providerMetadata?.reasoningLevels
-        ? { thinkingLevelMap: configured.providerMetadata.thinkingLevelMap }
-        : {}),
-    }, 'provider-metadata')
-  }
-  // 中转 GPT 仅接受精确目录或显式适配，不根据未知别名猜测思考档位。
-  const profile = provider !== 'openai-codex' && resolvedModelId && isGptModel(resolvedModelId)
-    ? undefined
-    : resolveReasoningProfile({
-      modelId: resolvedModelId,
-      transport: provider === 'openai-codex'
-        ? 'openai-responses'
-        : toReasoningTransport(normalizePiApi(provider)),
-    })
-  if (profile) return resolveReasoningCapability({ profile })
-  if (catalogModel) {
-    return resolveReasoningCapability({
-      catalog: {
-        reasoning: catalogModel.reasoning,
-        thinkingLevelMap: catalogModel.thinkingLevelMap,
-      },
-    })
-  }
-  if (hasReasoningMetadata(configured?.temporaryAdaptation)) {
-    return configuredReasoningCapability(configured!.temporaryAdaptation!, 'temporary-adaptation')
-  }
-  return undefined
+  if (!resolvedModelId) return undefined
+  const catalogModel = resolvedModelId ? await findPiCatalogModel(provider, resolvedModelId) : undefined
+  return resolvePiReasoningDefinition(provider, resolvedModelId, catalogModel, configured).capability
 }
 
 function positiveInteger(value: number | undefined): number | undefined {
@@ -636,19 +643,14 @@ async function resolvePiModelDefaults(input: PiAgentQueryOptions): Promise<PiMod
     modelInput = imageCapability === 'supported' ? ['text', 'image'] : ['text']
   }
   const api = normalizePiApi(input.provider)
-  const providerSpecificCapabilities = input.model && isGptModel(input.model)
-    ? undefined
-    : compilePiReasoningCapabilities(api, input.model)
+  const reasoningDefinition = resolvePiReasoningDefinition(input.provider, input.model, catalogModel, input.channelModel)
   const isVolcengineGlm52 = (input.provider === 'doubao' || input.provider === 'ark-coding-plan')
     && input.model?.toLowerCase() === 'glm-5.2'
   const inferredContextWindow = inferAgentSdkContextWindow(input.model, input.provider) ?? DEFAULT_CONTEXT_WINDOW
   const catalogCompat = input.provider === 'qwen-token-plan-individual'
     ? catalogModel?.compat
     : undefined
-  const configuredThinkingLevelMap = metadataThinkingLevelMap(providerMetadata)
-    ?? providerSpecificCapabilities?.thinkingLevelMap
-    ?? catalogModel?.thinkingLevelMap
-    ?? metadataThinkingLevelMap(temporaryAdaptation)
+  const configuredThinkingLevelMap = reasoningDefinition.thinkingLevelMap
   const configuredReasoningEffort = (api === 'openai-completions' || api === 'openai-responses')
     && configuredThinkingLevelMap != null
   const providerContextWindow = positiveInteger(providerMetadata?.contextWindow)
@@ -666,14 +668,11 @@ async function resolvePiModelDefaults(input: PiAgentQueryOptions): Promise<PiMod
         ? 'temporary_adaptation'
         : 'name_fallback'
   return {
-    reasoning: providerMetadata?.reasoning
-      ?? catalogModel?.reasoning
-      ?? temporaryAdaptation?.reasoning
-      ?? true,
+    reasoning: reasoningDefinition.reasoning,
     thinkingLevelMap: configuredThinkingLevelMap,
     compat: {
       ...catalogCompat,
-      ...providerSpecificCapabilities?.compat,
+      ...reasoningDefinition.compat,
       ...(configuredReasoningEffort ? { supportsReasoningEffort: true } : {}),
     },
     input: modelInput,
@@ -828,7 +827,12 @@ export async function buildCodexModel(sdk: PiSdk, input: CodexModelInput) {
   if (!model) {
     throw new Error('未找到可用的 ChatGPT (Codex) 模型，请确认已登录并升级 Pi 运行时')
   }
-  return { modelRuntime, model, contextWindowSource: 'provider_catalog' as const }
+  const reasoning = resolvePiReasoningDefinition('openai-codex', model.id, model)
+  return {
+    modelRuntime,
+    model: { ...model, reasoning: reasoning.reasoning, thinkingLevelMap: reasoning.thinkingLevelMap },
+    contextWindowSource: 'provider_catalog' as const,
+  }
 }
 
 interface CodexCatalogRuntime {

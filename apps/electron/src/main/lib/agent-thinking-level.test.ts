@@ -106,3 +106,13 @@ test('Given 精确目录与旧 GPT 名称规则冲突 When 选择思考档位 Th
     { source: 'pi-catalog', levels: ['low', 'high', 'max'], defaultLevel: 'high' },
   )).toBe('max')
 })
+
+test('Given 路由模型基础档位 When 会话选择 Minimal 或遗留 Max Then 保留 Minimal 并将 Max 归一为 High', () => {
+  const capability = {
+    source: 'runtime-default' as const,
+    levels: ['off', 'minimal', 'low', 'medium', 'high'] as const,
+    defaultLevel: 'high' as const,
+  }
+  expect(resolvePiThinkingLevel({}, { reasoningLevel: 'minimal' }, 'openai-responses', 'router/private', capability)).toBe('minimal')
+  expect(resolvePiThinkingLevel({}, { reasoningLevel: 'max' }, 'openai-responses', 'router/private', capability)).toBe('high')
+})

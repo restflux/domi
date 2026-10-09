@@ -68,7 +68,7 @@ export interface PiCatalogReasoningMetadata {
  * 不携带 protocol encoding；Pi catalog 继续负责把所选 level 编码为实际请求字段。
  */
 export interface ReasoningCapability {
-  source: 'profile' | 'provider-metadata' | 'pi-catalog' | 'temporary-adaptation'
+  source: 'profile' | 'provider-metadata' | 'pi-catalog' | 'temporary-adaptation' | 'runtime-default'
   levels: readonly AgentThinkingLevel[]
   defaultLevel: AgentThinkingLevel
 }
