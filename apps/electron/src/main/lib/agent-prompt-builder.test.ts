@@ -1,4 +1,7 @@
 import { beforeAll, describe, expect, mock, test } from 'bun:test'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { getConfigDirName } from './config-paths'
 
 mock.module('./user-profile-service', () => ({
   getUserProfile: () => ({ userName: '测试用户' }),
@@ -42,6 +45,34 @@ function buildPrompt(agentCwd: string): string {
     workflow: 'direct',
   })
 }
+
+describe('生图保存位置', () => {
+  test('Given 项目 cwd 与会话目录不同 When 构建提示词 Then 外部生图显式保存到会话绝对路径', () => {
+    const prompt = buildPrompt('/tmp/isolated-checkout')
+    const directory = join(homedir(), getConfigDirName(), 'agent-workspaces', 'sample-project', 'session-1', 'generated-images')
+    expect(prompt).toContain(`当前会话目录下的绝对输出目录 \`${directory}\``)
+    expect(prompt).toContain('outputMode: "session"')
+    expect(prompt).toContain('不要省略 `path`')
+    expect(prompt).toContain('唯一文件名')
+    expect(prompt).toContain('只有用户明确要求项目文件时才使用 `workspace`')
+  })
+
+  test('Given 没有工作区路径 When 构建提示词 Then 询问保存位置而不是猜测 cwd', () => {
+    const prompt = buildSystemPrompt({ sessionId: 'no-workspace', permissionMode: 'bypassPermissions' })
+    expect(prompt).toContain('当前未提供会话目录时，先询问用户保存位置，不猜测路径')
+  })
+
+  test('Given 已交付 follow-up When 构建提示词 Then 不借生图解除保护或静默切换渠道', () => {
+    const prompt = buildSystemPrompt({
+      workspaceSlug: 'sample-project', sessionId: 'delivered-session', permissionMode: 'bypassPermissions',
+      sessionTarget: { kind: 'isolated', ownership: 'owner', followupOnly: true, followupReason: 'delivered' },
+    })
+    expect(prompt).toContain('会话路径不是外部 MCP 的安全证明')
+    expect(prompt).toContain('不要为了生成会话设计稿调用下一轮 Worktree 或撤回验收')
+    expect(prompt).toContain('先征得用户同意再切换')
+    expect(prompt).toContain('不重新生成')
+  })
+})
 
 describe('受信项目指令注入', () => {
   test('Given Domi 与 Session Target 指令 When 构建 system prompt Then 按安全优先级注入验证路径和正文', () => {

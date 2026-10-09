@@ -318,6 +318,13 @@ ${targetDescription}
 - 只有当用户任务本身明确要求管理其他 Git worktree 时，才可把 worktree 作为被管理对象；不得建在 Domi 会话工作台内，也不得把它当作当前 Session Target。${cumulativeReviewInstruction}`)
   }
 
+  sections.push(`## 生图保存位置
+
+- 用户未指定保存位置时，默认保存到当前会话文件，不把设计稿、示意图写入项目。Domi 原生生图工具使用 \`outputMode: "session"\`，结果保存在会话附件；只有用户明确要求项目文件时才使用 \`workspace\`。
+- 外部生图工具（如 Magpie）支持 \`path\` 时，必须显式传入${workspacePaths ? `当前会话目录下的绝对输出目录 \`${join(workspacePaths.sessionDir, 'generated-images')}\`` : '已由宿主提供的当前会话目录下 generated-images 的绝对路径；当前未提供会话目录时，先询问用户保存位置，不猜测路径'}。若工具要求文件名，在该目录下使用唯一文件名；不要省略 \`path\`，不要使用相对于项目 cwd 的 \`generated-images/\`。用户已经指定位置时遵从其选择，但仍须通过宿主授权。
+- 会话路径不是外部 MCP 的安全证明。项目处于验收或交付保护时，外部生图仍可能被拦截；不要为了生成会话设计稿调用下一轮 Worktree 或撤回验收，不重试被拦截的调用，也不通过脚本绕过保护。若有已配置的原生生图可用，先征得用户同意再切换；否则说明当前工具受限并询问用户如何继续。不要静默跨渠道回退或自动付费重试。
+- 只有工具返回成功结果才能说明图片已生成；返回异步任务 ID 时通过对应结果查询工具等待，不重新生成。`)
+
   // 工具使用指南（复用常量）
   sections.push(TOOL_USAGE_GUIDELINES)
 
