@@ -589,10 +589,10 @@ function resolvePiReasoningDefinition(
     }))
   }
   const nativeCapability = resolveReasoningCapability({ catalog: { reasoning, thinkingLevelMap } })
-  // 显式适配沿用首个启用档位作为默认；其余来源保留 profile / Pi 默认值。
+  // 仅手动临时适配沿用首个启用档位作为默认；供应商未指定默认时使用 Pi 的 High。
   const defaultLevel = metadata?.defaultReasoningLevel
     ?? (source === 'profile' ? profile?.defaultLevel : undefined)
-    ?? (metadata?.reasoningLevels || metadata?.thinkingLevelMap
+    ?? (source === 'temporary-adaptation' && (metadata?.reasoningLevels || metadata?.thinkingLevelMap)
       ? nativeCapability?.levels.find((level) => level !== 'off') : undefined)
   const capability = nativeCapability ? {
     ...nativeCapability,

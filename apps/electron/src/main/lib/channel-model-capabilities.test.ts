@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import magpieFixtures from './fixtures/magpie-model-capabilities.json'
+import { resolveReasoningCapability } from '@domi/shared'
 import { createFetchedOpenAIChannelModel, parseOpenAIModelCapabilities } from './channel-model-capabilities'
 
 describe('供应商模型元数据解析', () => {
@@ -60,4 +62,40 @@ describe('供应商模型元数据解析', () => {
       thinkingLevelMap: { max: 'max' },
     })
   })
+})
+
+
+describe('magpie 实际模型档位声明', () => {
+  // 2026-10-09 只读采样：/models 的能力字段与用户 Pi 模型定义，不含端点或凭据。
+  for (const fixture of magpieFixtures) {
+    test(`Given ${fixture.model.id} 的实际声明 When 解析 Then 档位与 Pi 定义一致`, () => {
+      const parsed = parseOpenAIModelCapabilities(fixture.model)
+      const capability = resolveReasoningCapability({ catalog: parsed })
+      expect(capability?.levels ?? ['off']).toEqual(fixture.expectedLevels)
+    })
+  }
+
+  test('Given none 和未知 ultra When 解析 Then none 映射为 Off 并忽略未知档位', () => {
+    expect(parseOpenAIModelCapabilities({
+      id: 'router/model', reasoning: true,
+      supported_reasoning_levels: [{ effort: 'none' }, { effort: 'high' }, { effort: 'ultra' }],
+    })).toMatchObject({ reasoningLevels: ['off', 'high'], thinkingLevelMap: { off: 'none', high: 'high' } })
+  })
+
+  test('Given 缺失、畸形与明确空集合 When 解析 Then 区分未知能力与禁止可选推理', () => {
+    expect(parseOpenAIModelCapabilities({ id: 'missing', reasoning: true })).toEqual({ reasoning: true })
+    expect(parseOpenAIModelCapabilities({ id: 'invalid', supported_reasoning_levels: {} as unknown as [] })).toBeUndefined()
+    expect(parseOpenAIModelCapabilities({ id: 'empty', reasoning: true, supported_reasoning_levels: [] }))
+      .toMatchObject({ reasoning: false, reasoningLevels: [] })
+  })
+})
+
+
+test('Given 结构化档位包含坏条目、大小写与重复 When 解析 Then 只保留有效档位与真实映射', () => {
+  expect(parseOpenAIModelCapabilities({
+    id: 'router/mixed', supported_reasoning_levels: [
+      null, 42, { effort: [] }, { effort: 'HIGH' }, { effort: 'high' }, 'none', { effort: 'ultra' },
+    ] as unknown as NonNullable<Parameters<typeof parseOpenAIModelCapabilities>[0]['supported_reasoning_levels']>,
+    default_reasoning_effort: 'none',
+  })).toMatchObject({ reasoningLevels: ['high', 'off'], defaultReasoningLevel: 'off', thinkingLevelMap: { off: 'none', high: 'high', max: null } })
 })

@@ -6,7 +6,11 @@ import { executeVisionRelay } from '../vision-relay-service'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEEPSEEK_PRESET_MODELS, type ChannelModel } from '@domi/shared'
+import { DEEPSEEK_PRESET_MODELS, type AgentThinkingLevel, type ChannelModel } from '@domi/shared'
+import magpieFixtures from '../fixtures/magpie-model-capabilities.json'
+import { createFetchedOpenAIChannelModel } from '../channel-model-capabilities'
+import { resolvePiThinkingLevel } from '../agent-thinking-level'
+import { injectOpenAIReasoningLevel } from './pi-openai-reasoning-request-settings'
 import {
   buildModel,
   buildCodexModel,
@@ -795,4 +799,44 @@ test('Given Codex 专属 profile When 构建实际模型 Then UI 档位与原生
   })
   const capability = await resolvePiReasoningCapability('openai-codex', model.id)
   expect(getSupportedThinkingLevels(model)).toEqual([...capability!.levels])
+})
+
+
+describe('magpie 实际元数据从获取到运行时的完整链路', () => {
+  for (const fixture of magpieFixtures) {
+    test.each(['custom', 'openai-responses'] as const)(
+      `Given ${fixture.model.id} 的真实档位 When 在 %s 注册 Then UI、会话与 Pi 档位一致`,
+      async (provider) => {
+        catalogRead.mockResolvedValue([])
+        const channelModel = createFetchedOpenAIChannelModel(fixture.model)
+        const capability = await resolvePiReasoningCapability(provider, channelModel.id, channelModel)
+        const { model } = await buildModel(await sdkPromise, {
+          sessionId: 'magpie-capability', prompt: 'fixture', provider, apiKey: 'fixture',
+          model: channelModel.id, channelModel, baseUrl: 'https://router.example.com/v1',
+          permissionMode: 'plan', systemPrompt: 'system', piAgentDir: '/tmp/pi-agent', piSessionDir: '/tmp/pi-session',
+          authorizeToolCall: async (_name, input) => ({ behavior: 'allow', updatedInput: input }),
+        })
+        expect(model.id).toBe(fixture.model.id)
+        expect(capability?.levels ?? ['off']).toEqual(fixture.expectedLevels)
+        expect(getSupportedThinkingLevels(model)).toEqual(fixture.expectedLevels as AgentThinkingLevel[])
+        if (!capability) {
+          expect(model.reasoning).toBe(false)
+          return
+        }
+        expect(capability.defaultLevel).toBe('high')
+        for (const level of capability.levels) {
+          expect(resolvePiThinkingLevel({}, { reasoningLevel: level }, provider, model.id, capability)).toBe(level)
+          if (provider === 'openai-responses') {
+            const payload = injectOpenAIReasoningLevel({ model: model.id }, {
+              thinkingLevel: level, thinkingLevelMap: model.thinkingLevelMap,
+            }) as { reasoning: { effort: string } }
+            expect(payload.reasoning.effort).toBe(level === 'off' ? 'none' : level)
+          }
+        }
+        const persistedUnsupportedLevel: AgentThinkingLevel = 'minimal'
+        const normalized = resolvePiThinkingLevel({}, { reasoningLevel: persistedUnsupportedLevel }, provider, model.id, capability)
+        expect(capability.levels).toContain(normalized)
+      },
+    )
+  }
 })
