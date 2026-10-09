@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useStore } from 'jotai'
-import type { TerminalStateChange } from '@domi/shared'
+import type { TerminalSessionView, TerminalStateChange } from '@domi/shared'
 import {
   applyTerminalStateChange,
   terminalActiveIdMapAtom,
@@ -28,6 +28,24 @@ import {
   reconcileClosedWorkspaceTerminal,
   reduceTerminalPanelState,
 } from '@/components/terminal/v2/terminal-panel-state.ts'
+
+/** Agent 终端只更新运行状态；只有手动 Shell 创建才切换面板和焦点。 */
+export function applyTerminalStartPresentation(store: ReturnType<typeof useStore>, terminal: TerminalSessionView): void {
+  if (terminal.kind === 'agent-run') return
+
+  if (terminal.presentation === 'workspace') {
+    store.set(rightWorkspaceSessionStateMapAtom, (current) => (
+      activateSessionRightWorkspaceTab(current, terminal.ownerSessionId, terminalTabId(terminal.terminalId))
+    ))
+    if (store.get(currentAgentSessionIdAtom) === terminal.ownerSessionId) {
+      store.set(rightWorkspaceOpenAtom, true)
+    }
+    return
+  }
+
+  store.set(terminalDockOpenMapAtom, (current) => new Map(current).set(terminal.ownerSessionId, true))
+  store.set(terminalActiveIdMapAtom, (current) => new Map(current).set(terminal.ownerSessionId, terminal.terminalId))
+}
 
 export function useGlobalTerminalListeners(): void {
   const store = useStore()
@@ -115,18 +133,7 @@ export function useGlobalTerminalListeners(): void {
 
       if (change.status === 'starting') {
         if (change.kind === 'agent-run') clearServiceOutput(change.terminalId)
-        if (change.presentation === 'workspace') {
-          store.set(rightWorkspaceSessionStateMapAtom, (current) => (
-            activateSessionRightWorkspaceTab(current, change.ownerSessionId, terminalTabId(change.terminalId))
-          ))
-          if (store.get(currentAgentSessionIdAtom) === change.ownerSessionId) {
-            store.set(rightWorkspaceOpenAtom, true)
-          }
-          return
-        }
-
-        store.set(terminalDockOpenMapAtom, (current) => new Map(current).set(change.ownerSessionId, true))
-        store.set(terminalActiveIdMapAtom, (current) => new Map(current).set(change.ownerSessionId, change.terminalId))
+        applyTerminalStartPresentation(store, change)
       }
     })
 
