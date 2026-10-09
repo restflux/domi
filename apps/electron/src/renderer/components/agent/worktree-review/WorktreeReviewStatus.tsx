@@ -7,12 +7,17 @@ import {
   CheckCircle2,
   Clock3,
   FolderOpen,
-  GitBranchPlus,
   GitCommitHorizontal,
   Loader2,
   MoreHorizontal,
   FileSearch,
   RotateCcw,
+  History,
+  ArchiveRestore,
+  Save,
+  Send,
+  FolderOutput,
+  Brush,
   Trash2,
   Undo2,
 } from 'lucide-react'
@@ -268,8 +273,7 @@ export function WorktreeReviewStatus({
 
   const primaryAction = (): void => {
     if (appliedContinuation && canRestoreContinuation) {
-      setRestoreContinuation(true)
-      setRestoreOpen(true)
+      startNextIteration()
       return
     }
     if (delivery.state === 'ready_for_review') {
@@ -303,7 +307,7 @@ export function WorktreeReviewStatus({
   }
 
   const primaryLabel = appliedContinuation && canRestoreContinuation
-    ? '恢复后续成果'
+    ? '开始下一轮修改'
     : delivery.state === 'ready_for_review'
     ? staleIsolatedPreflight ? '重新检查' : preflight?.status === 'conflict' ? '让 Agent 解决冲突' : waitingForSlot ? '查看占用任务' : '预览修改'
     : delivery.state === 'preview_active'
@@ -355,16 +359,6 @@ export function WorktreeReviewStatus({
                 <Undo2 className="size-3.5" />撤回预览
               </Button>
             ) : null}
-            {canRestoreReview ? (
-              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" disabled={pending || blockedByCollaborator} onClick={() => { setRestoreContinuation(false); setRestoreOpen(true) }}>
-                <RotateCcw className="size-3.5" />恢复验收版本
-              </Button>
-            ) : null}
-            {canRestoreContinuation && !appliedContinuation ? (
-              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" disabled={pending || blockedByCollaborator} onClick={() => { setRestoreContinuation(true); setRestoreOpen(true) }}>
-                <RotateCcw className="size-3.5" />恢复后续成果
-              </Button>
-            ) : null}
             <Button type="button" variant={legacySurface ? 'ghost' : 'default'} size="sm" className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold" disabled={primaryDisabled} onClick={primaryAction}>
               {primaryActionIcon}
               {primaryLabel}
@@ -387,19 +381,34 @@ export function WorktreeReviewStatus({
                       <FolderOpen />打开当前工作位置
                     </DropdownMenuItem>
                   ) : null}
+                  {canRestoreReview || canRestoreContinuation ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      {canRestoreReview ? (
+                        <DropdownMenuItem disabled={pending || blockedByCollaborator} onSelect={() => openDialogAfterDropdownMenu(() => { setRestoreContinuation(false); setRestoreOpen(true) })}>
+                          <History />恢复验收版本
+                        </DropdownMenuItem>
+                      ) : null}
+                      {canRestoreContinuation ? (
+                        <DropdownMenuItem disabled={pending || blockedByCollaborator} onSelect={() => openDialogAfterDropdownMenu(() => { setRestoreContinuation(true); setRestoreOpen(true) })}>
+                          <ArchiveRestore />恢复后续成果
+                        </DropdownMenuItem>
+                      ) : null}
+                    </>
+                  ) : null}
                   {delivery.state === 'ready_for_review' ? (
                     <>
                       <DropdownMenuSeparator />
                       {!savedCheckpoint ? (
                         <DropdownMenuItem disabled={blockedByCollaborator} onSelect={openCheckpointDialogOnCard}>
-                          <GitCommitHorizontal />保存阶段并继续
+                          <Save />保存阶段并继续
                         </DropdownMenuItem>
                       ) : null}
                       <DropdownMenuItem
                         disabled={directFinishBlock !== null}
                         onSelect={openCommitDialogOnCard}
                       >
-                        <GitCommitHorizontal />{directFinishLabel}
+                        <Send />{directFinishLabel}
                       </DropdownMenuItem>
                       <DropdownMenuItem className="text-destructive" onSelect={() => openDialogAfterDropdownMenu(() => setDiscardOpen(true))}>
                         <Trash2 />放弃任务
@@ -410,10 +419,10 @@ export function WorktreeReviewStatus({
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem disabled={pending || blockedByCollaborator} onSelect={openCheckpointDialogOnCard}>
-                        <GitCommitHorizontal />保存阶段并继续
+                        <Save />保存阶段并继续
                       </DropdownMenuItem>
                       <DropdownMenuItem disabled={pending} onSelect={() => void operate({ action: 'rollback_preview' })}>
-                        <RotateCcw />撤回本次预览
+                        <Undo2 />撤回本次预览
                       </DropdownMenuItem>
                       <DropdownMenuItem className="text-destructive" onSelect={() => openDialogAfterDropdownMenu(() => setDiscardOpen(true))}>
                         <Trash2 />放弃任务
@@ -424,13 +433,13 @@ export function WorktreeReviewStatus({
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem disabled={directFinishBlock !== null} onSelect={openCommitDialogOnCard}>
-                        <GitCommitHorizontal />{directFinishLabel}
+                        <Send />{directFinishLabel}
                       </DropdownMenuItem>
                       <DropdownMenuItem disabled={pending} onSelect={() => void operate({ action: 'rollback_preview' })}>
                         <RotateCcw />重新尝试撤回
                       </DropdownMenuItem>
                       <DropdownMenuItem disabled={pending} onSelect={openHandoffDialogOnCard}>
-                        <GitBranchPlus />交接到新会话
+                        <FolderOutput />交接到新会话
                       </DropdownMenuItem>
                       <DropdownMenuItem className="text-destructive" onSelect={() => openDialogAfterDropdownMenu(() => setDiscardOpen(true))}>
                         <Trash2 />放弃 Worktree
@@ -441,7 +450,7 @@ export function WorktreeReviewStatus({
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => openDialogAfterDropdownMenu(() => setRetainedCleanupOpen(true))}>
-                        <Trash2 />清理保留环境
+                        <Brush />清理保留环境
                       </DropdownMenuItem>
                     </>
                   ) : null}
