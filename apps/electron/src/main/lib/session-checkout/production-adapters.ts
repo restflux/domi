@@ -308,8 +308,17 @@ function isPreviousReview(value: unknown): boolean {
     && isStringArray(value.changedFiles)
 }
 
+function isFrozenReviewSnapshot(value: unknown): boolean {
+  return isRecord(value)
+    && ['snapshotOid', 'headOid', 'headTreeOid', 'indexTreeOid', 'treeOid'].every(key => typeof value[key] === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value[key]))
+    && typeof value.fingerprint === 'string'
+    && value.headRef === null
+}
+
 function isReview(value: unknown): boolean {
   return isRecord(value)
+    && (value.frozenSnapshot === undefined || isFrozenReviewSnapshot(value.frozenSnapshot))
+    && (value.savedContinuationSnapshot === undefined || isFrozenReviewSnapshot(value.savedContinuationSnapshot))
     && typeof value.reviewId === 'string'
     && typeof value.iteration === 'number'
     && typeof value.preparedAt === 'number'
@@ -418,7 +427,7 @@ function isJournal(value: unknown): boolean {
     && (value.failureMessage === undefined || typeof value.failureMessage === 'string')
   const validOperation = value.operation === 'apply'
     || value.operation === 'preview'
-    || value.operation === 'checkpoint'
+    || value.operation === 'restore_review' || value.operation === 'checkpoint'
     || value.operation === 'rollback_preview'
     || value.operation === 'finish'
     || value.operation === 'finalize_preview'
@@ -475,6 +484,9 @@ function isManagedCheckout(value: unknown): boolean {
       && ['pending', 'ready', 'failed'].includes(String(value.localFiles.state))))
     && typeof value.sourceRef === 'string'
     && (value.phase === 'preparing' || value.phase === 'ready' || value.phase === 'mutating' || value.phase === 'recovery_required' || value.phase === 'finalized' || value.phase === 'retained' || value.phase === 'discarded')
+    && (value.savedContinuationSnapshot === undefined || isFrozenReviewSnapshot(value.savedContinuationSnapshot))
+    && (value.lastCompletedDelivery === undefined || (isRecord(value.lastCompletedDelivery) && (value.lastCompletedDelivery.state === 'finalized' || value.lastCompletedDelivery.state === 'retained') && isDelivery(value.lastCompletedDelivery)))
+    && (value.savedContinuationDelivered === undefined || typeof value.savedContinuationDelivered === 'boolean')
     && isDelivery(value.delivery)
     && isJournal(value.journal)
     && typeof value.revision === 'number'

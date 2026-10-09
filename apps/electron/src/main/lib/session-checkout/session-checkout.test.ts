@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import type { SessionCheckoutModule } from './index.ts'
 import type { BulkCleanupProgressPayload } from '@domi/shared'
-import type { SessionCheckoutApplyEngine } from './session-checkout-apply.ts'
+import { createSessionCheckoutApplyEngine, type SessionCheckoutApplyEngine } from './session-checkout-apply.ts'
 import type { SessionCheckoutTimingEvent } from './ports.ts'
 import { createSessionCheckoutModule } from './session-checkout-module.ts'
 import { createNodeSessionCheckoutDependencies } from './production-adapters.ts'
@@ -1842,7 +1842,7 @@ describe.concurrent('SessionCheckoutModule', () => {
     })
   }, 30_000)
 
-  test('Given ReadyForReview became stale When ApplyWorktree is requested Then it refuses the stale review before touching Local', async () => {
+  test('Given 固定验收后活动树变化 When ApplyWorktree is requested Then 只预览已验收版本', async () => {
     const context = createContext()
     await context.module.bind('session-1', { kind: 'isolated' })
     const lease = await context.module.lease('session-1')
@@ -1861,12 +1861,9 @@ describe.concurrent('SessionCheckoutModule', () => {
       expectedRevision: ready.revision,
     })
 
-    expect(result).toMatchObject({
-      status: 'error',
-      code: 'stale_isolated',
-      target: { delivery: { state: 'working', iteration: 1 } },
-    })
-    expect(readFileSync(join(context.projectRoot, 'tracked.txt'), 'utf8').trim()).toBe('base')
+    expect(result).toMatchObject({ status: 'previewed', target: { delivery: { state: 'preview_active' } } })
+    expect(readFileSync(join(context.projectRoot, 'tracked.txt'), 'utf8').trim()).toBe('reviewed version')
+    expect(readFileSync(join(lease.cwd, 'tracked.txt'), 'utf8').trim()).toBe('changed after review')
   }, 30_000)
 
   test('Given a reviewed stage When user saves a Checkpoint Then Local stays unchanged and the same Worktree continues from a clean detached Commit', async () => {
@@ -2216,13 +2213,11 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(readFileSync(join(context.projectRoot, 'tracked.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('preview task\n')
     expect(preview.target.delivery?.state).toBe('preview_active')
     const previewFollowupLease = await context.module.lease('session-1')
-    expect(previewFollowupLease.followupOnly).toBe(true)
-    expect((previewFollowupLease as { followupReason?: string }).followupReason).toBe('preview_active')
-    expect(previewFollowupLease.cwd).toBe(context.projectRoot)
+    expect(previewFollowupLease.followupOnly).not.toBe(true)
+    expect(previewFollowupLease.cwd).toBe(lease.cwd)
     const collaboratorPreviewLease = await context.module.lease('session-child')
-    expect(collaboratorPreviewLease.followupOnly).toBe(true)
-    expect(collaboratorPreviewLease.followupReason).toBe('preview_active')
-    expect(collaboratorPreviewLease.cwd).toBe(context.projectRoot)
+    expect(collaboratorPreviewLease.followupOnly).not.toBe(true)
+    expect(collaboratorPreviewLease.cwd).toBe(lease.cwd)
 
     const rolledBack = await context.module.operate({
       action: 'rollback_preview',
@@ -5136,5 +5131,114 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect({ ownership: owner.ownership, dirty: owner.dirty }).toEqual({ ownership: 'owner', dirty: true })
     expect({ ownership: inherited.ownership, dirty: inherited.dirty }).toEqual({ ownership: 'inherited', dirty: true })
     expect(JSON.stringify(owner).includes(lease.cwd)).toBe(false)
+  })
+
+  test('Given 固化验收后继续工作 When 重启预览原版本 Then lease 留在 Worktree 且清理不会丢后续成果', async () => {
+    const context = createContext()
+    await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'fixed review\n')
+    const ready = await context.module.markReadyForReview('session-1', {
+      summary: '固定版本', validationStatus: 'passed', tests: [], suggestedCommitMessage: 'feat: 固定版本',
+    })
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'later work\n')
+    writeFileSync(join(lease.cwd, 'later.txt'), 'later\n')
+    git(lease.cwd, 'gc', '--prune=now')
+    const restarted = context.restart()
+    const preview = await restarted.operate({ action: 'preview', sessionId: 'session-1', expectedRevision: ready.revision })
+    expect(preview.status).toBe('previewed')
+    if (preview.status !== 'previewed') throw new Error('预览失败')
+    const previewLease = await restarted.lease('session-1')
+    expect(previewLease.cwd).toBe(lease.cwd)
+    expect(previewLease.followupOnly).not.toBe(true)
+    expect(readFileSync(join(context.projectRoot, 'tracked.txt'), 'utf8')).toBe('fixed review\n')
+    expect(readFileSync(join(lease.cwd, 'tracked.txt'), 'utf8')).toBe('later work\n')
+    const finalized = await restarted.operate({ action: 'finalize_preview', sessionId: 'session-1', expectedRevision: preview.target.revision, commitMessage: 'feat: 固定版本' })
+    expect(finalized).toMatchObject({ status: 'finished', cleanup: 'pending' })
+    expect(readFileSync(join(lease.cwd, 'later.txt'), 'utf8')).toBe('later\n')
+    if (finalized.status !== 'finished') throw new Error('应用失败')
+    expect(finalized.target.delivery?.state === 'finalized' && finalized.target.delivery.review.savedContinuation).toBe(true)
+    const resumed = await restarted.operate({ action: 'restore_review', savedContinuation: true, sessionId: 'session-1', expectedRevision: finalized.target.revision })
+    expect(resumed).toMatchObject({ status: 'restored_review', target: { delivery: { state: 'working', iteration: 2 } } })
+    const nextReview = await restarted.markReadyForReview('session-1', { summary: '后续修改', validationStatus: 'passed', tests: [], suggestedCommitMessage: 'feat: 后续修改' })
+    expect(nextReview.delivery?.state === 'ready_for_review' ? nextReview.delivery.review.changedFiles : []).toEqual(['later.txt', 'tracked.txt'])
+  })
+
+  test('Given 后续成果已保存并恢复验收版本 When 应用原版本 Then 清理保留成果且显式恢复可以交付下一轮', async () => {
+    const context = createContext()
+    await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'fixed\n')
+    const ready = await context.module.markReadyForReview('session-1', { summary: '固定版本', validationStatus: 'passed', tests: [], suggestedCommitMessage: 'feat: 固定版本' })
+    writeFileSync(join(lease.cwd, 'new.txt'), 'later\n')
+    const restored = await context.module.operate({ action: 'restore_review', sessionId: 'session-1', expectedRevision: ready.revision })
+    if (restored.status !== 'restored_review') throw new Error('恢复失败')
+    const preview = await context.module.operate({ action: 'preview', sessionId: 'session-1', expectedRevision: restored.target.revision })
+    if (preview.status !== 'previewed') throw new Error('预览失败')
+    const finalized = await context.module.operate({ action: 'finalize_preview', sessionId: 'session-1', expectedRevision: preview.target.revision, commitMessage: 'feat: 固定版本' })
+    expect(finalized).toMatchObject({ status: 'finished', cleanup: 'pending' })
+    if (finalized.status !== 'finished') throw new Error('交付失败')
+    expect(existsSync(lease.cwd)).toBe(true)
+    git(lease.cwd, 'gc', '--prune=now')
+    const restarted = context.restart()
+    const resumed = await restarted.operate({ action: 'restore_review', savedContinuation: true, sessionId: 'session-1', expectedRevision: finalized.target.revision })
+    expect(resumed).toMatchObject({ status: 'restored_review', target: { delivery: { state: 'working', iteration: 2 } } })
+    expect(readFileSync(join(lease.cwd, 'new.txt'), 'utf8')).toBe('later\n')
+    const next = await restarted.markReadyForReview('session-1', { summary: '后续成果', validationStatus: 'passed', tests: [], suggestedCommitMessage: 'feat: 后续成果' })
+    expect(next.delivery?.state === 'ready_for_review' ? next.delivery.review.changedFiles : []).toEqual(['new.txt'])
+    const finished = await restarted.operate({ action: 'finish', sessionId: 'session-1', expectedRevision: next.revision, commitMessage: 'feat: 后续成果' })
+    expect(finished).toMatchObject({ status: 'finished', cleanup: 'discarded' })
+    expect(readFileSync(join(context.projectRoot, 'new.txt'), 'utf8')).toBe('later\n')
+  })
+
+  test('Given 恢复时部分写入失败 When 重启并恢复保存成果 Then 原始成果仍完整可恢复', async () => {
+    const realEngine = createSessionCheckoutApplyEngine()
+    let fail = true
+    const engine: SessionCheckoutApplyEngine = { ...realEngine, restoreReviewSnapshot: async input => {
+      if (fail) {
+        fail = false
+        writeFileSync(join(input.isolatedPath, 'tracked.txt'), 'partial restore\n')
+        return { status: 'error', error: { code: 'git_error', message: '模拟恢复写入失败' } }
+      }
+      return realEngine.restoreReviewSnapshot!(input)
+    } }
+    const context = createContext({ applyEngine: engine })
+    await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'review\n')
+    const ready = await context.module.markReadyForReview('session-1', { summary: '恢复', validationStatus: 'passed', tests: [], suggestedCommitMessage: 'feat: 恢复' })
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'saved work\n')
+    writeFileSync(join(lease.cwd, 'new.txt'), 'saved new\n')
+    expect(await context.module.operate({ action: 'restore_review', sessionId: 'session-1', expectedRevision: ready.revision })).toMatchObject({ status: 'error', code: 'git_error' })
+    const restarted = context.restart()
+    const pending = await restarted.inspect('session-1')
+    expect(pending.checkout.phase).toBe('recovery_required')
+    const restored = await restarted.operate({ action: 'restore_review', savedContinuation: true, sessionId: 'session-1', expectedRevision: pending.revision })
+    expect(restored.status).toBe('restored_review')
+    expect(readFileSync(join(lease.cwd, 'tracked.txt'), 'utf8')).toBe('saved work\n')
+    expect(readFileSync(join(lease.cwd, 'new.txt'), 'utf8')).toBe('saved new\n')
+  })
+
+  test('Given 固定验收之后有新成果 When 恢复固定版本并重启 Then 后续成果可通过宿主恢复且过期请求被拒绝', async () => {
+    const context = createContext()
+    await context.module.bind('session-1', { kind: 'isolated' })
+    const lease = await context.module.lease('session-1')
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'fixed\n')
+    const ready = await context.module.markReadyForReview('session-1', {
+      summary: '固定版本', validationStatus: 'passed', tests: [], suggestedCommitMessage: 'feat: 固定版本',
+    })
+    writeFileSync(join(lease.cwd, 'tracked.txt'), 'later\n')
+    writeFileSync(join(lease.cwd, 'new.txt'), 'new\n')
+    const restored = await context.module.operate({ action: 'restore_review', sessionId: 'session-1', expectedRevision: ready.revision })
+    expect(restored.status).toBe('restored_review')
+    if (restored.status !== 'restored_review') throw new Error('恢复失败')
+    expect(readFileSync(join(lease.cwd, 'tracked.txt'), 'utf8')).toBe('fixed\n')
+    expect(existsSync(join(lease.cwd, 'new.txt'))).toBe(false)
+    const restarted = context.restart()
+    expect(await restarted.operate({ action: 'restore_review', sessionId: 'session-1', expectedRevision: ready.revision })).toMatchObject({ status: 'error', code: 'stale_target' })
+    const saved = await restarted.operate({ action: 'restore_review', savedContinuation: true, sessionId: 'session-1', expectedRevision: restored.target.revision })
+    expect(saved.status).toBe('restored_review')
+    expect(readFileSync(join(lease.cwd, 'tracked.txt'), 'utf8')).toBe('later\n')
+    expect(readFileSync(join(lease.cwd, 'new.txt'), 'utf8')).toBe('new\n')
   })
 })

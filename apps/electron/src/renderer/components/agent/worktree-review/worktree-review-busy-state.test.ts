@@ -4,6 +4,7 @@ import { worktreeOperationBusyLabel } from './worktree-review-busy-state.ts'
 describe('worktreeOperationBusyLabel', () => {
   test('maps each checkout mutation to one user-facing operation label', () => {
     expect(worktreeOperationBusyLabel('preview')).toBe('正在创建预览…')
+    expect(worktreeOperationBusyLabel('restore_review')).toBe('正在保存成果并恢复版本…')
     expect(worktreeOperationBusyLabel('checkpoint')).toBe('正在保存进度…')
     expect(worktreeOperationBusyLabel('rollback_preview')).toBe('正在撤回预览…')
     expect(worktreeOperationBusyLabel('finalize_preview')).toBe('正在应用修改…')

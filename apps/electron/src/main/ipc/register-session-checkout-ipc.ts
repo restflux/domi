@@ -142,6 +142,7 @@ function parseAction(value: unknown): SessionCheckoutAction | null {
   if (
     value === 'apply'
     || value === 'finish'
+    || value === 'restore_review'
     || value === 'preview'
     || value === 'checkpoint'
     || value === 'rollback_preview'
@@ -164,6 +165,12 @@ function parseOperateInput(input: unknown): OperateSessionCheckoutInput | null {
   ) return null
   const action = parseAction(input.action)
   if (!action) return null
+
+  if (action === 'restore_review') {
+    if (!hasExactKeys(input, ['sessionId', 'action', 'expectedRevision'], ['savedContinuation'])
+      || (input.savedContinuation !== undefined && typeof input.savedContinuation !== 'boolean')) return null
+    return { action, sessionId: input.sessionId, expectedRevision: input.expectedRevision, savedContinuation: input.savedContinuation }
+  }
 
   if (action === 'checkpoint') {
     if (

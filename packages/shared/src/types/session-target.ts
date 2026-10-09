@@ -47,6 +47,9 @@ export interface WorktreeCheckpointView {
 }
 
 export interface WorktreeReviewView {
+  /** 验收版本已持久保存，可继续在活动 Worktree 工作。 */
+  frozenVersion?: boolean
+  savedContinuation?: boolean
   reviewId: string
   iteration: number
   preparedAt: number
@@ -234,6 +237,12 @@ export interface SessionCheckoutCheckpointOperation extends SessionCheckoutOpera
   commitMessage: string
 }
 
+export interface SessionCheckoutRestoreReviewOperation extends SessionCheckoutOperationBase {
+  action: 'restore_review'
+  /** 恢复此前保留的后续成果。 */
+  savedContinuation?: boolean
+}
+
 export interface SessionCheckoutRollbackPreviewOperation extends SessionCheckoutOperationBase {
   action: 'rollback_preview'
   /** 结构化“撤回并继续修改”确认使用；普通撤回仍保留原验收卡。 */
@@ -270,6 +279,7 @@ export interface SessionCheckoutReleaseCollaboratorsOperation extends SessionChe
 
 export type SessionCheckoutOperation =
   | SessionCheckoutApplyOperation
+  | SessionCheckoutRestoreReviewOperation
   | SessionCheckoutFinishOperation
   | SessionCheckoutPreviewOperation
   | SessionCheckoutCheckpointOperation
@@ -280,6 +290,12 @@ export type SessionCheckoutOperation =
   | SessionCheckoutRecoverOperation
   | SessionCheckoutReleaseCollaboratorOperation
   | SessionCheckoutReleaseCollaboratorsOperation
+
+export interface SessionCheckoutRestoredReviewResult {
+  status: 'restored_review'
+  target: SessionTargetView
+  changedFiles: string[]
+}
 
 export interface SessionCheckoutAppliedResult {
   status: 'applied'
@@ -456,6 +472,7 @@ export interface SessionCheckoutOperationErrorResult {
 
 export type SessionCheckoutOperationResult =
   | SessionCheckoutAppliedResult
+  | SessionCheckoutRestoredReviewResult
   | SessionCheckoutPreviewedResult
   | SessionCheckoutCheckpointedResult
   | SessionCheckoutPreviewRolledBackResult

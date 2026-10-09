@@ -100,6 +100,52 @@ describe('WorktreeReviewStatus current delivery actions', () => {
     expect(moreButton).not.toContain('rounded-sm')
   })
 
+  test('固定验收版本只在 owner 活跃待验收 Worktree 提供恢复入口', () => {
+    const frozenReview = { ...review, frozenVersion: true }
+    const ready = { state: 'ready_for_review' as const, review: frozenReview }
+    expect(renderStatus(ready)).toContain('恢复验收版本</button>')
+    expect(renderStatus({ state: 'ready_for_review', review })).not.toContain('恢复验收版本</button>')
+    expect(renderStatus(ready, { ownership: 'inherited' })).not.toContain('恢复验收版本</button>')
+    expect(renderStatus(ready, { checkout: { id: 'checkout-1', kind: 'isolated', label: 'Isolated', phase: 'retained' } })).not.toContain('恢复验收版本</button>')
+    expect(renderStatus({ state: 'preview_active', review: frozenReview, previewedAt: 2 })).not.toContain('恢复验收版本</button>')
+    const busy = renderStatus(ready, undefined, { pendingAction: 'restore_review' })
+    expect(busy).toContain('正在保存成果并恢复版本…')
+    expect(busy.match(/<button[^>]*>.*?恢复验收版本<\/button>/)?.[0]).toContain('disabled')
+  })
+
+  test('保留后续成果时提供恢复入口，恢复失败状态仍可重试两种恢复', () => {
+    const ready = { state: 'ready_for_review' as const, review: { ...review, frozenVersion: true, savedContinuation: true } }
+    expect(renderStatus(ready)).toContain('恢复后续成果</button>')
+    expect(renderStatus({ ...ready, review: { ...ready.review, savedContinuation: false } })).not.toContain('恢复后续成果</button>')
+    const recovery = renderStatus(ready, { checkout: { id: 'checkout-1', kind: 'isolated', label: 'Isolated', phase: 'recovery_required' } })
+    expect(recovery).toContain('恢复验收版本</button>')
+    expect(recovery).toContain('恢复后续成果</button>')
+    expect(renderStatus(ready, { ownership: 'inherited' })).not.toContain('恢复后续成果</button>')
+  })
+
+  test('已应用版本保留后续成果时以显式恢复为主操作，失败仍可重试但不恢复旧验收', () => {
+    const savedReview = { ...review, frozenVersion: true, savedContinuation: true }
+    for (const delivery of [
+      { state: 'finalized' as const, review: savedReview, commitOid: 'abc123', cleanup: 'pending' as const },
+      { state: 'retained' as const, review: savedReview, commitOid: 'abc123', cleanup: 'scheduled' as const, retention: 'retain_manual' as const, retainedAt: 2, expiresAt: null },
+    ]) {
+      for (const phase of [undefined, 'recovery_required' as const]) {
+        const overrides = phase ? { checkout: { id: 'checkout-1', kind: 'isolated' as const, label: 'Isolated', phase } } : undefined
+        for (const railKind of ['worktree_active', 'worktree_settled'] as const) {
+          const html = renderStatus(delivery, overrides, { railKind })
+          expect(html).toContain('>恢复后续成果</button>')
+          expect(html).not.toContain('恢复验收版本</button>')
+          expect(html).not.toContain('>开始下一轮修改</button>')
+          expect(html).not.toContain('>重试清理环境</button>')
+          const restoreButton = html.match(/<button[^>]*>恢复后续成果<\/button>/)?.[0]
+          expect(restoreButton).toContain('font-semibold')
+          expect(restoreButton).not.toMatch(/\sdisabled(?:=|>)/)
+        }
+      }
+      expect(renderStatus(delivery, { ownership: 'inherited' })).not.toContain('恢复后续成果</button>')
+    }
+  })
+
   test('初始化加载只显示一个中性 Spinner，不冒充具体操作', () => {
     const html = renderStatus(
       { state: 'ready_for_review', review },

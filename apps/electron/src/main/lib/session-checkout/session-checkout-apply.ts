@@ -10,7 +10,19 @@ import type { ApplyBaseStrategy } from '@domi/shared'
 import { isLocalFileTemporaryPath } from '../worktree-local-files/temporary-path.ts'
 import { readSnapshot, safeLocation } from '../worktree-local-files/filesystem.ts'
 
+export interface FrozenReviewSnapshot {
+  snapshotOid: string
+  fingerprint: string
+  headOid: string
+  headRef: string | null
+  headTreeOid: string
+  indexTreeOid: string
+  treeOid: string
+}
+
 export interface ApplyPlanInput {
+  /** 固定验收对象；存在时不读取活动树内容。 */
+  frozenSnapshot?: FrozenReviewSnapshot
   baseOid: string
   isolatedPath: string
   localPath: string
@@ -32,6 +44,7 @@ export interface ApplyPlan {
 }
 
 export interface ReviewSnapshotResult {
+  frozenSnapshot?: FrozenReviewSnapshot
   status: 'ready'
   isolatedFingerprint: string
   isolatedHeadOid: string
@@ -58,6 +71,12 @@ export interface CaptureHandoffSnapshotSuccessResult {
 }
 
 export type CaptureHandoffSnapshotResult = CaptureHandoffSnapshotSuccessResult | ApplyPlanErrorResult
+
+export interface RestoreReviewSnapshotInput {
+  isolatedPath: string
+  expectedSnapshot: FrozenReviewSnapshot
+  targetSnapshot: FrozenReviewSnapshot
+}
 
 export interface RestoreHandoffSnapshotInput {
   isolatedPath: string
@@ -258,8 +277,10 @@ export type ApplyError =
   | PreviewModifiedApplyError
 
 export interface SessionCheckoutApplyEngine {
+  verifyFrozenSnapshot?(isolatedPath: string, snapshot: FrozenReviewSnapshot): Promise<boolean>
   inspectReview(input: ApplyPlanInput): Promise<InspectReviewResult>
   captureHandoffSnapshot?(input: CaptureHandoffSnapshotInput): Promise<CaptureHandoffSnapshotResult>
+  restoreReviewSnapshot?(input: RestoreReviewSnapshotInput): Promise<RestoreHandoffSnapshotResult>
   restoreHandoffSnapshot?(input: RestoreHandoffSnapshotInput): Promise<RestoreHandoffSnapshotResult>
   checkpoint(input: CheckpointInput): Promise<CheckpointResult>
   recoverCheckpoint(input: { isolatedPath: string; commitOid: string; parentOid: string; expectedIndexTreeOid: string }): Promise<CheckpointRecoveryResult>
@@ -1097,6 +1118,25 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
     return captureSnapshot(checkoutPath, indexPath, objectDirectory, sourceObjects, forceIncludePaths, runtimePaths, includeRuntimeFingerprint)
   }
 
+  private async capturePlanSnapshot(
+    checkoutPath: string,
+    indexPath: string,
+    objectDirectory: string | null,
+    sourceObjects: string | null,
+    frozen?: FrozenReviewSnapshot,
+  ): Promise<CheckoutSnapshot> {
+    if (!frozen) return this.captureSnapshot(checkoutPath, indexPath, objectDirectory, sourceObjects)
+    if (frozen.headRef !== null) throw new Error('固定版本必须来自 detached Worktree')
+    for (const [oid, type] of [[frozen.snapshotOid, 'commit'], [frozen.headOid, 'commit'], [frozen.headTreeOid, 'tree'], [frozen.indexTreeOid, 'tree'], [frozen.treeOid, 'tree']]) {
+      if (!oid || !OID_PATTERN.test(oid)) throw new Error('固定验收对象 OID 无效')
+      if (stdoutText(await runGit(checkoutPath, ['cat-file', '-t', oid])) !== type) throw new Error('固定验收对象类型无效')
+    }
+    const tree = stdoutText(await runGit(checkoutPath, ['rev-parse', `${frozen.snapshotOid}^{tree}`]))
+    const headTree = stdoutText(await runGit(checkoutPath, ['rev-parse', `${frozen.headOid}^{tree}`]))
+    if (tree !== frozen.treeOid || headTree !== frozen.headTreeOid) throw new Error('固定验收对象内容不一致')
+    return { ...frozen }
+  }
+
   async captureHandoffSnapshot(input: CaptureHandoffSnapshotInput): Promise<CaptureHandoffSnapshotResult> {
     if (!OID_PATTERN.test(input.baseOid)) {
       return { status: 'error', error: { code: 'invalid_input', message: 'Session handoff base OID 无效' } }
@@ -1123,6 +1163,41 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         treeOid: snapshot.treeOid,
         changedFiles: changedPaths.map((path) => toProjectPath(path, projectPathPrefix)).sort(),
       }
+    } catch (error) {
+      return { status: 'error', error: { code: 'git_error', message: this.errorMessage(error) } }
+    } finally {
+      if (tempRoot) await this.cleanup(tempRoot)
+    }
+  }
+
+  async restoreReviewSnapshot(input: RestoreReviewSnapshotInput): Promise<RestoreHandoffSnapshotResult> {
+    let tempRoot: string | null = null
+    try {
+      tempRoot = await mkdtemp(join(tmpdir(), 'domi-review-restore-'))
+      const root = await resolveGitRoot(input.isolatedPath)
+      const prefix = projectPrefix(root, input.isolatedPath)
+      if (prefix === null) throw new Error('项目路径无效')
+      const target = await this.capturePlanSnapshot(root, join(tempRoot, 'target.index'), null, null, input.targetSnapshot)
+      const current = await this.captureSnapshot(root, join(tempRoot, 'current.index'), null, null)
+      if (current.headRef !== null || current.fingerprint !== input.expectedSnapshot.fingerprint) {
+        return { status: 'error', error: { code: 'stale_isolated', message: 'Worktree 在保存成果后变化，未执行恢复' } }
+      }
+      const paths = await changedTreePaths(root, current.treeOid, target.treeOid, null, null)
+      if (paths.some(path => !isProjectPath(path, prefix))) throw new Error('恢复内容超出项目根目录')
+      const patch = (await runGit(root, ['diff', '--binary', '--full-index', '--no-ext-diff', current.treeOid, target.treeOid])).stdout
+      if (patch.length) await runGit(root, ['apply', '--check', '--binary', '--whitespace=nowarn'], { input: patch })
+      const final = await this.captureSnapshot(root, join(tempRoot, 'final.index'), null, null)
+      if (final.fingerprint !== current.fingerprint) {
+        return { status: 'error', error: { code: 'stale_isolated', message: 'Worktree 在恢复前变化，未执行恢复' } }
+      }
+      if (patch.length) await runGit(root, ['apply', '--binary', '--whitespace=nowarn'], { input: patch })
+      await runGit(root, ['read-tree', target.indexTreeOid])
+      await runGit(root, ['update-ref', '--no-deref', 'HEAD', target.headOid, current.headOid])
+      const restored = await this.captureSnapshot(root, join(tempRoot, 'restored.index'), null, null)
+      if (restored.treeOid !== target.treeOid || restored.indexTreeOid !== target.indexTreeOid || restored.headOid !== target.headOid) {
+        throw new Error('固定版本恢复不完整，已保留恢复前成果')
+      }
+      return { status: 'restored', isolatedFingerprint: restored.fingerprint, indexTreeOid: restored.indexTreeOid, treeOid: restored.treeOid }
     } catch (error) {
       return { status: 'error', error: { code: 'git_error', message: this.errorMessage(error) } }
     } finally {
@@ -1392,6 +1467,13 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
     }
   }
 
+  async verifyFrozenSnapshot(isolatedPath: string, snapshot: FrozenReviewSnapshot): Promise<boolean> {
+    try {
+      await this.capturePlanSnapshot(await resolveGitRoot(isolatedPath), '', null, null, snapshot)
+      return true
+    } catch { return false }
+  }
+
   async inspectReview(input: ApplyPlanInput): Promise<InspectReviewResult> {
     if (!OID_PATTERN.test(input.baseOid)) {
       return { status: 'error', error: { code: 'invalid_input', message: 'Session Base OID 格式无效' } }
@@ -1423,8 +1505,8 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       const isolated = await this.captureSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
-        objectDirectory,
-        localObjects,
+        null,
+        null,
       )
       const effectiveBase = await selectEffectiveApplyBase(
         localGitRoot,
@@ -1444,6 +1526,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       }
       return {
         status: 'ready',
+        frozenSnapshot: { ...isolated, snapshotOid: await createSnapshotCommit(isolatedGitRoot, isolated.treeOid, isolated.headOid, null, null, 'Frozen review snapshot') },
         isolatedFingerprint: isolated.fingerprint,
         isolatedHeadOid: isolated.headOid,
         effectiveBaseOid: effectiveBase.oid,
@@ -1499,11 +1582,12 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       if (input.expectedLocalHeadRef && local.headRef !== input.expectedLocalHeadRef) {
         return { status: 'error', error: { code: 'stale_local', message: '原项目当前分支与 Worktree 来源分支不同' } }
       }
-      const isolated = await this.captureSnapshot(
+      const isolated = await this.capturePlanSnapshot(
         isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
         localObjects,
+        input.frozenSnapshot,
       )
       const effectiveBase = await selectEffectiveApplyBase(
         localGitRoot,
@@ -1563,7 +1647,7 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       }
       if (persistPlan) {
         this.plans.set(revision, {
-          input: { ...input },
+          input: { ...input, ...(input.frozenSnapshot ? { frozenSnapshot: { ...input.frozenSnapshot } } : {}) },
           patch: merge.patch,
           plan: { ...plan, changedFiles: [...plan.changedFiles] },
           scope: {
@@ -1607,11 +1691,12 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         return { status: 'error', error: { code: 'stale_local', message: 'Local 在 plan 后发生变化，请重新计算' } }
       }
 
-      const isolated = await this.captureSnapshot(
+      const isolated = await this.capturePlanSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
         sourceObjects,
+        stored.input.frozenSnapshot,
       )
       if (isolated.headOid !== stored.plan.isolatedHeadOid || isolated.fingerprint !== stored.plan.isolatedFingerprint) {
         return { status: 'error', error: { code: 'stale_isolated', message: 'Isolated 在 plan 后发生变化，请重新计算' } }
@@ -1619,11 +1704,12 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
 
       // 将已审核的 Isolated 最终状态写成无 ref 的内部 commit，供同一 checkout 后续 Apply 去重。
       // 使用独立 index，不改变 Isolated 的真实 staged/working tree。
-      const persistentIsolated = await this.captureSnapshot(
+      const persistentIsolated = await this.capturePlanSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'persistent-isolated.index'),
         null,
         null,
+        stored.input.frozenSnapshot,
       )
       if (persistentIsolated.fingerprint !== stored.plan.isolatedFingerprint) {
         return { status: 'error', error: { code: 'stale_isolated', message: 'Isolated 在 plan 后发生变化，请重新计算' } }
@@ -1702,11 +1788,12 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
       ) {
         return { status: 'error', error: { code: 'stale_local', message: 'Local 在 plan 后发生变化，请重新计算' } }
       }
-      const isolated = await this.captureSnapshot(
+      const isolated = await this.capturePlanSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'isolated.index'),
         objectDirectory,
         sourceObjects,
+        stored.input.frozenSnapshot,
       )
       if (isolated.headOid !== stored.plan.isolatedHeadOid || isolated.fingerprint !== stored.plan.isolatedFingerprint) {
         return { status: 'error', error: { code: 'stale_isolated', message: 'Isolated 在 plan 后发生变化，请重新计算' } }
@@ -1718,11 +1805,12 @@ class DefaultSessionCheckoutApplyEngine implements SessionCheckoutApplyEngine {
         null,
         null,
       )
-      const persistentIsolated = await this.captureSnapshot(
+      const persistentIsolated = await this.capturePlanSnapshot(
         stored.scope.isolatedGitRoot,
         join(tempRoot, 'persistent-isolated.index'),
         null,
         null,
+        stored.input.frozenSnapshot,
       )
       if (
         persistentLocal.fingerprint !== stored.plan.localFingerprint
@@ -2456,8 +2544,10 @@ export function createSessionCheckoutApplyEngine(
     (...args: Args): Promise<Result> => withGitOperation(() => operation(...args))
   // 不确定中断不能被内部 catch 降为普通可重试错误；抛出后保留 Main mutation journal。
   return {
+    verifyFrozenSnapshot: scoped(engine.verifyFrozenSnapshot.bind(engine)),
     inspectReview: scoped(engine.inspectReview.bind(engine)),
     captureHandoffSnapshot: scoped(engine.captureHandoffSnapshot.bind(engine)),
+    restoreReviewSnapshot: scoped(engine.restoreReviewSnapshot.bind(engine)),
     restoreHandoffSnapshot: scoped(engine.restoreHandoffSnapshot.bind(engine)),
     checkpoint: scoped(engine.checkpoint.bind(engine)),
     recoverCheckpoint: scoped(engine.recoverCheckpoint.bind(engine)),

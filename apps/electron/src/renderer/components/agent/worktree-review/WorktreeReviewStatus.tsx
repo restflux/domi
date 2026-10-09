@@ -74,6 +74,8 @@ export function WorktreeReviewStatus({
   const agentSessions = useAtomValue(agentSessionsAtom)
   const openSession = useOpenSession()
   const [starting, setStarting] = React.useState(false)
+  const [restoreContinuation, setRestoreContinuation] = React.useState(false)
+  const [restoreOpen, setRestoreOpen] = React.useState(false)
   const [discardOpen, setDiscardOpen] = React.useState(false)
   const [retainedCleanupOpen, setRetainedCleanupOpen] = React.useState(false)
   const delivery = state.snapshot?.delivery
@@ -97,6 +99,21 @@ export function WorktreeReviewStatus({
     || delivery.state === 'working'
     || (state.snapshot?.checkout.phase === 'discarded' && delivery.state !== 'delivered')
   ) return null
+
+  const canRestoreReview = state.snapshot?.ownership === 'owner'
+    && state.snapshot.checkout.kind === 'isolated'
+    && (state.snapshot.checkout.phase === 'ready' || state.snapshot.checkout.phase === 'recovery_required')
+    && delivery.state === 'ready_for_review'
+    && delivery.review.frozenVersion === true
+
+  const appliedContinuation = (delivery.state === 'finalized' || delivery.state === 'retained')
+    && delivery.review.savedContinuation === true
+  const canRestoreContinuation = state.snapshot?.ownership === 'owner'
+    && state.snapshot.checkout.kind === 'isolated'
+    && (canRestoreReview || (appliedContinuation
+      && ['ready', 'finalized', 'retained', 'recovery_required'].includes(state.snapshot.checkout.phase)))
+    && 'review' in delivery
+    && delivery.review.savedContinuation === true
 
   const hasReview = delivery.state === 'ready_for_review'
     || delivery.state === 'preview_active'
@@ -250,6 +267,11 @@ export function WorktreeReviewStatus({
   }
 
   const primaryAction = (): void => {
+    if (appliedContinuation && canRestoreContinuation) {
+      setRestoreContinuation(true)
+      setRestoreOpen(true)
+      return
+    }
     if (delivery.state === 'ready_for_review') {
       if (staleIsolatedPreflight) {
         dispatchWorktreeReviewRegeneration(createWorktreeReviewRegenerationFromPreflight(sessionId, staleIsolatedPreflight))
@@ -280,7 +302,9 @@ export function WorktreeReviewStatus({
     startNextIteration()
   }
 
-  const primaryLabel = delivery.state === 'ready_for_review'
+  const primaryLabel = appliedContinuation && canRestoreContinuation
+    ? '恢复后续成果'
+    : delivery.state === 'ready_for_review'
     ? staleIsolatedPreflight ? '重新检查' : preflight?.status === 'conflict' ? '让 Agent 解决冲突' : waitingForSlot ? '查看占用任务' : '预览修改'
     : delivery.state === 'preview_active'
       ? recoveryPreview ? '恢复并撤回预览' : blockedByCollaborator && canReleaseAll ? `结束 ${bulkRelease.releasable.length} 个占用并应用修改` : '应用修改'
@@ -296,6 +320,7 @@ export function WorktreeReviewStatus({
     ? <BadgeCheck className="size-3.5" />
     : null
   const primaryDisabled = pending
+    || (appliedContinuation && canRestoreContinuation && blockedByCollaborator)
     || (delivery.state === 'ready_for_review' && preflight?.status === 'blocked' && !staleIsolatedPreflight && !acceptanceBusyNavigation)
     || (
       ((delivery.state === 'preview_active' && !recoveryPreview) || delivery.state === 'preview_detached')
@@ -328,6 +353,16 @@ export function WorktreeReviewStatus({
             {compactActiveSurface && delivery.state === 'preview_active' && !recoveryPreview ? (
               <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" disabled={pending} onClick={() => void operate({ action: 'rollback_preview' })}>
                 <Undo2 className="size-3.5" />撤回预览
+              </Button>
+            ) : null}
+            {canRestoreReview ? (
+              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" disabled={pending || blockedByCollaborator} onClick={() => { setRestoreContinuation(false); setRestoreOpen(true) }}>
+                <RotateCcw className="size-3.5" />恢复验收版本
+              </Button>
+            ) : null}
+            {canRestoreContinuation && !appliedContinuation ? (
+              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-lg px-2 text-xs" disabled={pending || blockedByCollaborator} onClick={() => { setRestoreContinuation(true); setRestoreOpen(true) }}>
+                <RotateCcw className="size-3.5" />恢复后续成果
               </Button>
             ) : null}
             <Button type="button" variant={legacySurface ? 'ghost' : 'default'} size="sm" className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold" disabled={primaryDisabled} onClick={primaryAction}>
@@ -418,6 +453,32 @@ export function WorktreeReviewStatus({
       >
         {busyLabel ?? (compactActiveSurface ? compactLabel : label)}
       </ComposerActionRail>
+      <AlertDialog open={restoreOpen} onOpenChange={setRestoreOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{restoreContinuation ? '恢复后续成果？' : '恢复验收版本？'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {restoreContinuation
+                ? appliedContinuation
+                  ? 'Domi 会先保存当前 Worktree 中的成果，再基于已应用版本恢复此前保留的后续成果，继续下一轮修改。只恢复项目可交付文件，不恢复项目外操作及运行配置；Local 不受影响。'
+                  : 'Domi 会先保存当前 Worktree 中的成果，再恢复此前保留的后续成果。只恢复项目可交付文件，不恢复项目外操作及运行配置；Local 不受影响。'
+                : 'Domi 会先保存当前 Worktree 中的后续成果，再恢复到本次验收的固定版本。只恢复项目可交付文件，不恢复项目外操作及运行配置；Local 不受影响。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={pending || blockedByCollaborator || !(restoreContinuation ? canRestoreContinuation : canRestoreReview)} onClick={() => {
+              setRestoreOpen(false)
+              void operate({ action: 'restore_review', ...(restoreContinuation ? { savedContinuation: true } : {}) }).then((result) => {
+                if (result?.status === 'restored_review') toast.success(restoreContinuation ? '已恢复后续成果，当前成果已保存' : '已恢复验收版本，后续成果已保存')
+                else if (result?.status === 'error') toast.error(restoreContinuation ? '恢复后续成果未完成' : '恢复验收版本未完成', { description: result.message })
+              })
+            }}>
+              保存当前成果并恢复
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

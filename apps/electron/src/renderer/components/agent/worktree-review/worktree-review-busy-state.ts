@@ -15,6 +15,8 @@ export function worktreeOperationBusyLabel(action: SessionCheckoutAction): strin
       return '正在清理环境…'
     case 'discard':
       return '正在放弃任务…'
+    case 'restore_review':
+      return '正在保存成果并恢复版本…'
     case 'recover':
       return '正在恢复预览…'
     case 'release_collaborator':

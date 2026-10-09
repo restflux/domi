@@ -80,6 +80,52 @@ async function readyPlan(engine: SessionCheckoutApplyEngine, fixture: CheckoutFi
 }
 
 describe('SessionCheckoutApplyEngine', () => {
+  test('Given 固定验收和后续成果 When 宿主恢复固定版本再恢复成果 Then staged/working/untracked 内容均可恢复', async () => {
+    const fixture = await createFixture()
+    const engine = createSessionCheckoutApplyEngine()
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'reviewed\n')
+    const original = await engine.inspectReview(fixture)
+    if (original.status !== 'ready' || !original.frozenSnapshot) throw new Error('验收失败')
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'staged\n')
+    await runGit(fixture.isolatedPath, ['add', 'tracked.txt'])
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'working\n')
+    await writeFile(join(fixture.isolatedPath, 'later.txt'), 'later\n')
+    const saved = await engine.inspectReview(fixture)
+    if (saved.status !== 'ready' || !saved.frozenSnapshot) throw new Error('保存失败')
+    expect(await engine.restoreReviewSnapshot!({ ...fixture, expectedSnapshot: saved.frozenSnapshot, targetSnapshot: original.frozenSnapshot })).toMatchObject({ status: 'restored' })
+    expect(await readFile(join(fixture.isolatedPath, 'tracked.txt'), 'utf8')).toBe('reviewed\n')
+    await expect(readFile(join(fixture.isolatedPath, 'later.txt'))).rejects.toThrow()
+    expect(await engine.restoreReviewSnapshot!({ ...fixture, expectedSnapshot: original.frozenSnapshot, targetSnapshot: saved.frozenSnapshot })).toMatchObject({ status: 'restored' })
+    expect(await readFile(join(fixture.isolatedPath, 'tracked.txt'), 'utf8')).toBe('working\n')
+    expect(await runGit(fixture.isolatedPath, ['show', ':tracked.txt'])).toBe('staged')
+    expect(await readFile(join(fixture.isolatedPath, 'later.txt'), 'utf8')).toBe('later\n')
+  })
+
+  test('Given 已固化验收 When 活动树继续修改并重启 engine Then 旧预览只投射固化版本且保留后续成果', async () => {
+    const fixture = await createFixture()
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'reviewed\n')
+    await writeFile(join(fixture.isolatedPath, 'new.txt'), 'reviewed new\n')
+    const review = await createSessionCheckoutApplyEngine().inspectReview(fixture)
+    expect(review.status).toBe('ready')
+    if (review.status !== 'ready') throw new Error('验收失败')
+    expect(review.frozenSnapshot).toBeDefined()
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'later staged\n')
+    await runGit(fixture.isolatedPath, ['add', 'tracked.txt'])
+    await writeFile(join(fixture.isolatedPath, 'tracked.txt'), 'later working\n')
+    await writeFile(join(fixture.isolatedPath, 'later.txt'), 'later untracked\n')
+    const engine = createSessionCheckoutApplyEngine()
+    const result = await engine.plan({ ...fixture, frozenSnapshot: review.frozenSnapshot })
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('计划失败')
+    expect(await engine.preview(result.plan, { previewId: 'fixed', reviewId: 'review', iteration: 1 })).toMatchObject({ status: 'previewed' })
+    expect(await readFile(join(fixture.localPath, 'tracked.txt'), 'utf8')).toBe('reviewed\n')
+    expect(await readFile(join(fixture.localPath, 'new.txt'), 'utf8')).toBe('reviewed new\n')
+    await expect(readFile(join(fixture.localPath, 'later.txt'))).rejects.toThrow()
+    expect(await readFile(join(fixture.isolatedPath, 'tracked.txt'), 'utf8')).toBe('later working\n')
+    expect(await runGit(fixture.isolatedPath, ['show', ':tracked.txt'])).toBe('later staged')
+    expect(await readFile(join(fixture.isolatedPath, 'later.txt'), 'utf8')).toBe('later untracked\n')
+  })
+
   test('Given 子目录本地配置被 Git 忽略 When 验收快照生成 Then 不阻碍普通代码交付且不修改配置或真实 index', async () => {
     const fixture = await createFixture({ ignorePatterns: ['**/.env*'] })
     const configPath = 'service/.env.development.local'

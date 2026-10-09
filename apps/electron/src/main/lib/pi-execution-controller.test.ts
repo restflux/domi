@@ -15,6 +15,7 @@ async function createHarness(options: {
   workflowChangeAccepted?: boolean
   runActive?: boolean
   followupOnly?: boolean
+  targetKind?: 'local' | 'isolated'
   sessionWorkbenchRoot?: string
 } = {}) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'pi-execution-controller-'))
@@ -33,7 +34,7 @@ async function createHarness(options: {
     sideChatParentSessionId: options.sideChatParentSessionId,
     workspaceRoot,
     localBaselineRoot: workspaceRoot,
-    sessionTarget: { kind: 'local', ownership: 'owner', followupOnly: options.followupOnly },
+    sessionTarget: { kind: options.targetKind ?? 'local', ownership: 'owner', followupOnly: options.followupOnly },
     sessionWorkbenchRoot: options.sessionWorkbenchRoot,
     planSidecarDir,
     interaction: 'interactive',
@@ -89,6 +90,21 @@ function toolOptions(
 }
 
 describe('PiExecutionController', () => {
+  test('Given 固定版本 Preview 的活跃 Worktree lease When 正常执行 Then 普通验证可执行但研究模式仍只读', async () => {
+    const harness = await createHarness({ targetKind: 'isolated', followupOnly: false })
+    try {
+      harness.workflow = 'direct'
+      harness.executionPolicy = 'full-access'
+      for (const command of ['ego-browser --version', 'node --version', 'bun test ./test.ts']) {
+        expect(await harness.authorize({ type: 'tool', toolName: 'Bash', input: { command }, options: toolOptions() })).toMatchObject({ behavior: 'allow' })
+      }
+      const writeCall = { type: 'tool' as const, toolName: 'Write', input: { file_path: join(harness.workspaceRoot, 'next.ts'), content: 'next' }, options: toolOptions() }
+      expect(await harness.authorize(writeCall)).toMatchObject({ behavior: 'allow' })
+      harness.workflow = 'read-only'
+      expect(await harness.authorize(writeCall)).toMatchObject({ behavior: 'deny' })
+    } finally { await harness.dispose() }
+  })
+
   test('Given protected project When approving this run Then session writes work but project writes remain denied', async () => {
     const workbench = await mkdtemp(join(tmpdir(), 'protected-workbench-'))
     const harness = await createHarness({

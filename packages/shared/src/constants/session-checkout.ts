@@ -30,6 +30,7 @@ export const SESSION_CHECKOUT_IPC_CHANNELS = {
 /** Renderer 只能选择公开 target，inherit 仅供主进程协作会话接线。 */
 export type RendererSessionTargetChoice = { kind: 'local' } | { kind: 'isolated'; sourceBranch?: string }
 export type SessionCheckoutAction =
+  | 'restore_review'
   | 'apply'
   | 'finish'
   | 'preview'
@@ -72,6 +73,12 @@ export interface ConfirmWorktreeIterationResult {
 }
 
 export type OperateSessionCheckoutInput =
+  | {
+      sessionId: string
+      action: 'restore_review'
+      expectedRevision: number
+      savedContinuation?: boolean
+    }
   | {
       sessionId: string
       action: 'apply' | 'preview' | 'retry_cleanup' | 'recover'

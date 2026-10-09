@@ -375,6 +375,17 @@ describe('Session Checkout IPC', () => {
     expect(calls).toEqual(['operate:session-1:finish:fix: finish task'])
   })
 
+  test('Given 恢复固定版本请求 When 跨 IPC Then 只接受版本选择和 revision 而不接受路径或任意对象', async () => {
+    const { handlers, calls } = setup()
+    const operate = handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.OPERATE)!
+    await operate({}, { sessionId: 'session-1', action: 'restore_review', expectedRevision: 2 })
+    await operate({}, { sessionId: 'session-1', action: 'restore_review', expectedRevision: 2, savedContinuation: true })
+    for (const extra of [{ path: '/forged' }, { snapshotOid: 'a'.repeat(40) }, { savedContinuation: 'yes' }]) {
+      expect(await operate({}, { sessionId: 'session-1', action: 'restore_review', expectedRevision: 2, ...extra })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    }
+    expect(calls).toEqual(['operate:session-1:restore_review', 'operate:session-1:restore_review'])
+  })
+
   test('Given Preview lifecycle commands cross IPC When parsed Then only their strict action fields reach the module', async () => {
     const { handlers, calls } = setup()
     const operate = handlers.get(SESSION_CHECKOUT_IPC_CHANNELS.OPERATE)!

@@ -115,7 +115,7 @@ export interface ManagedCheckoutCreateJournal extends ManagedCheckoutJournalBase
 }
 
 export interface ManagedCheckoutMutationJournal extends ManagedCheckoutJournalBase {
-  operation: 'apply' | 'preview' | 'checkpoint' | 'rollback_preview' | 'finish' | 'finalize_preview' | 'cleanup' | 'prepare_local_files'
+  operation: 'restore_review' | 'apply' | 'preview' | 'checkpoint' | 'rollback_preview' | 'finish' | 'finalize_preview' | 'cleanup' | 'prepare_local_files'
   step: 'planning' | 'artifacts_retained' | 'writing_local' | 'updating_ref' | 'replacing_index' | 'removing_worktree'
   baseOid?: string
   planRevision?: string
@@ -169,6 +169,9 @@ export interface ManagedWorktreePreviousReviewRecord {
 }
 
 export interface ManagedWorktreeReviewRecord {
+  /** 持久固定版本；旧记录缺省时仍使用原来的严格校验。 */
+  frozenSnapshot?: import('./session-checkout-apply.ts').FrozenReviewSnapshot
+  savedContinuationSnapshot?: import('./session-checkout-apply.ts').FrozenReviewSnapshot
   reviewId: string
   iteration: number
   preparedAt: number
@@ -257,6 +260,11 @@ export type ManagedCheckoutDelivery =
   | { state: 'delivered'; iteration: number; commitOid: string | null; proof?: ManagedDeliveryProof; deliveredAt: number }
 
 export interface ManagedCheckoutRecord {
+  /** 显式恢复已交付后的保存成果时，保留原有交付凭证。 */
+  lastCompletedDelivery?: Extract<ManagedCheckoutDelivery, { state: 'finalized' | 'retained' }>
+  /** 宿主版本恢复之前保留的最近成果，不随重新验收丢失。 */
+  savedContinuationSnapshot?: import('./session-checkout-apply.ts').FrozenReviewSnapshot
+  savedContinuationDelivered?: boolean
   checkoutId: string
   projectId: string
   projectName: string

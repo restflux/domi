@@ -710,6 +710,32 @@ describe('session target atoms', () => {
     expect(store.get(sessionTargetStateAtomFamily('a')).snapshot?.checkpoints).toHaveLength(1)
   })
 
+  test('Given 固定验收版本 When 恢复 Then 使用权威 revision 调用宿主并刷新状态', async () => {
+    const refreshed = view('checkout-a', 9)
+    const inputs: Array<Parameters<SessionCheckoutRendererApi['operate']>[0]> = []
+    installApi({
+      inspect: async () => ({ ok: true, value: refreshed }),
+      bind: async () => ({ ok: true, value: refreshed }),
+      operate: async (input) => {
+        inputs.push(input)
+        return { ok: true, value: { status: 'restored_review', target: refreshed, changedFiles: ['src/task.ts'] } }
+      },
+    })
+    const store = createStore()
+    store.set(sessionTargetStateAtomFamily('a'), {
+      snapshot: view('checkout-a', 7), selectionRequired: false,
+      loading: false, pendingAction: null, error: null,
+    })
+    const result = await store.set(operateSessionTargetAtomFamily('a'), { action: 'restore_review' })
+    expect(inputs).toEqual([{ sessionId: 'a', action: 'restore_review', expectedRevision: 7 }])
+    await store.set(operateSessionTargetAtomFamily('a'), { action: 'restore_review', savedContinuation: true })
+    expect(inputs[1]).toEqual({ sessionId: 'a', action: 'restore_review', expectedRevision: 9, savedContinuation: true })
+    expect(result?.status).toBe('restored_review')
+    expect(store.get(sessionTargetStateAtomFamily('a'))).toMatchObject({
+      snapshot: refreshed, pendingAction: null, error: null,
+    })
+  })
+
   test('Given Preview revision is confirmed When atoms operate Then authoritative resumeRevision crosses IPC', async () => {
     const refreshed = view('checkout-a', 9)
     const operatedInputs: Array<Parameters<SessionCheckoutRendererApi['operate']>[0]> = []

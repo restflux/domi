@@ -297,6 +297,33 @@ export function createSessionCheckoutModule(
     }
   }
 
+  function hasPreservedContinuation(record: ManagedCheckoutRecord): boolean {
+    const saved = record.savedContinuationSnapshot
+    const delivered = 'review' in record.delivery ? record.delivery.review.frozenSnapshot : undefined
+    return Boolean(saved && !record.savedContinuationDelivered && (!delivered || saved.treeOid !== delivered.treeOid || saved.indexTreeOid !== delivered.indexTreeOid || saved.headOid !== delivered.headOid))
+  }
+
+  function reviewAfterCheckpoint(review: ManagedWorktreeReviewRecord, headOid: string, fingerprint: string): ManagedWorktreeReviewRecord {
+    const frozen = review.frozenSnapshot
+    return {
+      ...review,
+      isolatedHeadOid: headOid,
+      isolatedFingerprint: fingerprint,
+      ...(frozen ? { frozenSnapshot: {
+        ...frozen,
+        fingerprint,
+        headOid,
+        headTreeOid: frozen.treeOid,
+        indexTreeOid: frozen.treeOid,
+      } } : {}),
+    }
+  }
+
+  function publicReview(review: ManagedWorktreeReviewRecord) {
+    const { frozenSnapshot, savedContinuationSnapshot, ...view } = review
+    return { ...view, frozenVersion: Boolean(frozenSnapshot), savedContinuation: Boolean(savedContinuationSnapshot) }
+  }
+
   function projectDelivery(
     record: ManagedCheckoutRecord,
     commitInLocalHistory: boolean | null = null,
@@ -315,14 +342,14 @@ export function createSessionCheckoutModule(
         }
       : undefined
     if (delivery.state === 'working') return delivery
-    if (delivery.state === 'ready_for_review') return { state: delivery.state, review: delivery.review }
+    if (delivery.state === 'ready_for_review') return { state: delivery.state, review: publicReview(delivery.review) }
     if (delivery.state === 'preview_active') {
-      return { state: delivery.state, review: delivery.review, previewedAt: delivery.preview.previewedAt }
+      return { state: delivery.state, review: publicReview(delivery.review), previewedAt: delivery.preview.previewedAt }
     }
     if (delivery.state === 'preview_detached') {
       return {
         state: delivery.state,
-        review: delivery.review,
+        review: publicReview(delivery.review),
         previewedAt: delivery.preview.previewedAt,
         detachedAt: delivery.detachedAt,
         reason: delivery.reason,
@@ -332,7 +359,7 @@ export function createSessionCheckoutModule(
     if (delivery.state === 'finalized') {
       return {
         state: delivery.state,
-        review: delivery.review,
+        review: publicReview(delivery.review),
         commitOid: delivery.commitOid,
         ...(projectProof(delivery.proof) ? { proof: projectProof(delivery.proof) } : {}),
         cleanup: delivery.cleanup,
@@ -342,7 +369,7 @@ export function createSessionCheckoutModule(
     if (delivery.state === 'retained') {
       return {
         state: delivery.state,
-        review: delivery.review,
+        review: publicReview(delivery.review),
         commitOid: delivery.commitOid,
         ...(projectProof(delivery.proof) ? { proof: projectProof(delivery.proof) } : {}),
         retention: delivery.retention,
@@ -1580,11 +1607,7 @@ export function createSessionCheckoutModule(
               checkpoints: [...(current.checkpoints ?? []), checkpoint],
               delivery: {
                 state: 'ready_for_review',
-                review: {
-                  ...review,
-                  isolatedFingerprint: recovered.isolatedFingerprint,
-                  isolatedHeadOid: journal.commitOid,
-                },
+                review: reviewAfterCheckpoint(review, journal.commitOid, recovered.isolatedFingerprint),
               },
               journal: null,
               revision: current.revision + 1,
@@ -1753,6 +1776,7 @@ export function createSessionCheckoutModule(
     const review = {
       reviewId,
       iteration,
+      ...(record.savedContinuationSnapshot ? { savedContinuationSnapshot: record.savedContinuationSnapshot } : {}),
       preparedAt: Date.now(),
       ...(input.detailsMarkdown?.trim() ? { detailsMarkdown: input.detailsMarkdown.trim() } : {}),
       summary,
@@ -1765,11 +1789,16 @@ export function createSessionCheckoutModule(
       })),
       changedFiles: [...snapshot.changedFiles],
       suggestedCommitMessage,
+      ...(snapshot.frozenSnapshot ? { frozenSnapshot: snapshot.frozenSnapshot } : {}),
       isolatedFingerprint: snapshot.isolatedFingerprint,
       isolatedHeadOid: snapshot.isolatedHeadOid,
       reviewBaseOid: snapshot.effectiveBaseOid,
       reviewBaseStrategy: snapshot.baseStrategy,
       reviewLocalHeadOid: snapshot.localHeadOid,
+    }
+    if (review.frozenSnapshot) {
+      await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `reviews/${reviewId}/snapshot`, review.frozenSnapshot.snapshotOid)
+      await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `reviews/${reviewId}/index`, review.frozenSnapshot.indexTreeOid)
     }
     updateManagedCheckout(record.checkoutId, (current) => ({
       ...current,
@@ -1778,6 +1807,66 @@ export function createSessionCheckoutModule(
       revision: current.revision + 1,
     }))
     return inspectIsolated(binding)
+  }
+
+  async function operateRestoreReview(
+    input: Extract<SessionCheckoutOperation, { action: 'restore_review' }>,
+    binding: SessionBindingRecord,
+  ): Promise<SessionCheckoutOperationResult> {
+    if (binding.ownerSessionId !== input.sessionId || binding.target.kind !== 'isolated') {
+      return operationError('not_owner', '只有 owner Isolated 会话可以恢复验收版本')
+    }
+    const record = dependencies.registry.read().managedCheckouts[binding.target.checkoutId]
+    if (!record) return operationError('checkout_missing', 'Worktree 记录不存在')
+    if (record.revision !== input.expectedRevision) return operationError('stale_target', '版本状态已变化，请刷新后重试')
+    const completedDelivery = record.delivery.state === 'finalized' || record.delivery.state === 'retained' ? record.delivery : undefined
+    const resumeCompleted = input.savedContinuation === true && Boolean(completedDelivery)
+    const recovering = record.phase === 'recovery_required' && record.journal?.operation === 'restore_review'
+    if ((!recovering && record.phase !== 'ready' && !(resumeCompleted && (record.phase === 'finalized' || record.phase === 'retained')))
+      || (record.delivery.state !== 'ready_for_review' && !resumeCompleted)) return operationError('operation_not_allowed', '请先撤回预览，再恢复验收版本')
+    if (dependencies.lookup.isSessionActive(input.sessionId)) return operationError('operation_not_allowed', '请先停止当前任务，再恢复版本')
+    const collaborators = projectCollaborators(record)
+    if (collaborators.length) return operationError('collaborator_active', collaboratorBlockMessage(collaborators))
+    if (!('review' in record.delivery)) return operationError('operation_not_allowed', '没有可恢复的验收版本')
+    const review = record.delivery.review
+    const target = input.savedContinuation ? record.savedContinuationSnapshot ?? review.savedContinuationSnapshot : review.frozenSnapshot
+    if (!target || !dependencies.applyEngine.restoreReviewSnapshot) return operationError('operation_not_allowed', '没有可恢复的固定版本')
+    const valid = await validateManagedCheckoutDetailed(binding, record, false)
+    if (valid.status !== 'valid') return operationError('recovery_required', 'Worktree 身份无法确认')
+    const captured = await dependencies.applyEngine.inspectReview({ baseOid: record.applyBaseOid ?? record.baseOid, isolatedPath: record.managedRoot, localPath: record.localRoot })
+    if (captured.status !== 'ready' || !captured.frozenSnapshot) return operationError('recovery_required', '当前成果无法完整保存，未执行恢复')
+    const backup = captured.frozenSnapshot
+    const artifactId = dependencies.createCheckoutId()
+    await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `restores/${artifactId}/snapshot`, backup.snapshotOid)
+    await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `restores/${artifactId}/index`, backup.indexTreeOid)
+    if (resumeCompleted && !review.frozenSnapshot) return operationError('recovery_required', '已应用版本缺少持久快照，不能恢复下一轮')
+    if (!await checkpointHeadInvariantHolds(record, record.managedRoot, target.headOid)) return operationError('operation_not_allowed', '保存版本早于当前阶段记录，不能覆盖后续阶段')
+    const resumeBaseOid = resumeCompleted ? review.frozenSnapshot?.snapshotOid : undefined
+    if (resumeBaseOid) await dependencies.git.retainApplyBase(record.localRoot, record.checkoutId, resumeBaseOid)
+    updateManagedCheckout(record.checkoutId, current => ({
+      ...current,
+      phase: 'mutating',
+      savedContinuationSnapshot: recovering ? current.savedContinuationSnapshot ?? review.savedContinuationSnapshot : backup,
+      ...(completedDelivery ? { lastCompletedDelivery: completedDelivery } : {}),
+      savedContinuationDelivered: recovering ? current.savedContinuationDelivered : Boolean(resumeCompleted && review.frozenSnapshot && backup.treeOid === review.frozenSnapshot.treeOid && backup.indexTreeOid === review.frozenSnapshot.indexTreeOid && backup.headOid === review.frozenSnapshot.headOid),
+      delivery: { ...record.delivery, review: { ...review, savedContinuationSnapshot: recovering ? current.savedContinuationSnapshot ?? review.savedContinuationSnapshot : backup } },
+      journal: { operation: 'restore_review', operationId: artifactId, startedAt: Date.now(), step: 'artifacts_retained', ...(resumeBaseOid ? { baseOid: resumeBaseOid } : {}) },
+      revision: current.revision + 1,
+    }))
+    const result = await dependencies.applyEngine.restoreReviewSnapshot({ isolatedPath: record.managedRoot, expectedSnapshot: backup, targetSnapshot: target })
+    if (result.status === 'error') {
+      updateManagedCheckout(record.checkoutId, current => ({ ...current, phase: 'recovery_required', revision: current.revision + 1 }))
+      return operationError(result.error.code, result.error.message, await inspectIsolated(binding))
+    }
+    updateManagedCheckout(record.checkoutId, current => ({
+      ...current, phase: 'ready', journal: null, revision: current.revision + 1,
+      ...(resumeBaseOid ? {
+        applyBaseOid: resumeBaseOid,
+        previousReview: { ...projectPreviousReview(review), reviewBaseOid: resumeBaseOid },
+        delivery: { state: 'working', iteration: review.iteration + 1 },
+      } : {}),
+    }))
+    return { status: 'restored_review', target: await inspectIsolated(binding), changedFiles: captured.changedFiles }
   }
 
   async function operateCheckpoint(
@@ -1943,11 +2032,7 @@ export function createSessionCheckoutModule(
       checkpoints: [...(current.checkpoints ?? []), checkpoint],
       delivery: {
         state: 'ready_for_review',
-        review: {
-          ...review,
-          isolatedFingerprint: result.isolatedFingerprint,
-          isolatedHeadOid: result.commitOid,
-        },
+        review: reviewAfterCheckpoint(review, result.commitOid, result.isolatedFingerprint),
       },
       journal: null,
       revision: current.revision + 1,
@@ -2014,6 +2099,7 @@ export function createSessionCheckoutModule(
       baseOid: applyBaseOid,
       isolatedPath: applying.managedRoot,
       localPath: applying.localRoot,
+      ...(applying.delivery.state === 'ready_for_review' ? { frozenSnapshot: applying.delivery.review.frozenSnapshot } : {}),
       expectedLocalHeadRef: applying.sourceRef.startsWith("refs/heads/") ? applying.sourceRef : undefined,
     })
     if (planResult.status === 'conflict') {
@@ -2214,6 +2300,7 @@ export function createSessionCheckoutModule(
       baseOid: record.applyBaseOid ?? record.baseOid,
       isolatedPath: validated.checkout.canonicalManagedRoot,
       localPath: record.localRoot,
+      frozenSnapshot: review.frozenSnapshot,
       expectedLocalHeadRef: record.sourceRef.startsWith("refs/heads/") ? record.sourceRef : undefined,
     })
     const current = dependencies.registry.read().managedCheckouts[record.checkoutId]
@@ -2320,6 +2407,7 @@ export function createSessionCheckoutModule(
       baseOid: applyBaseOid,
       isolatedPath: mutating.managedRoot,
       localPath: mutating.localRoot,
+      frozenSnapshot: review.frozenSnapshot,
       expectedLocalHeadRef: mutating.sourceRef.startsWith("refs/heads/") ? mutating.sourceRef : undefined,
     })
     if (planResult.status === 'conflict') {
@@ -2666,6 +2754,9 @@ export function createSessionCheckoutModule(
     if (record.delivery.state !== 'finalized' && record.delivery.state !== 'retained') {
       return block('Worktree 交付状态不完整，未执行清理。')
     }
+    if (hasPreservedContinuation(record)) {
+      return block('Worktree 仍有恢复前保存的后续成果，未执行清理。', 'modified_after_finalize')
+    }
     if (
       (record.delivery.state === 'finalized' || record.delivery.state === 'retained')
       && record.delivery.cleanup === 'blocked'
@@ -2762,6 +2853,19 @@ export function createSessionCheckoutModule(
             localPath: record.localRoot,
           })))
           if (snapshot.status !== 'ready' || snapshot.isolatedFingerprint !== record.delivery.isolatedFingerprint) {
+            if (snapshot.status === 'ready' && snapshot.frozenSnapshot) {
+              const artifactId = dependencies.createCheckoutId()
+              await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `continuations/${artifactId}/snapshot`, snapshot.frozenSnapshot.snapshotOid)
+              await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `continuations/${artifactId}/index`, snapshot.frozenSnapshot.indexTreeOid)
+              updateManagedCheckout(record.checkoutId, current => ({
+                ...current,
+                savedContinuationSnapshot: snapshot.frozenSnapshot,
+                savedContinuationDelivered: false,
+                delivery: current.delivery.state === 'finalized' || current.delivery.state === 'retained'
+                  ? { ...current.delivery, review: { ...current.delivery.review, savedContinuationSnapshot: snapshot.frozenSnapshot } }
+                  : current.delivery,
+              }))
+            }
             return block('Worktree 在提交后出现了新修改，未执行清理。')
           }
           const directoryIdentity = await dependencies.files.inspectDirectoryIdentity(validated.canonicalManagedGitRoot)
@@ -3162,11 +3266,26 @@ export function createSessionCheckoutModule(
     if (collaborators.length > 0) {
       return operationError('collaborator_active', collaboratorBlockMessage(collaborators), await inspectIsolated(binding))
     }
-    const { preview, review } = record.delivery
+    const preview = record.delivery.preview
+    let review = record.delivery.review
+    let continuation = record.savedContinuationSnapshot
+    if (review.frozenSnapshot) {
+      const active = await dependencies.applyEngine.inspectReview({ baseOid: record.applyBaseOid ?? record.baseOid, isolatedPath: record.managedRoot, localPath: record.localRoot })
+      if (active.status !== 'ready' || !active.frozenSnapshot) return operationError('recovery_required', '当前后续成果无法保存，未应用验收版本')
+      if (active.isolatedFingerprint !== preview.isolatedFingerprint) {
+        continuation = active.frozenSnapshot
+        const artifactId = dependencies.createCheckoutId()
+        await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `continuations/${artifactId}/snapshot`, continuation.snapshotOid)
+        await dependencies.git.retainInternalArtifact(record.localRoot, record.checkoutId, `continuations/${artifactId}/index`, continuation.indexTreeOid)
+        review = { ...review, savedContinuationSnapshot: continuation }
+      }
+    }
     const operationId = dependencies.createCheckoutId()
     const startedAt = Date.now()
     updateManagedCheckout(record.checkoutId, (current) => ({
       ...current,
+      ...(continuation ? { savedContinuationSnapshot: continuation, savedContinuationDelivered: continuation === record.savedContinuationSnapshot ? current.savedContinuationDelivered : false } : {}),
+      delivery: { ...record.delivery, review },
       phase: 'mutating',
       journal: { operation: 'finalize_preview', operationId, step: 'planning', startedAt, previewId: preview.previewId, reviewId: review.reviewId, retention: input.retention ?? 'cleanup' },
       revision: current.revision + 1,
@@ -3302,6 +3421,10 @@ export function createSessionCheckoutModule(
       )
     }
     if (record.phase === 'ready' && (record.delivery.state === 'preview_active' || record.delivery.state === 'preview_detached')) {
+      const current = await dependencies.applyEngine.inspectReview({ baseOid: record.applyBaseOid ?? record.baseOid, isolatedPath: record.managedRoot, localPath: record.localRoot })
+      if (current.status !== 'ready' || current.isolatedFingerprint !== record.delivery.preview.isolatedFingerprint) {
+        return operationError('operation_not_allowed', '预览后已有新成果，请先撤回预览，再直接提交当前成果；原预览仍可单独应用', await inspectIsolated(binding))
+      }
       return operateFinalizePreview({
         action: 'finalize_preview',
         sessionId: input.sessionId,
@@ -3389,7 +3512,7 @@ export function createSessionCheckoutModule(
       : applying.delivery.state === 'delivered'
         ? applying.delivery.iteration + 1
         : applying.delivery.review.iteration
-    const review = applying.delivery.state === 'ready_for_review'
+    const review = applying.delivery.state === 'ready_for_review' && applying.delivery.review.isolatedFingerprint === planResult.plan.isolatedFingerprint
       ? applying.delivery.review
       : {
           reviewId: operationId,
@@ -3634,10 +3757,10 @@ export function createSessionCheckoutModule(
       if (!record || record.phase !== 'ready') {
         return operationError('recovery_required', 'Isolated Checkout 状态已变化，需要恢复')
       }
-      dirty = (await dependencies.git.status(record.managedRoot)).dirty || (record.checkpoints?.length ?? 0) > 0
+      dirty = (await dependencies.git.status(record.managedRoot)).dirty || (record.checkpoints?.length ?? 0) > 0 || hasPreservedContinuation(record)
     } else {
       try {
-        dirty = (await dependencies.git.status(record.managedRoot)).dirty || (record.checkpoints?.length ?? 0) > 0
+        dirty = (await dependencies.git.status(record.managedRoot)).dirty || (record.checkpoints?.length ?? 0) > 0 || hasPreservedContinuation(record)
       } catch {
         dirty = true
       }
@@ -3880,6 +4003,7 @@ export function createSessionCheckoutModule(
       if (input.action === 'apply') return await operateApply(input, binding)
       if (input.action === 'finish') return await operateFinish(input, binding)
       if (input.action === 'preview') return await operatePreview(input, binding)
+      if (input.action === 'restore_review') return await operateRestoreReview(input, binding)
       if (input.action === 'checkpoint') return await operateCheckpoint(input, binding)
       if (input.action === 'rollback_preview') return await operateRollbackPreview(input, binding)
       if (input.action === 'finalize_preview') return await operateFinalizePreview(input, binding)
@@ -4903,7 +5027,7 @@ export function createSessionCheckoutModule(
       const record = dependencies.registry.read().managedCheckouts[binding.target.checkoutId]
       if (!record) throw new SessionCheckoutError('checkout_missing', 'Isolated Checkout 记录不存在')
       if (
-        (view.checkout.phase === 'ready' && record.delivery.state === 'preview_active')
+        (view.checkout.phase === 'ready' && record.delivery.state === 'preview_active' && !record.delivery.review.frozenSnapshot)
         || (
           binding.ownerSessionId === sessionId
           && (
@@ -4949,6 +5073,11 @@ export function createSessionCheckoutModule(
       }
       if (record.localFiles && record.localFiles.state !== 'ready') {
         throw new SessionCheckoutError('local_files_required', '本地配置未准备完成，请在项目菜单中补充到当前 Worktree')
+      }
+      if (record.delivery.state === 'preview_active' && record.delivery.review.frozenSnapshot) {
+        if (!await dependencies.applyEngine.verifyFrozenSnapshot?.(record.managedRoot, record.delivery.review.frozenSnapshot)) {
+          throw new SessionCheckoutError('recovery_required', '固定验收对象不可恢复，不能继续执行')
+        }
       }
       const cwd = await dependencies.files.canonicalize(record.managedRoot)
       const previousReview = record.previousReview

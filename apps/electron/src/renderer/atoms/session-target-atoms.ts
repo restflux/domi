@@ -150,7 +150,7 @@ function optimisticSnapshot(
   snapshot: SessionTargetView,
   action: SessionCheckoutAction,
 ): SessionTargetView {
-  if (!['apply', 'finish', 'preview', 'checkpoint', 'rollback_preview', 'finalize_preview', 'retry_cleanup'].includes(action)) return snapshot
+  if (!['apply', 'finish', 'preview', 'checkpoint', 'rollback_preview', 'restore_review', 'finalize_preview', 'retry_cleanup'].includes(action)) return snapshot
   return {
     ...snapshot,
     checkout: { ...snapshot.checkout, phase: 'mutating' },
@@ -403,6 +403,7 @@ export const bindSessionTargetAtomFamily = atomFamily((sessionId: string) => {
 
 export type OperateSessionTargetAtomInput =
   | { action: 'apply' | 'preview' | 'retry_cleanup' | 'recover' }
+  | { action: 'restore_review'; savedContinuation?: boolean }
   | { action: 'checkpoint'; commitMessage: string }
   | { action: 'rollback_preview'; resumeRevision?: boolean }
   | { action: 'finish' | 'finalize_preview'; commitMessage: string; retention?: WorktreeRetentionMode }
@@ -470,7 +471,7 @@ export const operateSessionTargetAtomFamily = atomFamily((sessionId: string) => 
       snapshot: optimisticSnapshot(snapshot, input.action),
       pendingAction: input.action,
       error: null,
-      preflight: input.action === 'preview' || input.action === 'finish' ? null : before.preflight,
+      preflight: input.action === 'preview' || input.action === 'finish' || input.action === 'restore_review' ? null : before.preflight,
     })
 
     let result: Awaited<ReturnType<typeof window.electronAPI.sessionCheckout.operate>> | null = null
@@ -490,6 +491,11 @@ export const operateSessionTargetAtomFamily = atomFamily((sessionId: string) => 
             commitMessage: input.commitMessage,
             retention: input.retention ?? 'cleanup',
           }
+        : input.action === 'restore_review'
+          ? {
+              sessionId, action: input.action, expectedRevision: snapshot.revision,
+              ...(input.savedContinuation === undefined ? {} : { savedContinuation: input.savedContinuation }),
+            }
         : input.action === 'rollback_preview'
           ? {
               sessionId,
