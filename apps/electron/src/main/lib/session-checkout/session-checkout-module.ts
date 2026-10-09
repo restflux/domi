@@ -5026,8 +5026,14 @@ export function createSessionCheckoutModule(
       const view = await inspectIsolated(binding)
       const record = dependencies.registry.read().managedCheckouts[binding.target.checkoutId]
       if (!record) throw new SessionCheckoutError('checkout_missing', 'Isolated Checkout 记录不存在')
+      if (record.delivery.state === 'preview_active' && record.delivery.review.frozenSnapshot) {
+        if (!await dependencies.applyEngine.verifyFrozenSnapshot?.(record.managedRoot, record.delivery.review.frozenSnapshot)) {
+          throw new SessionCheckoutError('recovery_required', '固定验收对象不可恢复，不能继续执行')
+        }
+      }
+      // Preview 持有项目验收位；固定版本也必须先确认撤回，才能恢复项目写入。
       if (
-        (view.checkout.phase === 'ready' && record.delivery.state === 'preview_active' && !record.delivery.review.frozenSnapshot)
+        (view.checkout.phase === 'ready' && record.delivery.state === 'preview_active')
         || (
           binding.ownerSessionId === sessionId
           && (
@@ -5073,11 +5079,6 @@ export function createSessionCheckoutModule(
       }
       if (record.localFiles && record.localFiles.state !== 'ready') {
         throw new SessionCheckoutError('local_files_required', '本地配置未准备完成，请在项目菜单中补充到当前 Worktree')
-      }
-      if (record.delivery.state === 'preview_active' && record.delivery.review.frozenSnapshot) {
-        if (!await dependencies.applyEngine.verifyFrozenSnapshot?.(record.managedRoot, record.delivery.review.frozenSnapshot)) {
-          throw new SessionCheckoutError('recovery_required', '固定验收对象不可恢复，不能继续执行')
-        }
       }
       const cwd = await dependencies.files.canonicalize(record.managedRoot)
       const previousReview = record.previousReview

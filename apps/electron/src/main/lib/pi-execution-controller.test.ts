@@ -90,7 +90,7 @@ function toolOptions(
 }
 
 describe('PiExecutionController', () => {
-  test('Given 固定版本 Preview 的活跃 Worktree lease When 正常执行 Then 普通验证可执行但研究模式仍只读', async () => {
+  test('Given 尚未预览的待验收 Worktree lease When 正常执行 Then 普通验证可执行但研究模式仍只读', async () => {
     const harness = await createHarness({ targetKind: 'isolated', followupOnly: false })
     try {
       harness.workflow = 'direct'

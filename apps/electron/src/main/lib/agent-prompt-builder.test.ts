@@ -447,16 +447,16 @@ describe('Session Target 提示词', () => {
     expect(prompt).toContain('不要用 Bash 手工执行 git commit')
   })
 
-  test('Given owner 活跃 Worktree When 构建提示 Then 固定验收不阻断继续工作且保留 Local 边界', () => {
+  test('Given owner 活跃 Worktree When 构建提示 Then 待验收可继续工作但 Preview 须先撤回且保留 Local 边界', () => {
     const prompt = buildSystemPrompt({
       sessionId: 'session-frozen', permissionMode: 'bypassPermissions',
       executionPolicy: 'full-access', workflow: 'direct',
       sessionTarget: { kind: 'isolated', ownership: 'owner' },
     })
     expect(prompt).toContain('验收版本会持久固定')
-    expect(prompt).toContain('后续修改不会进入旧预览')
+    expect(prompt).toContain('尚未预览的待验收期间')
     expect(prompt).toContain('不直接写 Local')
-    expect(prompt).toContain('既有 Preview 必须先撤回或完成')
+    expect(prompt).toContain('既有 Preview 必须先通过宿主确认撤回')
     expect(prompt).toContain('宿主先保存当前后续成果')
     expect(prompt).toContain('项目外操作及运行配置不会恢复')
     expect(prompt).not.toContain('本轮只借用 Local Preview 回答普通问题')

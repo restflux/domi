@@ -1,4 +1,5 @@
 import { GitCommandInterruptedError } from './git-execution-policy.ts'
+import { canOfferWorktreePreviewRevision } from '../agent-worktree-iteration.ts'
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -2202,6 +2203,9 @@ describe.concurrent('SessionCheckoutModule', () => {
     })
     if (ready.delivery?.state !== 'ready_for_review') throw new Error('预期进入 ready_for_review')
     const originalReview = ready.delivery.review
+    const readyLease = await context.module.lease('session-1')
+    expect(readyLease).toMatchObject({ cwd: lease.cwd })
+    expect(readyLease.followupOnly).toBeUndefined()
 
     const preview = await context.module.operate({
       action: 'preview',
@@ -2213,11 +2217,11 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(readFileSync(join(context.projectRoot, 'tracked.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('preview task\n')
     expect(preview.target.delivery?.state).toBe('preview_active')
     const previewFollowupLease = await context.module.lease('session-1')
-    expect(previewFollowupLease.followupOnly).not.toBe(true)
-    expect(previewFollowupLease.cwd).toBe(lease.cwd)
+    expect(previewFollowupLease).toMatchObject({ followupOnly: true, followupReason: 'preview_active', cwd: context.projectRoot })
     const collaboratorPreviewLease = await context.module.lease('session-child')
-    expect(collaboratorPreviewLease.followupOnly).not.toBe(true)
-    expect(collaboratorPreviewLease.cwd).toBe(lease.cwd)
+    expect(collaboratorPreviewLease).toMatchObject({ followupOnly: true, followupReason: 'preview_active', cwd: context.projectRoot })
+    expect(canOfferWorktreePreviewRevision({ ...previewFollowupLease, targetKind: previewFollowupLease.kind, ownership: 'owner', triggeredBy: 'user' })).toBe(true)
+    expect(canOfferWorktreePreviewRevision({ ...collaboratorPreviewLease, targetKind: collaboratorPreviewLease.kind, ownership: 'inherited', triggeredBy: 'user' })).toBe(false)
 
     const rolledBack = await context.module.operate({
       action: 'rollback_preview',
@@ -5133,7 +5137,7 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(JSON.stringify(owner).includes(lease.cwd)).toBe(false)
   })
 
-  test('Given 固化验收后继续工作 When 重启预览原版本 Then lease 留在 Worktree 且清理不会丢后续成果', async () => {
+  test('Given 固化验收后继续工作 When 重启预览原版本 Then lease 受保护且清理不会丢后续成果', async () => {
     const context = createContext()
     await context.module.bind('session-1', { kind: 'isolated' })
     const lease = await context.module.lease('session-1')
@@ -5149,8 +5153,7 @@ describe.concurrent('SessionCheckoutModule', () => {
     expect(preview.status).toBe('previewed')
     if (preview.status !== 'previewed') throw new Error('预览失败')
     const previewLease = await restarted.lease('session-1')
-    expect(previewLease.cwd).toBe(lease.cwd)
-    expect(previewLease.followupOnly).not.toBe(true)
+    expect(previewLease).toMatchObject({ cwd: context.projectRoot, followupOnly: true, followupReason: 'preview_active' })
     expect(readFileSync(join(context.projectRoot, 'tracked.txt'), 'utf8')).toBe('fixed review\n')
     expect(readFileSync(join(lease.cwd, 'tracked.txt'), 'utf8')).toBe('later work\n')
     const finalized = await restarted.operate({ action: 'finalize_preview', sessionId: 'session-1', expectedRevision: preview.target.revision, commitMessage: 'feat: 固定版本' })
